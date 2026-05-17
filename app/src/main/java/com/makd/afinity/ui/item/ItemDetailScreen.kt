@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -99,6 +100,7 @@ import com.makd.afinity.ui.utils.IntentUtils
 import com.makd.afinity.ui.utils.verticalLayoutOffset
 import com.makd.afinity.util.rememberPreferencesRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import java.util.UUID
 import org.jellyfin.sdk.model.api.MediaStreamType
 import timber.log.Timber
@@ -115,6 +117,7 @@ fun ItemDetailScreen(
     val selectedEpisode by viewModel.selectedEpisode.collectAsStateWithLifecycle()
     val nextEpisode = uiState.nextEpisode
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val selectedEpisodeWatchlistStatus by
         viewModel.selectedEpisodeWatchlistStatus.collectAsStateWithLifecycle()
     val selectedEpisodeDownloadInfo by
@@ -181,23 +184,29 @@ fun ItemDetailScreen(
     }
 
     fun directPlayEpisode(episode: AfinityEpisode) {
-        val mediaSourceId = episode.sources.preferredPlaybackSourceId()
-        if (mediaSourceId == null) {
-            Timber.w("Episode has no playable source: ${episode.name}")
-            return
+        coroutineScope.launch {
+            val episodeToPlay = viewModel.resolveEpisodeForPlayback(episode) ?: episode
+            val mediaSourceId = episodeToPlay.sources.preferredPlaybackSourceId()
+            if (mediaSourceId == null) {
+                Timber.w("Episode has no playable source: ${episodeToPlay.name}")
+                viewModel.selectEpisode(episodeToPlay)
+                return@launch
+            }
+            val startPositionMs =
+                if (episodeToPlay.playbackPositionTicks > 0)
+                    episodeToPlay.playbackPositionTicks / 10000
+                else 0L
+            onPlayClick(
+                episodeToPlay,
+                PlaybackSelection(
+                    mediaSourceId = mediaSourceId,
+                    audioStreamIndex = null,
+                    subtitleStreamIndex = null,
+                    videoStreamIndex = null,
+                    startPositionMs = startPositionMs,
+                ),
+            )
         }
-        val startPositionMs =
-            if (episode.playbackPositionTicks > 0) episode.playbackPositionTicks / 10000 else 0L
-        onPlayClick(
-            episode,
-            PlaybackSelection(
-                mediaSourceId = mediaSourceId,
-                audioStreamIndex = null,
-                subtitleStreamIndex = null,
-                videoStreamIndex = null,
-                startPositionMs = startPositionMs,
-            ),
-        )
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -860,24 +869,32 @@ private fun TypeSpecificContent(
     widthSizeClass: WindowWidthSizeClass,
     shouldDirectPlayEpisodeClicks: Boolean,
 ) {
+    val coroutineScope = rememberCoroutineScope()
+
     fun directPlayEpisode(episode: AfinityEpisode) {
-        val mediaSourceId = episode.sources.preferredPlaybackSourceId()
-        if (mediaSourceId == null) {
-            Timber.w("Episode has no playable source: ${episode.name}")
-            return
+        coroutineScope.launch {
+            val episodeToPlay = viewModel.resolveEpisodeForPlayback(episode) ?: episode
+            val mediaSourceId = episodeToPlay.sources.preferredPlaybackSourceId()
+            if (mediaSourceId == null) {
+                Timber.w("Episode has no playable source: ${episodeToPlay.name}")
+                viewModel.selectEpisode(episodeToPlay)
+                return@launch
+            }
+            val startPositionMs =
+                if (episodeToPlay.playbackPositionTicks > 0)
+                    episodeToPlay.playbackPositionTicks / 10000
+                else 0L
+            onPlayClick(
+                episodeToPlay,
+                PlaybackSelection(
+                    mediaSourceId = mediaSourceId,
+                    audioStreamIndex = null,
+                    subtitleStreamIndex = null,
+                    videoStreamIndex = null,
+                    startPositionMs = startPositionMs,
+                ),
+            )
         }
-        val startPositionMs =
-            if (episode.playbackPositionTicks > 0) episode.playbackPositionTicks / 10000 else 0L
-        onPlayClick(
-            episode,
-            PlaybackSelection(
-                mediaSourceId = mediaSourceId,
-                audioStreamIndex = null,
-                subtitleStreamIndex = null,
-                videoStreamIndex = null,
-                startPositionMs = startPositionMs,
-            ),
-        )
     }
 
     when (item) {

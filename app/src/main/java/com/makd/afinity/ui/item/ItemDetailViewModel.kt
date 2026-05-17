@@ -1032,20 +1032,7 @@ constructor(
         viewModelScope.launch {
             try {
                 _isLoadingEpisode.value = true
-                val fullEpisode =
-                    try {
-                        mediaRepository
-                            .getItem(episode.id, fields = FieldSets.ITEM_DETAIL)
-                            ?.toAfinityEpisode(mediaRepository.getBaseUrl(), null)
-                    } catch (_: Exception) {
-                        try {
-                            authRepository.currentUser.value?.id?.let {
-                                databaseRepository.getEpisode(episode.id, it)
-                            }
-                        } catch (_: Exception) {
-                            null
-                        }
-                    }
+                val fullEpisode = resolveEpisodeForPlayback(episode)
                 _selectedEpisode.value = fullEpisode ?: episode
                 _selectedEpisodeWatchlistStatus.value = episode.liked
 
@@ -1071,6 +1058,21 @@ constructor(
             }
         }
     }
+
+    suspend fun resolveEpisodeForPlayback(episode: AfinityEpisode): AfinityEpisode? =
+        try {
+            mediaRepository
+                .getItem(episode.id, fields = FieldSets.ITEM_DETAIL)
+                ?.toAfinityEpisode(mediaRepository.getBaseUrl(), null)
+        } catch (_: Exception) {
+            try {
+                authRepository.currentUser.value?.id?.let {
+                    databaseRepository.getEpisode(episode.id, it)
+                }
+            } catch (_: Exception) {
+                null
+            }
+        } ?: episode
 
     fun clearSelectedEpisode() {
         _selectedEpisode.value = null
