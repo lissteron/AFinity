@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavController
 import com.makd.afinity.R
+import com.makd.afinity.data.models.media.AfinityEpisode
 import com.makd.afinity.data.models.media.AfinityItem
 import com.makd.afinity.navigation.Destination
 import com.makd.afinity.navigation.LocalPlayerOffset
@@ -45,6 +46,7 @@ fun WatchlistScreen(
     modifier: Modifier = Modifier,
     mainUiState: MainUiState,
     onItemClick: (AfinityItem) -> Unit = {},
+    onPlayClick: (AfinityItem) -> Unit = {},
     navController: NavController,
     viewModel: WatchlistViewModel = hiltViewModel(),
     widthSizeClass: WindowWidthSizeClass,
@@ -57,6 +59,8 @@ fun WatchlistScreen(
         viewModel.selectedEpisodeDownloadInfo.collectAsStateWithLifecycle()
     val canDownload by viewModel.canDownload.collectAsStateWithLifecycle()
     val capabilityPolicy by viewModel.capabilityPolicy.collectAsStateWithLifecycle()
+    val shouldDirectPlayInKidMode =
+        capabilityPolicy.isKidModeEnabled && !capabilityPolicy.isParentUnlocked
     val playerOffset = LocalPlayerOffset.current
 
     LaunchedEffect(Unit) { viewModel.loadWatchlist() }
@@ -166,9 +170,12 @@ fun WatchlistScreen(
                                 title = stringResource(R.string.section_episodes),
                                 items = uiState.episodes,
                                 onItemClick = { episode ->
-                                    viewModel.selectEpisode(
-                                        episode as com.makd.afinity.data.models.media.AfinityEpisode
-                                    )
+                                    val episodeItem = episode as AfinityEpisode
+                                    if (shouldDirectPlayInKidMode) {
+                                        onPlayClick(episodeItem)
+                                    } else {
+                                        viewModel.selectEpisode(episodeItem)
+                                    }
                                 },
                                 cardWidth = landscapeWidth,
                             )

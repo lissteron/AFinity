@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
 import com.makd.afinity.data.models.media.AfinityItem
+import com.makd.afinity.data.models.media.AfinitySeason
 import com.makd.afinity.data.models.media.AfinityShow
 import com.makd.afinity.data.repository.AppDataRepository
 import com.makd.afinity.data.repository.AudiobookshelfRepository
@@ -214,6 +215,20 @@ constructor(
                     val episode = mediaRepository.getEpisodeToPlay(item.id)
                     if (episode == null) {
                         Timber.w("No episode found to play for series: ${item.name}")
+                    }
+                    episode
+                }
+            } else if (item is AfinitySeason) {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    val episodes = item.episodes.sortedBy { it.indexNumber }
+                    episodes
+                        .firstOrNull { it.playbackPositionTicks > 0 && !it.played }
+                        ?: episodes.firstOrNull { !it.played }
+                        ?: episodes.firstOrNull()
+                } else {
+                    val episode = mediaRepository.getEpisodeToPlayForSeason(item.id, item.seriesId)
+                    if (episode == null) {
+                        Timber.w("No episode found to play for season: ${item.name}")
                     }
                     episode
                 }

@@ -75,6 +75,7 @@ fun FavoritesScreen(
     modifier: Modifier = Modifier,
     mainUiState: MainUiState,
     onItemClick: (AfinityItem) -> Unit = {},
+    onPlayClick: (AfinityItem) -> Unit = {},
     onPersonClick: (String) -> Unit = {},
     navController: NavController,
     viewModel: FavoritesViewModel = hiltViewModel(),
@@ -89,6 +90,8 @@ fun FavoritesScreen(
         viewModel.selectedEpisodeDownloadInfo.collectAsStateWithLifecycle()
     val canDownload by viewModel.canDownload.collectAsStateWithLifecycle()
     val capabilityPolicy by viewModel.capabilityPolicy.collectAsStateWithLifecycle()
+    val shouldDirectPlayInKidMode =
+        capabilityPolicy.isKidModeEnabled && !capabilityPolicy.isParentUnlocked
     val playerOffset = LocalPlayerOffset.current
 
     LaunchedEffect(Unit) { viewModel.loadFavorites() }
@@ -196,7 +199,12 @@ fun FavoritesScreen(
                                         title = stringResource(R.string.section_episodes),
                                         items = uiState.episodes,
                                         onItemClick = { episode ->
-                                            viewModel.selectEpisode(episode as AfinityEpisode)
+                                            val episodeItem = episode as AfinityEpisode
+                                            if (shouldDirectPlayInKidMode) {
+                                                onPlayClick(episodeItem)
+                                            } else {
+                                                viewModel.selectEpisode(episodeItem)
+                                            }
                                         },
                                         cardWidth = landscapeWidth,
                                     )

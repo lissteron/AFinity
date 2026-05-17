@@ -99,6 +99,8 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val capabilityPolicy by viewModel.capabilityPolicy.collectAsStateWithLifecycle()
+    val shouldDirectPlayInKidMode =
+        capabilityPolicy.isKidModeEnabled && !capabilityPolicy.isParentUnlocked
     val context = LocalContext.current
     val playerOffset = LocalPlayerOffset.current
 
@@ -236,7 +238,9 @@ fun HomeScreen(
                                         OptimizedContinueWatchingSection(
                                             items = continueWatchingItems,
                                             onItemClick = { item ->
-                                                if (item is AfinityEpisode) {
+                                                if (item is AfinityEpisode && shouldDirectPlayInKidMode) {
+                                                    onPlayClick(item)
+                                                } else if (item is AfinityEpisode) {
                                                     viewModel.selectEpisode(item)
                                                 } else {
                                                     onItemClick(item)
@@ -335,7 +339,11 @@ fun HomeScreen(
                                         NextUpSection(
                                             episodes = uiState.nextUp,
                                             onEpisodeClick = { episode ->
-                                                viewModel.selectEpisode(episode)
+                                                if (shouldDirectPlayInKidMode) {
+                                                    onPlayClick(episode)
+                                                } else {
+                                                    viewModel.selectEpisode(episode)
+                                                }
                                             },
                                             widthSizeClass = widthSizeClass,
                                         )
@@ -430,7 +438,11 @@ fun HomeScreen(
                                         UpcomingEpisodesSection(
                                             items = uiState.upcomingEpisodes,
                                             onItemClick = { episode ->
-                                                viewModel.selectEpisode(episode)
+                                                if (shouldDirectPlayInKidMode) {
+                                                    onPlayClick(episode)
+                                                } else {
+                                                    viewModel.selectEpisode(episode)
+                                                }
                                             },
                                             widthSizeClass = widthSizeClass,
                                         )
