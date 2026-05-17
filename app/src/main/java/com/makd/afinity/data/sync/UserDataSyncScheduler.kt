@@ -6,32 +6,50 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.workers.UserDataSyncWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 import timber.log.Timber
 
 @Singleton
-class UserDataSyncScheduler @Inject constructor(@ApplicationContext private val context: Context) {
+class UserDataSyncScheduler
+@Inject
+constructor(
+    @ApplicationContext private val context: Context,
+    private val offlineModeManager: OfflineModeManager,
+) {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     fun scheduleSyncNow() {
-        try {
-            val constraints =
-                Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        scope.launch {
+            try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    Timber.d("Skipping user data sync schedule in offline mode")
+                    return@launch
+                }
 
-            val syncRequest =
-                OneTimeWorkRequestBuilder<UserDataSyncWorker>()
-                    .setConstraints(constraints)
-                    .addTag(SYNC_WORK_TAG)
-                    .build()
+                val constraints =
+                    Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 
-            WorkManager.getInstance(context)
-                .enqueueUniqueWork(SYNC_WORK_NAME, ExistingWorkPolicy.REPLACE, syncRequest)
+                val syncRequest =
+                    OneTimeWorkRequestBuilder<UserDataSyncWorker>()
+                        .setConstraints(constraints)
+                        .addTag(SYNC_WORK_TAG)
+                        .build()
 
-            Timber.d("User data sync scheduled (will run when network is available)")
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to schedule user data sync")
+                WorkManager.getInstance(context)
+                    .enqueueUniqueWork(SYNC_WORK_NAME, ExistingWorkPolicy.REPLACE, syncRequest)
+
+                Timber.d("User data sync scheduled (will run when network is available)")
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to schedule user data sync")
+            }
         }
     }
 

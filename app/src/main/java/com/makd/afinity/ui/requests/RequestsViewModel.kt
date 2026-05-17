@@ -17,6 +17,7 @@ import com.makd.afinity.data.models.jellyseerr.SearchResultItem
 import com.makd.afinity.data.models.jellyseerr.ServiceSettings
 import com.makd.afinity.data.models.jellyseerr.Studio
 import com.makd.afinity.data.repository.JellyseerrRepository
+import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.util.GenreDuotoneColorGenerator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -41,6 +42,7 @@ class RequestsViewModel
 constructor(
     @param:ApplicationContext private val context: Context,
     private val jellyseerrRepository: JellyseerrRepository,
+    private val kidModeRepository: KidModeRepository,
 ) : ViewModel() {
 
     private val _uiState =
@@ -223,6 +225,7 @@ constructor(
     }
 
     fun deleteRequest(requestId: Int) {
+        if (!kidModeRepository.policy.value.canManageRequests) return
         viewModelScope.launch {
             try {
                 _uiState.update { it.copy(isDeletingRequest = true) }
@@ -252,6 +255,7 @@ constructor(
     }
 
     fun approveRequest(requestId: Int) {
+        if (!kidModeRepository.policy.value.canManageRequests) return
         viewModelScope.launch {
             try {
                 _uiState.update { it.copy(isProcessingRequest = true) }
@@ -322,6 +326,7 @@ constructor(
     }
 
     fun updateRequest(requestId: Int) {
+        if (!kidModeRepository.policy.value.canManageRequests) return
         val request = _uiState.value.selectedRequest ?: return
         val tmdbId = request.media.tmdbId ?: return
         val mediaType = request.getMediaType() ?: MediaType.MOVIE
@@ -379,6 +384,7 @@ constructor(
     }
 
     fun declineRequest(requestId: Int) {
+        if (!kidModeRepository.policy.value.canManageRequests) return
         viewModelScope.launch {
             try {
                 _uiState.update { it.copy(isProcessingRequest = true) }
@@ -653,6 +659,7 @@ constructor(
     }
 
     fun createRequest(mediaId: Int, mediaType: MediaType, seasons: List<Int>? = null) {
+        if (!kidModeRepository.policy.value.canManageRequests) return
         val state = _uiState.value
         viewModelScope.launch {
             _uiState.update { it.copy(isCreatingRequest = true) }

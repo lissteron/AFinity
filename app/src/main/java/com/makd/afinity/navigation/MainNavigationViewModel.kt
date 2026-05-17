@@ -10,6 +10,7 @@ import com.makd.afinity.data.repository.AppDataRepository
 import com.makd.afinity.data.repository.AudiobookshelfRepository
 import com.makd.afinity.data.repository.JellyfinRepository
 import com.makd.afinity.data.repository.JellyseerrRepository
+import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.data.repository.auth.AuthRepository
 import com.makd.afinity.data.repository.media.MediaRepository
 import com.makd.afinity.data.repository.livetv.LiveTvRepository
@@ -42,6 +43,7 @@ constructor(
     private val liveTvRepository: LiveTvRepository,
     private val offlineModeManager: OfflineModeManager,
     private val sessionManager: SessionManager,
+    val kidModeRepository: KidModeRepository,
 ) : ViewModel() {
     private val _hasLiveTvAccess = MutableStateFlow(true)
     val hasLiveTvAccess = _hasLiveTvAccess.asStateFlow()
@@ -64,6 +66,8 @@ constructor(
                 initialValue = AppLoadingState(isLoading = true),
             )
 
+    val capabilityPolicy = kidModeRepository.policy
+
     init {
         observeAuthAndLoadData()
         refreshServerInfo()
@@ -85,7 +89,7 @@ constructor(
             val initialAuthState = authRepository.isAuthenticated.value
 
             if (initialAuthState) {
-                loadAppData(skipOfflineCheck = false)
+                loadAppData()
             }
 
             var previousAuthState = initialAuthState
@@ -94,7 +98,7 @@ constructor(
                 if (isAuthenticated && !previousAuthState) {
                     Timber.d("Fresh login detected")
                     _hasLiveTvAccess.value = false
-                    loadAppData(skipOfflineCheck = true)
+                    loadAppData()
                 } else if (!isAuthenticated) {
                     _hasLiveTvAccess.value = false
                 }
@@ -107,6 +111,12 @@ constructor(
     private fun checkLiveTvAccess() {
         viewModelScope.launch {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    Timber.d("Skipping Live TV access check in offline mode")
+                    _hasLiveTvAccess.value = false
+                    return@launch
+                }
+
                 val hasAccess = liveTvRepository.hasLiveTvAccess()
                 Timber.d("Live TV access check result: $hasAccess")
                 _hasLiveTvAccess.value = hasAccess
@@ -134,22 +144,20 @@ constructor(
         }
     }
 
-    private fun loadAppData(skipOfflineCheck: Boolean = false) {
+    private fun loadAppData() {
         viewModelScope.launch {
-            if (!skipOfflineCheck) {
-                val isOffline = offlineModeManager.isCurrentlyOffline()
+            val isOffline = offlineModeManager.isCurrentlyOffline()
 
-                if (isOffline) {
-                    Timber.d("Device is offline, skipping initial data load")
-                    appDataRepository.skipInitialDataLoad()
-                    return@launch
-                }
+            if (isOffline) {
+                Timber.d("Device is offline, skipping initial data load")
+                appDataRepository.skipInitialDataLoad()
+                return@launch
+            }
 
-                if (!sessionManager.isServerReachable.value) {
-                    Timber.d("Server unreachable (address resolution failed), starting in offline mode")
-                    appDataRepository.skipInitialDataLoad()
-                    return@launch
-                }
+            if (!sessionManager.isServerReachable.value) {
+                Timber.d("Server unreachable (address resolution failed), starting in offline mode")
+                appDataRepository.skipInitialDataLoad()
+                return@launch
             }
 
             val maxRetries = 3
@@ -184,14 +192,31 @@ constructor(
         loadAppData()
     }
 
+    suspend fun verifyParentPin(pin: String): Boolean = kidModeRepository.verifyParentPin(pin)
+
+    fun lockParent() {
+        kidModeRepository.lockParent()
+    }
+
     suspend fun resolvePlayableItem(item: AfinityItem): AfinityItem? {
         return try {
             if (item is AfinityShow) {
-                val episode = mediaRepository.getEpisodeToPlay(item.id)
-                if (episode == null) {
-                    Timber.w("No episode found to play for series: ${item.name}")
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    val episodes =
+                        item.seasons
+                            .sortedBy { it.indexNumber }
+                            .flatMap { season -> season.episodes.sortedBy { it.indexNumber } }
+                    episodes
+                        .firstOrNull { it.playbackPositionTicks > 0 && !it.played }
+                        ?: episodes.firstOrNull { !it.played }
+                        ?: episodes.firstOrNull()
+                } else {
+                    val episode = mediaRepository.getEpisodeToPlay(item.id)
+                    if (episode == null) {
+                        Timber.w("No episode found to play for series: ${item.name}")
+                    }
+                    episode
                 }
-                episode
             } else {
                 item
             }

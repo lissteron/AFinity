@@ -65,6 +65,8 @@ constructor(@AppPreferences private val dataStore: DataStore<Preferences>) : Pre
 
         val DOWNLOAD_WIFI_ONLY = booleanPreferencesKey("download_wifi_only")
         val DOWNLOAD_QUALITY = stringPreferencesKey("download_quality")
+        val DOWNLOAD_STORAGE_LOCATION_ID = stringPreferencesKey("download_storage_location_id")
+        val CUSTOM_DOWNLOAD_TREE_URI = stringPreferencesKey("custom_download_tree_uri")
         val MAX_DOWNLOADS = intPreferencesKey("max_downloads")
 
         val SYNC_ENABLED = booleanPreferencesKey("sync_enabled")
@@ -326,8 +328,36 @@ constructor(@AppPreferences private val dataStore: DataStore<Preferences>) : Pre
     }
 
     override suspend fun getDownloadQuality(): String {
-        return dataStore.data.first()[Keys.DOWNLOAD_QUALITY] ?: "720p"
+        return dataStore.data.first()[Keys.DOWNLOAD_QUALITY] ?: "cpu_hevc_compact"
     }
+
+    override fun getDownloadQualityFlow(): Flow<String> =
+        dataStore.data.map { it[Keys.DOWNLOAD_QUALITY] ?: "cpu_hevc_compact" }
+
+    override suspend fun setDownloadStorageLocationId(locationId: String) {
+        dataStore.edit { preferences -> preferences[Keys.DOWNLOAD_STORAGE_LOCATION_ID] = locationId }
+    }
+
+    override suspend fun getDownloadStorageLocationId(): String? {
+        return dataStore.data.first()[Keys.DOWNLOAD_STORAGE_LOCATION_ID]
+    }
+
+    override fun getDownloadStorageLocationIdFlow(): Flow<String?> =
+        dataStore.data.map { it[Keys.DOWNLOAD_STORAGE_LOCATION_ID] }
+
+    override suspend fun setCustomDownloadTreeUri(uri: String?) {
+        dataStore.edit { preferences ->
+            if (uri == null) preferences.remove(Keys.CUSTOM_DOWNLOAD_TREE_URI)
+            else preferences[Keys.CUSTOM_DOWNLOAD_TREE_URI] = uri
+        }
+    }
+
+    override suspend fun getCustomDownloadTreeUri(): String? {
+        return dataStore.data.first()[Keys.CUSTOM_DOWNLOAD_TREE_URI]
+    }
+
+    override fun getCustomDownloadTreeUriFlow(): Flow<String?> =
+        dataStore.data.map { it[Keys.CUSTOM_DOWNLOAD_TREE_URI] }
 
     override suspend fun setMaxDownloads(maxDownloads: Int) {
         dataStore.edit { preferences -> preferences[Keys.MAX_DOWNLOADS] = maxDownloads }

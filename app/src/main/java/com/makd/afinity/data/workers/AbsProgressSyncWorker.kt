@@ -5,6 +5,7 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.repository.AudiobookshelfRepository
 import com.makd.afinity.data.repository.audiobookshelf.AbsProgressSyncScheduler
 import dagger.Lazy
@@ -21,10 +22,16 @@ class AbsProgressSyncWorker
 constructor(
     @Assisted appContext: Context,
     @Assisted workerParams: WorkerParameters,
+    private val offlineModeManager: OfflineModeManager,
     private val audiobookshelfRepository: Lazy<AudiobookshelfRepository>,
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        if (offlineModeManager.isCurrentlyOffline()) {
+            Timber.d("AbsProgressSync: skipping worker in offline mode")
+            return@withContext Result.success()
+        }
+
         val serverId = inputData.getString(AbsProgressSyncScheduler.KEY_SERVER_ID)
         val userIdStr = inputData.getString(AbsProgressSyncScheduler.KEY_USER_ID)
 

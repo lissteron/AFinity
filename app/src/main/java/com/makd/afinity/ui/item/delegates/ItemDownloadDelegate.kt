@@ -3,14 +3,21 @@ package com.makd.afinity.ui.item.delegates
 import com.makd.afinity.data.models.download.DownloadInfo
 import com.makd.afinity.data.models.media.AfinityItem
 import com.makd.afinity.data.models.media.AfinitySourceType
+import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.data.repository.download.DownloadRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
 
-class ItemDownloadDelegate @Inject constructor(private val downloadRepository: DownloadRepository) {
+class ItemDownloadDelegate
+@Inject
+constructor(
+    private val downloadRepository: DownloadRepository,
+    private val kidModeRepository: KidModeRepository,
+) {
     fun onDownloadClick(scope: CoroutineScope, item: AfinityItem?, showQualityDialog: () -> Unit) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         val target = item ?: return
         scope.launch {
             try {
@@ -39,6 +46,7 @@ class ItemDownloadDelegate @Inject constructor(private val downloadRepository: D
         sourceId: String,
         hideQualityDialog: () -> Unit,
     ) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         val target = item ?: return
         scope.launch {
             try {
@@ -54,6 +62,7 @@ class ItemDownloadDelegate @Inject constructor(private val downloadRepository: D
     }
 
     fun pauseDownload(scope: CoroutineScope, info: DownloadInfo?) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         info?.let {
             scope.launch {
                 downloadRepository.pauseDownload(it.id).onFailure { error ->
@@ -64,6 +73,7 @@ class ItemDownloadDelegate @Inject constructor(private val downloadRepository: D
     }
 
     fun resumeDownload(scope: CoroutineScope, info: DownloadInfo?) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         info?.let {
             scope.launch {
                 downloadRepository.resumeDownload(it.id).onFailure { error ->
@@ -74,6 +84,7 @@ class ItemDownloadDelegate @Inject constructor(private val downloadRepository: D
     }
 
     fun cancelDownload(scope: CoroutineScope, info: DownloadInfo?) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         info?.let {
             scope.launch {
                 downloadRepository

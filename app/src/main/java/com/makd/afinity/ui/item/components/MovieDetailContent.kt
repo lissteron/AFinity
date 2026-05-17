@@ -39,6 +39,8 @@ import com.makd.afinity.data.models.media.AfinityChapter
 import com.makd.afinity.data.models.media.AfinityItem
 import com.makd.afinity.data.models.media.AfinityMovie
 import com.makd.afinity.data.models.media.getChapterImageUrl
+import com.makd.afinity.data.models.media.preferredPlaybackSource
+import com.makd.afinity.data.models.media.preferredPlaybackSourceId
 import com.makd.afinity.data.models.tmdb.TmdbReview
 import com.makd.afinity.navigation.Destination
 import com.makd.afinity.ui.components.AsyncImage
@@ -95,12 +97,12 @@ fun MovieDetailContent(
                     onPlayClick(
                         item,
                         PlaybackSelection(
-                            mediaSourceId = item.sources.firstOrNull()?.id ?: "",
+                            mediaSourceId = item.sources.preferredPlaybackSourceId() ?: "",
                             audioStreamIndex = null,
                             subtitleStreamIndex = null,
                             videoStreamIndex =
                                 item.sources
-                                    .firstOrNull()
+                                    .preferredPlaybackSource()
                                     ?.mediaStreams
                                     ?.firstOrNull {
                                         it.type == org.jellyfin.sdk.model.api.MediaStreamType.VIDEO

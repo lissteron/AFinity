@@ -35,6 +35,7 @@ import com.makd.afinity.data.network.TmdbApiService
 import com.makd.afinity.data.paging.EpisodesPagingSource
 import com.makd.afinity.data.repository.DatabaseRepository
 import com.makd.afinity.data.repository.FieldSets
+import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.data.repository.PreferencesRepository
 import com.makd.afinity.data.repository.SecurePreferencesRepository
 import com.makd.afinity.data.repository.auth.AuthRepository
@@ -58,6 +59,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -89,6 +91,7 @@ constructor(
     private val itemUserDataDelegate: ItemUserDataDelegate,
     private val preferencesRepository: PreferencesRepository,
     private val networkMonitor: NetworkConnectivityMonitor,
+    private val kidModeRepository: KidModeRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -115,11 +118,24 @@ constructor(
 
     private val _uiState = MutableStateFlow(ItemDetailUiState())
     val uiState: StateFlow<ItemDetailUiState> = _uiState.asStateFlow()
+    val capabilityPolicy = kidModeRepository.policy
+    val isOffline: StateFlow<Boolean> =
+        offlineModeManager.isOffline
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val completedDownloadItemIds: StateFlow<Set<UUID>> =
+        databaseRepository
+            .getDownloadsByStatusFlow(listOf(DownloadStatus.COMPLETED))
+            .map { downloads -> downloads.map { it.itemId }.toSet() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
     val canDownload: StateFlow<Boolean> =
-        preferencesRepository
-            .getDownloadWifiOnlyFlow()
-            .combine(networkMonitor.isOnWifiFlow) { wifiOnly, onWifi -> !wifiOnly || onWifi }
+        combine(
+                preferencesRepository.getDownloadWifiOnlyFlow(),
+                networkMonitor.isOnWifiFlow,
+                kidModeRepository.policy,
+            ) { wifiOnly, onWifi, policy ->
+                (!wifiOnly || onWifi) && policy.canManageDownloads
+            }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     private val _selectedMediaSource = MutableStateFlow<MediaSourceOption?>(null)
@@ -541,14 +557,14 @@ constructor(
         viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-                val isOffline = offlineModeManager.isCurrentlyOffline()
+                val isOffline = offlineModeManager.isOffline.first()
                 if (!isOffline) {
                     launchParallelFetches()
                 }
 
                 val item =
                     if (isOffline) {
-                        loadItemFromDatabase()
+                        loadItemFromDatabase()?.let { filterOfflineItemToCompletedDownloads(it) }
                     } else {
                         mediaRepository.getItem(itemId, fields = FieldSets.ITEM_DETAIL)?.let {
                             baseItemDto ->
@@ -820,6 +836,65 @@ constructor(
         }
     }
 
+    private suspend fun filterOfflineItemToCompletedDownloads(item: AfinityItem): AfinityItem? {
+        val downloadedItemIds =
+            databaseRepository
+                .getDownloadsByStatusFlow(listOf(DownloadStatus.COMPLETED))
+                .first()
+                .map { it.itemId }
+                .toSet()
+        return filterOfflineItemToCompletedDownloads(item, downloadedItemIds)
+    }
+
+    private fun filterOfflineItemToCompletedDownloads(
+        item: AfinityItem,
+        downloadedItemIds: Set<UUID>,
+    ): AfinityItem? {
+        return when (item) {
+            is AfinityMovie -> item.takeIf { it.id in downloadedItemIds }
+            is AfinityEpisode -> item.takeIf { it.id in downloadedItemIds }
+            is AfinitySeason -> filterOfflineSeasonToCompletedDownloads(item, downloadedItemIds)
+            is AfinityShow -> filterOfflineShowToCompletedDownloads(item, downloadedItemIds)
+            else -> null
+        }
+    }
+
+    private fun filterOfflineShowToCompletedDownloads(
+        show: AfinityShow,
+        downloadedItemIds: Set<UUID>,
+    ): AfinityShow? {
+        val seasons =
+            show.seasons.mapNotNull { season ->
+                filterOfflineSeasonToCompletedDownloads(season, downloadedItemIds)
+            }
+        if (seasons.isEmpty()) return null
+        val episodeCount = seasons.sumOf { it.episodes.size }
+        return show.copy(
+            seasons = seasons,
+            seasonCount = seasons.size,
+            episodeCount = episodeCount,
+            unplayedItemCount = seasons.sumOf { season ->
+                season.episodes.count { episode -> !episode.played }
+            },
+        )
+    }
+
+    private fun filterOfflineSeasonToCompletedDownloads(
+        season: AfinitySeason,
+        downloadedItemIds: Set<UUID>,
+    ): AfinitySeason? {
+        val episodes =
+            season.episodes
+                .filter { episode -> episode.id in downloadedItemIds }
+                .sortedBy { episode -> episode.indexNumber }
+        if (episodes.isEmpty()) return null
+        return season.copy(
+            episodes = episodes,
+            episodeCount = episodes.size,
+            unplayedItemCount = episodes.count { episode -> !episode.played },
+        )
+    }
+
     private suspend fun loadReviewsAndRatings(item: AfinityItem) {
         val userId = authRepository.currentUser.value?.id
         try {
@@ -1004,6 +1079,7 @@ constructor(
     }
 
     fun onDownloadClick() {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         val selectedEpisode = _selectedEpisode.value
         val currentItem = _uiState.value.item
         when {
@@ -1040,6 +1116,7 @@ constructor(
     }
 
     fun onQualitySelected(sourceId: String) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         itemDownloadDelegate.onQualitySelected(
             viewModelScope,
             _selectedEpisode.value ?: _uiState.value.item,
@@ -1050,18 +1127,27 @@ constructor(
     }
 
     fun pauseDownload() =
-        itemDownloadDelegate.pauseDownload(
-            viewModelScope,
-            _uiState.value.downloadInfo ?: _selectedEpisodeDownloadInfo.value,
-        )
+        if (kidModeRepository.policy.value.canManageDownloads) {
+            itemDownloadDelegate.pauseDownload(
+                viewModelScope,
+                _uiState.value.downloadInfo ?: _selectedEpisodeDownloadInfo.value,
+            )
+        } else {
+            Unit
+        }
 
     fun resumeDownload() =
-        itemDownloadDelegate.resumeDownload(
-            viewModelScope,
-            _uiState.value.downloadInfo ?: _selectedEpisodeDownloadInfo.value,
-        )
+        if (kidModeRepository.policy.value.canManageDownloads) {
+            itemDownloadDelegate.resumeDownload(
+                viewModelScope,
+                _uiState.value.downloadInfo ?: _selectedEpisodeDownloadInfo.value,
+            )
+        } else {
+            Unit
+        }
 
     fun cancelDownload() {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         val selectedEpisode = _selectedEpisode.value
         val currentItem = _uiState.value.item
         when {
@@ -1096,6 +1182,7 @@ constructor(
     }
 
     fun toggleFavorite() {
+        if (!kidModeRepository.policy.value.canModifyUserData) return
         val currentItem = _uiState.value.item ?: return
         val optimisticItem =
             when (currentItem) {
@@ -1115,6 +1202,7 @@ constructor(
     }
 
     fun toggleWatchlist() {
+        if (!kidModeRepository.policy.value.canModifyUserData) return
         val currentItem = _uiState.value.item ?: return
         val optimisticItem =
             when (currentItem) {
@@ -1134,12 +1222,14 @@ constructor(
     }
 
     fun toggleEpisodeFavorite(episode: AfinityEpisode) {
+        if (!kidModeRepository.policy.value.canModifyUserData) return
         itemUserDataDelegate.toggleEpisodeFavorite(viewModelScope, episode) {
             _selectedEpisode.value = episode.copy(favorite = !episode.favorite)
         }
     }
 
     fun toggleEpisodeWatchlist(episode: AfinityEpisode) {
+        if (!kidModeRepository.policy.value.canModifyUserData) return
         val isLiked = _selectedEpisodeWatchlistStatus.value
         itemUserDataDelegate.toggleWatchlist(
             scope = viewModelScope,
@@ -1156,6 +1246,7 @@ constructor(
     }
 
     fun toggleWatched() {
+        if (!kidModeRepository.policy.value.canModifyUserData) return
         viewModelScope.launch {
             try {
                 val currentItem = _uiState.value.item ?: return@launch
@@ -1275,6 +1366,7 @@ constructor(
     }
 
     fun toggleEpisodeWatched(episode: AfinityEpisode) {
+        if (!kidModeRepository.policy.value.canModifyUserData) return
         viewModelScope.launch {
             try {
                 val isNowPlayed = !episode.played

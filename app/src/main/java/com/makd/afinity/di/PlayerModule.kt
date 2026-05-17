@@ -1,6 +1,7 @@
 package com.makd.afinity.di
 
 import com.makd.afinity.data.manager.PlaybackStateManager
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.repository.media.MediaRepository
 import com.makd.afinity.data.repository.playback.PlaybackRepository
 import com.makd.afinity.data.sync.UserDataSyncScheduler
@@ -20,7 +21,13 @@ object PlayerModule {
         mediaRepository: MediaRepository,
         playbackRepository: PlaybackRepository,
         syncScheduler: UserDataSyncScheduler,
+        offlineModeManager: OfflineModeManager,
     ): PlaybackStateManager {
-        return PlaybackStateManager(mediaRepository, playbackRepository, syncScheduler)
+        return PlaybackStateManager(
+            mediaRepository,
+            playbackRepository,
+            syncScheduler,
+            offlineModeManager,
+        )
     }
 }

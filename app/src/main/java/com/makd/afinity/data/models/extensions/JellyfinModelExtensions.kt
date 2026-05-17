@@ -28,6 +28,7 @@ import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.BaseItemPerson
 import org.jellyfin.sdk.model.api.ImageType
 import org.jellyfin.sdk.model.api.LocationType
+import org.jellyfin.sdk.model.api.MediaStreamType
 import org.jellyfin.sdk.model.api.PlayAccess
 
 fun BaseItemDto.toAfinityExternalUrls(): List<AfinityExternalUrl>? {
@@ -49,13 +50,20 @@ fun BaseItemDto.toAfinityItem(baseUrl: String): AfinityItem? {
 
 private fun BaseItemDto.toAfinitySources(baseUrl: String): List<AfinitySource> =
     mediaSources?.map { mediaSource ->
+        val videoStream = mediaSource.mediaStreams?.firstOrNull { it.type == MediaStreamType.VIDEO }
+        val audioStream = mediaSource.mediaStreams?.firstOrNull { it.type == MediaStreamType.AUDIO }
         AfinitySource(
             id = mediaSource.id.orEmpty(),
             name = mediaSource.name.orEmpty(),
             type = AfinitySourceType.REMOTE,
             path = mediaSource.path.orEmpty(),
             size = mediaSource.size ?: 0L,
+            bitrate = mediaSource.bitrate?.toLong(),
             container = mediaSource.container,
+            videoCodec = videoStream?.codec,
+            audioCodec = audioStream?.codec,
+            width = videoStream?.width,
+            height = videoStream?.height,
             mediaStreams =
                 mediaSource.mediaStreams?.map { mediaStream ->
                     AfinityMediaStream(
@@ -199,13 +207,22 @@ fun BaseItemDto.toAfinityEpisode(baseUrl: String): AfinityEpisode? {
             parentIndexNumber = parentIndexNumber ?: 0,
             sources =
                 mediaSources?.map { mediaSource ->
+                    val videoStream =
+                        mediaSource.mediaStreams?.firstOrNull { it.type == MediaStreamType.VIDEO }
+                    val audioStream =
+                        mediaSource.mediaStreams?.firstOrNull { it.type == MediaStreamType.AUDIO }
                     AfinitySource(
                         id = mediaSource.id.orEmpty(),
                         name = mediaSource.name.orEmpty(),
                         type = AfinitySourceType.REMOTE,
                         path = mediaSource.path.orEmpty(),
                         size = mediaSource.size ?: 0L,
+                        bitrate = mediaSource.bitrate?.toLong(),
                         container = mediaSource.container,
+                        videoCodec = videoStream?.codec,
+                        audioCodec = audioStream?.codec,
+                        width = videoStream?.width,
+                        height = videoStream?.height,
                         mediaStreams =
                             mediaSource.mediaStreams?.map { mediaStream ->
                                 AfinityMediaStream(

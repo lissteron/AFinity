@@ -19,6 +19,7 @@ import com.makd.afinity.data.repository.AudiobookshelfRepository
 import com.makd.afinity.data.repository.DatabaseRepository
 import com.makd.afinity.data.repository.JellyfinRepository
 import com.makd.afinity.data.repository.JellyseerrRepository
+import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.data.repository.SecurePreferencesRepository
 import com.makd.afinity.data.repository.server.ServerRepository
 import com.makd.afinity.util.isLocalAddress
@@ -138,6 +139,7 @@ constructor(
     private val jellyseerrRepositoryProvider: Provider<JellyseerrRepository>,
     private val audiobookshelfRepositoryProvider: Provider<AudiobookshelfRepository>,
     private val jellyfinRepositoryProvider: Provider<JellyfinRepository>,
+    private val kidModeRepository: KidModeRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ServerManagementState())
@@ -175,6 +177,7 @@ constructor(
     }
 
     fun showDeleteConfirmation(serverWithUserCount: ServerWithUserCount) {
+        if (!kidModeRepository.policy.value.canManageServers) return
         _state.value = _state.value.copy(serverToDelete = serverWithUserCount)
     }
 
@@ -183,6 +186,7 @@ constructor(
     }
 
     fun deleteServer(serverId: String) {
+        if (!kidModeRepository.policy.value.canManageServers) return
         viewModelScope.launch {
             try {
                 _state.value =
@@ -215,6 +219,7 @@ constructor(
     }
 
     fun deleteAddress(addressId: UUID) {
+        if (!kidModeRepository.policy.value.canManageServers) return
         viewModelScope.launch {
             try {
                 databaseRepository.deleteServerAddress(addressId)
@@ -228,6 +233,7 @@ constructor(
     }
 
     fun setPrimaryAddress(serverId: String, newPrimaryAddress: String) {
+        if (!kidModeRepository.policy.value.canManageServers) return
         viewModelScope.launch {
             try {
                 val server = databaseRepository.getServer(serverId) ?: return@launch
@@ -438,6 +444,7 @@ constructor(
     }
 
     fun deleteJellyseerrAddress(addressId: UUID) {
+        if (!kidModeRepository.policy.value.canManageServers) return
         viewModelScope.launch {
             try {
                 jellyseerrDao.deleteAddress(addressId)
@@ -451,6 +458,7 @@ constructor(
     }
 
     fun deleteAudiobookshelfAddress(addressId: UUID) {
+        if (!kidModeRepository.policy.value.canManageServers) return
         viewModelScope.launch {
             try {
                 audiobookshelfDao.deleteAddress(addressId)
@@ -464,6 +472,7 @@ constructor(
     }
 
     fun addJellyseerrAddress(serverId: String, address: String) {
+        if (!kidModeRepository.policy.value.canManageServers) return
         viewModelScope.launch {
             try {
                 val currentSession = sessionManager.currentSession.value ?: return@launch
@@ -493,6 +502,7 @@ constructor(
     }
 
     fun addAudiobookshelfAddress(serverId: String, address: String) {
+        if (!kidModeRepository.policy.value.canManageServers) return
         viewModelScope.launch {
             try {
                 val currentSession = sessionManager.currentSession.value ?: return@launch

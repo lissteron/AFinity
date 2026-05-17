@@ -1,15 +1,19 @@
 package com.makd.afinity.ui.downloads
 
-import android.os.Environment
 import android.os.StatFs
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.makd.afinity.data.models.audiobookshelf.AbsDownloadInfo
 import com.makd.afinity.data.models.download.DownloadInfo
+import com.makd.afinity.data.models.download.DownloadQualityMode
+import com.makd.afinity.data.models.download.DownloadStorageLocation
 import com.makd.afinity.data.models.download.DownloadStatus
+import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.data.repository.PreferencesRepository
 import com.makd.afinity.data.repository.audiobookshelf.AbsDownloadRepository
 import com.makd.afinity.data.repository.download.DownloadRepository
+import com.makd.afinity.data.storage.DownloadStorageManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,10 +33,13 @@ constructor(
     private val downloadRepository: DownloadRepository,
     private val absDownloadRepository: AbsDownloadRepository,
     private val preferencesRepository: PreferencesRepository,
+    private val downloadStorageManager: DownloadStorageManager,
+    private val kidModeRepository: KidModeRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DownloadsUiState())
     val uiState: StateFlow<DownloadsUiState> = _uiState.asStateFlow()
+    val capabilityPolicy = kidModeRepository.policy
 
     init {
         observeDownloads()
@@ -46,19 +53,40 @@ constructor(
                 val wifiOnly = preferencesRepository.getDownloadOverWifiOnly()
                 val isImageCacheEnabled = preferencesRepository.getImageCacheEnabled()
                 val imageCacheSizeMb = preferencesRepository.getImageCacheSizeMb()
+                val downloadQualityMode =
+                    DownloadQualityMode.fromPreference(preferencesRepository.getDownloadQuality())
+                val storageLocations = downloadStorageManager.getAvailableLocations()
 
-                _uiState.value = _uiState.value.copy(
-                    downloadOverWifiOnly = wifiOnly,
-                    isImageCacheEnabled = isImageCacheEnabled,
-                    imageCacheSizeMb = imageCacheSizeMb
-                )
+                _uiState.value =
+                    _uiState.value.copy(
+                        downloadOverWifiOnly = wifiOnly,
+                        downloadQualityMode = downloadQualityMode,
+                        isImageCacheEnabled = isImageCacheEnabled,
+                        imageCacheSizeMb = imageCacheSizeMb,
+                        storageLocations = storageLocations,
+                    )
             } catch (e: Exception) {
                 Timber.e(e, "Failed to load download preferences")
             }
         }
     }
 
+    fun setDownloadQualityMode(mode: DownloadQualityMode) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
+        viewModelScope.launch {
+            try {
+                preferencesRepository.setDownloadQuality(mode.preferenceValue)
+                _uiState.value = _uiState.value.copy(downloadQualityMode = mode)
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to update download quality preference")
+                _uiState.value =
+                    _uiState.value.copy(error = "Failed to update download quality: ${e.message}")
+            }
+        }
+    }
+
     fun setDownloadOverWifiOnly(wifiOnly: Boolean) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         viewModelScope.launch {
             try {
                 preferencesRepository.setDownloadOverWifiOnly(wifiOnly)
@@ -70,6 +98,7 @@ constructor(
     }
 
     fun setImageCacheEnabled(enabled: Boolean) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         viewModelScope.launch {
             try {
                 preferencesRepository.setImageCacheEnabled(enabled)
@@ -81,12 +110,65 @@ constructor(
     }
 
     fun setImageCacheSizeMb(sizeMb: Int) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         viewModelScope.launch {
             try {
                 preferencesRepository.setImageCacheSizeMb(sizeMb)
                 _uiState.value = _uiState.value.copy(imageCacheSizeMb = sizeMb)
             } catch (e: Exception) {
                 Timber.e(e, "Failed to update image cache size preference")
+            }
+        }
+    }
+
+    fun setDownloadStorageLocation(locationId: String) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
+        viewModelScope.launch {
+            try {
+                if (uiState.value.activeDownloads.isNotEmpty()) {
+                    _uiState.value =
+                        _uiState.value.copy(
+                            error =
+                                "Finish, pause-delete, or cancel active Jellyfin downloads before changing storage location"
+                        )
+                    return@launch
+                }
+
+                downloadStorageManager.setSelectedLocation(locationId)
+                val storageLocations = downloadStorageManager.getAvailableLocations()
+                _uiState.value = _uiState.value.copy(storageLocations = storageLocations)
+                loadStorageInfo()
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to update download storage location")
+                _uiState.value =
+                    _uiState.value.copy(
+                        error = "Failed to update download storage location: ${e.message}"
+                    )
+            }
+        }
+    }
+
+    fun setCustomDownloadStorageLocation(uri: Uri) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
+        viewModelScope.launch {
+            try {
+                if (uiState.value.activeDownloads.isNotEmpty()) {
+                    _uiState.value =
+                        _uiState.value.copy(
+                            error =
+                                "Finish, pause-delete, or cancel active Jellyfin downloads before changing storage location"
+                        )
+                    return@launch
+                }
+
+                downloadStorageManager.setCustomTreeLocation(uri)
+                val storageLocations = downloadStorageManager.getAvailableLocations()
+                _uiState.value = _uiState.value.copy(storageLocations = storageLocations)
+                loadStorageInfo()
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to set custom download folder")
+                _uiState.value =
+                    _uiState.value.copy(error = "Failed to set custom folder: ${e.message}")
             }
         }
     }
@@ -152,11 +234,13 @@ constructor(
                 val appStorageUsed = downloadRepository.getTotalStorageUsed()
                 val allServersStorageUsed = downloadRepository.getTotalStorageUsedAllServers()
                 val deviceStats = getDeviceStorageStats()
+                val storageLocations = downloadStorageManager.getAvailableLocations()
                 _uiState.value =
                     _uiState.value.copy(
                         totalStorageUsed = appStorageUsed,
                         totalStorageUsedAllServers = allServersStorageUsed,
                         deviceStorageStats = deviceStats,
+                        storageLocations = storageLocations,
                     )
             } catch (e: Exception) {
                 Timber.e(e, "Failed to load storage info")
@@ -165,6 +249,7 @@ constructor(
     }
 
     fun pauseDownload(downloadId: UUID) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         viewModelScope.launch {
             try {
                 val result = downloadRepository.pauseDownload(downloadId)
@@ -180,6 +265,7 @@ constructor(
     }
 
     fun resumeDownload(downloadId: UUID) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         viewModelScope.launch {
             try {
                 val result = downloadRepository.resumeDownload(downloadId)
@@ -195,6 +281,7 @@ constructor(
     }
 
     fun cancelDownload(downloadId: UUID) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         viewModelScope.launch {
             try {
                 val result = downloadRepository.cancelDownload(downloadId)
@@ -217,6 +304,7 @@ constructor(
     }
 
     fun deleteDownload(downloadId: UUID) {
+        if (!kidModeRepository.policy.value.canDeleteDownloads) return
         viewModelScope.launch {
             try {
                 val result = downloadRepository.deleteDownload(downloadId)
@@ -239,6 +327,7 @@ constructor(
     }
 
     fun cancelAbsDownload(downloadId: UUID) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         viewModelScope.launch {
             try {
                 absDownloadRepository.cancelDownload(downloadId)
@@ -250,6 +339,7 @@ constructor(
     }
 
     fun deleteAbsDownload(downloadId: UUID) {
+        if (!kidModeRepository.policy.value.canDeleteDownloads) return
         viewModelScope.launch {
             try {
                 absDownloadRepository.deleteDownload(downloadId)
@@ -262,6 +352,7 @@ constructor(
     }
 
     fun deleteAbsPodcast(libraryItemId: String) {
+        if (!kidModeRepository.policy.value.canDeleteDownloads) return
         viewModelScope.launch {
             uiState.value.absCompletedDownloads
                 .filter { it.libraryItemId == libraryItemId }
@@ -314,8 +405,8 @@ constructor(
         val usagePercentage: Float,
     )
 
-    fun getDeviceStorageStats(): DeviceStorageStats {
-        val path: File = Environment.getDataDirectory()
+    private suspend fun getDeviceStorageStats(): DeviceStorageStats {
+        val path: File = downloadStorageManager.getSelectedDownloadsRoot()
         val stat = StatFs(path.path)
 
         val totalBytes = stat.totalBytes
@@ -339,8 +430,10 @@ data class DownloadsUiState(
     val totalStorageUsed: Long = 0L,
     val totalStorageUsedAllServers: Long = 0L,
     val downloadOverWifiOnly: Boolean = true,
+    val downloadQualityMode: DownloadQualityMode = DownloadQualityMode.HEVC_QUALITY,
     val isImageCacheEnabled: Boolean = true,
     val imageCacheSizeMb: Int = 512,
+    val storageLocations: List<DownloadStorageLocation> = emptyList(),
     val deviceStorageStats: DownloadsViewModel.DeviceStorageStats? = null,
     val error: String? = null,
 )

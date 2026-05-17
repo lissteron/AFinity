@@ -13,6 +13,7 @@ import com.makd.afinity.data.models.audiobookshelf.MediaProgress
 import com.makd.afinity.data.models.audiobookshelf.PodcastEpisode
 import com.makd.afinity.data.models.audiobookshelf.SeriesItem
 import com.makd.afinity.data.repository.AudiobookshelfRepository
+import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.data.repository.audiobookshelf.AbsDownloadRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,6 +37,7 @@ constructor(
     private val offlineModeManager: OfflineModeManager,
     private val preferencesRepository: PreferencesRepository,
     private val networkMonitor: NetworkConnectivityMonitor,
+    private val kidModeRepository: KidModeRepository,
 ) : ViewModel() {
 
     val itemId: String = savedStateHandle.get<String>("itemId") ?: ""
@@ -62,9 +64,14 @@ constructor(
         offlineModeManager.isOffline
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val capabilityPolicy = kidModeRepository.policy
+
     val canDownload: StateFlow<Boolean> =
         preferencesRepository.getDownloadWifiOnlyFlow()
             .combine(networkMonitor.isOnWifiFlow) { wifiOnly, onWifi -> !wifiOnly || onWifi }
+            .combine(kidModeRepository.policy) { networkAllowed, policy ->
+                networkAllowed && policy.canManageDownloads
+            }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     val downloadInfo: StateFlow<AbsDownloadInfo?> =
@@ -84,6 +91,7 @@ constructor(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     fun startDownload(episodeId: String? = null) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         viewModelScope.launch {
             absDownloadRepository.startDownload(itemId, episodeId)
                 .onFailure { Timber.e(it, "Failed to start download") }
@@ -91,6 +99,7 @@ constructor(
     }
 
     fun cancelDownload(episodeId: String? = null) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         viewModelScope.launch {
             val info = if (episodeId == null) downloadInfo.value
             else episodeDownloadMap.value[episodeId]
@@ -102,6 +111,7 @@ constructor(
     }
 
     fun deleteDownload(episodeId: String? = null) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
         viewModelScope.launch {
             val info = if (episodeId == null) downloadInfo.value
             else episodeDownloadMap.value[episodeId]

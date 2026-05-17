@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.unit.dp
 import com.makd.afinity.data.models.media.AfinityItem
+import com.makd.afinity.data.models.media.preferredPlaybackSource
 
 data class PlaybackSelection(
     val mediaSourceId: String,
@@ -53,10 +54,7 @@ fun PlaybackSelectionButton(
                     0L
                 }
 
-            val selectedSource =
-                item.sources.firstOrNull {
-                    it.type == com.makd.afinity.data.models.media.AfinitySourceType.LOCAL
-                } ?: item.sources.firstOrNull()
+            val selectedSource = item.sources.preferredPlaybackSource()
 
             onPlayClick(
                 PlaybackSelection(

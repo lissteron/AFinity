@@ -474,6 +474,20 @@
     <string name="pref_download_wifi_only_title">Wi-Fi only</string>
     <string name="pref_download_wifi_only_subtitle">Only download over Wi-Fi</string>
     <string name="pref_download_mobile_data_warning">Downloading over mobile data may incur additional data charges from your carrier</string>
+    <string name="download_location_title">Download location</string>
+    <string name="download_location_summary">New Jellyfin video downloads will use this location</string>
+    <string name="download_location_active_warning">Finish or cancel active Jellyfin downloads before changing location</string>
+    <string name="download_location_free_fmt">%1$s free</string>
+    <string name="download_location_choose_folder">Choose folder</string>
+    <string name="download_location_custom_permission">System folder permission granted</string>
+    <string name="download_quality_mode_title">Video download mode</string>
+    <string name="download_quality_mode_summary">Controls how new Jellyfin video downloads are saved</string>
+    <string name="download_quality_original_title">Original file</string>
+    <string name="download_quality_original_summary">Download the server file as-is with resumable progress</string>
+    <string name="download_quality_hevc_quality_title">HEVC best quality</string>
+    <string name="download_quality_hevc_quality_summary">Copy suitable HEVC, protect HDR/DV, otherwise transcode to tablet-sized HEVC with CRF 21 slow</string>
+    <string name="download_quality_hevc_storage_saver_title">HEVC storage saver</string>
+    <string name="download_quality_hevc_storage_saver_summary">Protect HDR/DV, otherwise transcode to tablet-sized HEVC with CRF 24 slow</string>
 
     <string name="cd_storage_stats">Storage statistics</string>
     <string name="cd_pause_download">Pause download</string>

@@ -1,5 +1,6 @@
 package com.makd.afinity.data.repository.playback
 
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
 import com.makd.afinity.data.models.user.AfinityUserDataDto
 import com.makd.afinity.data.repository.DatabaseRepository
@@ -31,6 +32,7 @@ constructor(
     private val sessionManager: SessionManager,
     private val databaseRepository: DatabaseRepository,
     private val preferencesRepository: PreferencesRepository,
+    private val offlineModeManager: OfflineModeManager,
 ) : PlaybackRepository {
 
     private suspend fun getCurrentUserId(): UUID? {
@@ -66,6 +68,11 @@ constructor(
     ): PlaybackInfoResponse? {
         return withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    Timber.d("Skipping playback info request in offline mode for item: $itemId")
+                    return@withContext null
+                }
+
                 val userId = getCurrentUserId() ?: return@withContext null
                 val apiClient = sessionManager.getCurrentApiClient() ?: return@withContext null
                 val mediaInfoApi = MediaInfoApi(apiClient)
@@ -202,6 +209,11 @@ constructor(
     ): Boolean {
         return withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    Timber.d("Skipping playback start report in offline mode for item: $itemId")
+                    return@withContext false
+                }
+
                 val apiClient = sessionManager.getCurrentApiClient() ?: return@withContext false
                 val playStateApi = PlayStateApi(apiClient)
 
@@ -239,6 +251,17 @@ constructor(
     ): Boolean {
         return withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    Timber.d("Saving playback progress locally in offline mode for item: $itemId")
+                    savePlaybackProgressLocally(
+                        itemId,
+                        positionTicks,
+                        audioStreamIndex,
+                        subtitleStreamIndex,
+                    )
+                    return@withContext false
+                }
+
                 val apiClient = sessionManager.getCurrentApiClient() ?: return@withContext false
                 val playStateApi = PlayStateApi(apiClient)
                 playStateApi.onPlaybackProgress(
@@ -289,6 +312,12 @@ constructor(
     ): Boolean {
         return withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    Timber.d("Saving playback stop locally in offline mode for item: $itemId")
+                    savePlaybackProgressLocally(itemId, positionTicks)
+                    return@withContext false
+                }
+
                 val apiClient = sessionManager.getCurrentApiClient() ?: return@withContext false
                 val playStateApi = PlayStateApi(apiClient)
 

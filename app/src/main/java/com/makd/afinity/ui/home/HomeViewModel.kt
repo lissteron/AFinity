@@ -33,6 +33,7 @@ import com.makd.afinity.data.models.media.toAfinityEpisode
 import com.makd.afinity.data.repository.AppDataRepository
 import com.makd.afinity.data.repository.DatabaseRepository
 import com.makd.afinity.data.repository.FieldSets
+import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.data.repository.PreferencesRepository
 import com.makd.afinity.data.repository.audiobookshelf.AbsDownloadRepository
 import com.makd.afinity.data.repository.auth.AuthRepository
@@ -91,6 +92,7 @@ constructor(
     private val itemUserDataDelegate: ItemUserDataDelegate,
     private val preferencesRepository: PreferencesRepository,
     private val networkMonitor: NetworkConnectivityMonitor,
+    private val kidModeRepository: KidModeRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -101,6 +103,7 @@ constructor(
             .combine(networkMonitor.isOnWifiFlow) { wifiOnly, onWifi -> !wifiOnly || onWifi }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+    val capabilityPolicy = kidModeRepository.policy
 
     private val loadedRecommendationSections = mutableListOf<HomeSection>()
     private val loadedSpotlightSections = mutableListOf<HomeSection.Spotlight>()
@@ -140,11 +143,17 @@ constructor(
                     )
                     launch {
                         coroutineScope {
-                            launch { loadStudios() }
-                            launch { loadCombinedGenres() }
+                            if (kidModeRepository.policy.value.canUseDiscoveryUi) {
+                                launch { loadStudios() }
+                                launch { loadCombinedGenres() }
+                            }
                             launch { loadUpcomingEpisodes() }
                         }
-                        loadNewHomescreenSections()
+                        if (kidModeRepository.policy.value.canUseDiscoveryUi) {
+                            loadNewHomescreenSections()
+                        } else {
+                            clearDiscoverySections()
+                        }
                         loadDownloadedContent()
                     }
                 }
@@ -224,13 +233,20 @@ constructor(
 
         viewModelScope.launch {
             appDataRepository.highestRated.collect { highestRated ->
-                _uiState.update { it.copy(highestRated = highestRated) }
+                val items =
+                    if (kidModeRepository.policy.value.canUseDiscoveryUi) highestRated
+                    else emptyList()
+                _uiState.update { it.copy(highestRated = items) }
             }
         }
 
         viewModelScope.launch {
             appDataRepository.combinedGenres.collect { combinedGenres ->
-                updateCombinedSections(genres = combinedGenres)
+                if (kidModeRepository.policy.value.canUseDiscoveryUi) {
+                    updateCombinedSections(genres = combinedGenres)
+                } else {
+                    clearDiscoverySections()
+                }
             }
         }
 
@@ -254,7 +270,18 @@ constructor(
 
         viewModelScope.launch {
             appDataRepository.studios.collect { studios ->
-                _uiState.update { it.copy(studios = studios) }
+                val items = if (kidModeRepository.policy.value.canUseDiscoveryUi) studios else emptyList()
+                _uiState.update { it.copy(studios = items) }
+            }
+        }
+
+        viewModelScope.launch {
+            kidModeRepository.policy.collect { policy ->
+                if (!policy.canUseDiscoveryUi) {
+                    clearDiscoverySections()
+                } else if (!offlineModeManager.isOffline.first()) {
+                    loadNewHomescreenSections()
+                }
             }
         }
 
@@ -307,6 +334,11 @@ constructor(
     }
 
     private fun updateCombinedSections(genres: List<GenreItem>) {
+        if (!kidModeRepository.policy.value.canUseDiscoveryUi) {
+            clearDiscoverySections()
+            return
+        }
+
         if (cachedShuffledGenres.isEmpty() && genres.isNotEmpty()) {
             cachedShuffledGenres = genres.map { HomeSection.Genre(it) }.shuffled()
         } else if (genres.isNotEmpty() && cachedShuffledGenres.size != genres.size) {
@@ -356,6 +388,12 @@ constructor(
         recommendationLoadingJob =
             viewModelScope.launch(Dispatchers.IO) {
                 try {
+                    if (!kidModeRepository.policy.value.canUseDiscoveryUi) {
+                        Timber.d("Skipping discovery sections in kid mode")
+                        clearDiscoverySections()
+                        return@launch
+                    }
+
                     if (offlineModeManager.isOffline.first()) {
                         Timber.d("Skipping new sections in offline mode")
                         return@launch
@@ -401,6 +439,23 @@ constructor(
                     Timber.e(e, "Failed to load recommendation sections")
                 }
             }
+    }
+
+    private fun clearDiscoverySections() {
+        recommendationLoadingJob?.cancel()
+        loadedRecommendationSections.clear()
+        loadedSpotlightSections.clear()
+        cachedShuffledGenres = emptyList()
+        renderedPeopleNames.clear()
+        renderedItemIds.clear()
+        renderedWatchedMovies.clear()
+        renderedStarringWatchedMovies.clear()
+        renderedActorNames.clear()
+        _uiState.update {
+            it.copy(
+                combinedSections = emptyList(),
+            )
+        }
     }
 
     private suspend fun loadAllActorSections() {
@@ -1192,6 +1247,11 @@ constructor(
 
     fun refresh() {
         viewModelScope.launch {
+            if (offlineModeManager.isOffline.first()) {
+                loadDownloadedContent()
+                return@launch
+            }
+
             appDataRepository.reloadHomeData()
 
             coroutineScope {
@@ -1204,7 +1264,12 @@ constructor(
         }
     }
 
-    private fun scheduleHomeDataReload() {
+    private suspend fun scheduleHomeDataReload() {
+        if (offlineModeManager.isCurrentlyOffline()) {
+            Timber.d("Skipping home data reload schedule in offline mode")
+            return
+        }
+
         val request =
             OneTimeWorkRequestBuilder<HomeDataReloadWorker>()
                 .setConstraints(

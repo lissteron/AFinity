@@ -8,6 +8,7 @@ import com.makd.afinity.R
 import com.makd.afinity.data.models.server.Server
 import com.makd.afinity.data.models.server.ServerAddress
 import com.makd.afinity.data.repository.DatabaseRepository
+import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.data.repository.server.JellyfinServerRepository
 import com.makd.afinity.data.repository.server.ServerRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -48,6 +49,7 @@ constructor(
     @param:ApplicationContext private val context: Context,
     private val serverRepository: ServerRepository,
     private val databaseRepository: DatabaseRepository,
+    private val kidModeRepository: KidModeRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -155,6 +157,7 @@ constructor(
     }
 
     fun saveServer() {
+        if (!kidModeRepository.policy.value.canManageServers) return
         val currentState = _state.value
         val url = currentState.serverUrl.trim()
         val name = currentState.serverName.trim()

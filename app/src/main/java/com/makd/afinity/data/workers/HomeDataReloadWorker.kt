@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.repository.AppDataRepository
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -15,10 +16,16 @@ class HomeDataReloadWorker
 constructor(
     @Assisted appContext: Context,
     @Assisted workerParams: WorkerParameters,
+    private val offlineModeManager: OfflineModeManager,
     private val appDataRepository: AppDataRepository,
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
+        if (offlineModeManager.isCurrentlyOffline()) {
+            Timber.d("HomeDataReloadWorker: skipping reload in offline mode")
+            return Result.success()
+        }
+
         Timber.d("HomeDataReloadWorker: starting home data reload (attempt ${runAttemptCount + 1})")
 
         return try {

@@ -23,16 +23,23 @@ import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffo
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -57,6 +64,7 @@ import com.makd.afinity.ui.audiobookshelf.libraries.AudiobookshelfLibrariesScree
 import com.makd.afinity.ui.audiobookshelf.player.AudiobookshelfPlayerScreen
 import com.makd.afinity.ui.audiobookshelf.player.components.MiniPlayer
 import com.makd.afinity.ui.components.AfinitySplashScreen
+import com.makd.afinity.ui.components.PinDialog
 import com.makd.afinity.ui.favorites.FavoritesScreen
 import com.makd.afinity.ui.home.HomeScreen
 import com.makd.afinity.ui.item.ItemDetailScreen
@@ -110,13 +118,50 @@ fun MainNavigation(
         audiobookshelfRepository.isAuthenticated.collectAsStateWithLifecycle()
     val hasLiveTvAccess by viewModel.hasLiveTvAccess.collectAsStateWithLifecycle()
     val appLoadingState by viewModel.appLoadingState.collectAsStateWithLifecycle()
+    val capabilityPolicy by viewModel.capabilityPolicy.collectAsStateWithLifecycle()
     val isOffline by offlineModeManager.isOffline.collectAsStateWithLifecycle(initialValue = false)
     val audiobookshelfPlaybackState by
         viewModel.audiobookshelfPlaybackManager.playbackState.collectAsStateWithLifecycle()
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
+    val lifecycleOwner = LocalLifecycleOwner.current
     val coroutineScope = rememberCoroutineScope()
+    var showParentPinDialog by remember { mutableStateOf(false) }
+    var parentPinError by remember { mutableStateOf<String?>(null) }
+    var pendingParentProtectedNavigation by remember { mutableStateOf(false) }
+
+    fun navigateToSettings() {
+        if (capabilityPolicy.canOpenSettings) {
+            navController.navigate(Destination.createSettingsRoute())
+        } else {
+            parentPinError = null
+            showParentPinDialog = true
+        }
+    }
+
+    fun isParentProtectedRoute(route: String?): Boolean {
+        if (route == null) return false
+        return route == Destination.SETTINGS_ROUTE ||
+            route == Destination.DOWNLOAD_SETTINGS_ROUTE ||
+            route == Destination.PLAYER_OPTIONS_ROUTE ||
+            route == Destination.APPEARANCE_OPTIONS_ROUTE ||
+            route == Destination.SERVER_MANAGEMENT_ROUTE ||
+            route.startsWith("add_edit_server") ||
+            route == Destination.SEARCH_ROUTE ||
+            route == Destination.REQUESTS.route
+    }
+
+    fun isOfflineAllowedRoute(route: String?): Boolean {
+        if (route == null) return true
+        return route == Destination.HOME.route ||
+            route == Destination.SETTINGS_ROUTE ||
+            route == Destination.DOWNLOAD_SETTINGS_ROUTE ||
+            route.startsWith("item_detail/") ||
+            route.startsWith("player/") ||
+            route.startsWith("audiobookshelf/item/") ||
+            route.startsWith("audiobookshelf/player/")
+    }
 
     val shouldShowNavigation =
         currentDestination?.route?.let { route ->
@@ -149,8 +194,8 @@ fun MainNavigation(
     LaunchedEffect(isOffline, currentDestination) {
         if (isOffline && currentDestination != null) {
             val currentRoute = currentDestination?.route
-            if (currentRoute != Destination.HOME.route) {
-                Timber.d("Switching to offline mode, navigating to HOME")
+            if (!isOfflineAllowedRoute(currentRoute)) {
+                Timber.d("Offline mode blocked route $currentRoute, navigating to HOME")
                 navController.navigate(Destination.HOME.route) {
                     popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                     launchSingleTop = true
@@ -158,6 +203,72 @@ fun MainNavigation(
                 }
             }
         }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_STOP) {
+                    viewModel.lockParent()
+                    pendingParentProtectedNavigation = false
+                }
+            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(capabilityPolicy, currentDestination) {
+        val currentRoute = currentDestination?.route ?: return@LaunchedEffect
+        val isSettingsRoute = isParentProtectedRoute(currentRoute) && currentRoute != Destination.SEARCH_ROUTE && currentRoute != Destination.REQUESTS.route
+        val shouldBlockRoute =
+            (isSettingsRoute && !capabilityPolicy.canOpenSettings) ||
+                (currentRoute == Destination.REQUESTS.route && !capabilityPolicy.canManageRequests) ||
+                (currentRoute == Destination.SEARCH_ROUTE &&
+                    (isOffline || !capabilityPolicy.canUseSearch))
+
+        if (shouldBlockRoute) {
+            Timber.d("Blocked protected route: $currentRoute")
+            navController.navigate(Destination.HOME.route) {
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+
+        if (isParentProtectedRoute(currentRoute)) {
+            pendingParentProtectedNavigation = false
+        } else if (
+            capabilityPolicy.isKidModeEnabled &&
+                capabilityPolicy.isParentUnlocked &&
+                !pendingParentProtectedNavigation
+        ) {
+            viewModel.lockParent()
+        }
+    }
+
+    if (showParentPinDialog) {
+        PinDialog(
+            title = "Parent PIN",
+            message = "Enter the PIN to open settings.",
+            confirmText = "Unlock",
+            errorText = parentPinError,
+            onConfirm = { pin ->
+                coroutineScope.launch {
+                    if (viewModel.verifyParentPin(pin)) {
+                        parentPinError = null
+                        showParentPinDialog = false
+                        pendingParentProtectedNavigation = true
+                        navController.navigate(Destination.createSettingsRoute())
+                    } else {
+                        parentPinError = "Incorrect PIN"
+                    }
+                }
+            },
+            onDismiss = {
+                parentPinError = null
+                showParentPinDialog = false
+            },
+        )
     }
 
     AnimatedContent(
@@ -192,6 +303,10 @@ fun MainNavigation(
                         }
 
                         if (destination == Destination.WATCHLIST && watchlistCount == 0) {
+                            return@forEach
+                        }
+
+                        if (destination == Destination.REQUESTS && !capabilityPolicy.canManageRequests) {
                             return@forEach
                         }
 
@@ -327,8 +442,7 @@ fun MainNavigation(
                                             }
                                         },
                                         onProfileClick = {
-                                            val route = Destination.createSettingsRoute()
-                                            navController.navigate(route)
+                                            navigateToSettings()
                                         },
                                         onAbsItemClick = { itemId ->
                                             navController.navigate(
@@ -353,8 +467,7 @@ fun MainNavigation(
                                             navController.navigate(route)
                                         },
                                         onProfileClick = {
-                                            val route = Destination.createSettingsRoute()
-                                            navController.navigate(route)
+                                            navigateToSettings()
                                         },
                                         navController = navController,
                                         mainUiState = mainUiState,
@@ -390,8 +503,7 @@ fun MainNavigation(
                                             navController.navigate(route)
                                         },
                                         onProfileClick = {
-                                            val route = Destination.createSettingsRoute()
-                                            navController.navigate(route)
+                                            navigateToSettings()
                                         },
                                         navController = navController,
                                         modifier = Modifier.fillMaxSize(),
@@ -425,8 +537,7 @@ fun MainNavigation(
                                             navController.navigate(route)
                                         },
                                         onProfileClick = {
-                                            val route = Destination.createSettingsRoute()
-                                            navController.navigate(route)
+                                            navigateToSettings()
                                         },
                                         navController = navController,
                                         modifier = Modifier.fillMaxSize(),
@@ -575,8 +686,7 @@ fun MainNavigation(
                                             navController.navigate(Destination.SEARCH_ROUTE)
                                         },
                                         onProfileClick = {
-                                            val route = Destination.createSettingsRoute()
-                                            navController.navigate(route)
+                                            navigateToSettings()
                                         },
                                         mainUiState = mainUiState,
                                         onNavigateToFilteredMedia = { filterParams ->
@@ -639,8 +749,7 @@ fun MainNavigation(
                                             navController.navigate(Destination.SEARCH_ROUTE)
                                         },
                                         onProfileClick = {
-                                            val route = Destination.createSettingsRoute()
-                                            navController.navigate(route)
+                                            navigateToSettings()
                                         },
                                         mainUiState = mainUiState,
                                         onItemClick = { jellyfinItemId, itemType ->

@@ -1,6 +1,5 @@
 package com.makd.afinity.data.repository.download
 
-import android.content.Context
 import androidx.work.Constraints
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
@@ -9,8 +8,10 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.makd.afinity.data.database.entities.DownloadDto
 import com.makd.afinity.data.database.entities.toDownloadInfo
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
 import com.makd.afinity.data.models.download.DownloadInfo
+import com.makd.afinity.data.models.download.DownloadQualityMode
 import com.makd.afinity.data.models.download.DownloadStatus
 import com.makd.afinity.data.models.extensions.toAfinityEpisode
 import com.makd.afinity.data.models.extensions.toAfinityMovie
@@ -20,11 +21,11 @@ import com.makd.afinity.data.models.media.AfinitySourceType
 import com.makd.afinity.data.repository.DatabaseRepository
 import com.makd.afinity.data.repository.PreferencesRepository
 import com.makd.afinity.data.repository.media.MediaRepository
+import com.makd.afinity.data.storage.DownloadStorageManager
 import com.makd.afinity.data.workers.ImageDownloadWorker
 import com.makd.afinity.data.workers.MediaDownloadWorker
 import com.makd.afinity.data.workers.SubtitleDownloadWorker
 import com.makd.afinity.data.workers.TrickplayDownloadWorker
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -45,12 +46,13 @@ import javax.inject.Singleton
 class JellyfinDownloadRepository
 @Inject
 constructor(
-    @param:ApplicationContext private val context: Context,
     private val sessionManager: SessionManager,
     private val mediaRepository: MediaRepository,
     private val databaseRepository: DatabaseRepository,
     private val preferencesRepository: PreferencesRepository,
     private val workManager: WorkManager,
+    private val downloadStorageManager: DownloadStorageManager,
+    private val offlineModeManager: OfflineModeManager,
 ) : DownloadRepository {
 
     companion object {
@@ -59,18 +61,17 @@ constructor(
         const val KEY_SOURCE_ID = "source_id"
         const val KEY_ITEM_NAME = "item_name"
         const val KEY_ITEM_TYPE = "item_type"
+        const val KEY_DOWNLOAD_QUALITY_MODE = "download_quality_mode"
         const val MAX_CONCURRENT_DOWNLOADS = 2
     }
-
-    private val downloadDir: File
-        get() =
-            File(context.getExternalFilesDir(null), "AFinity/Downloads").also {
-                if (!it.exists()) it.mkdirs()
-            }
 
     override suspend fun startDownload(itemId: UUID, sourceId: String): Result<UUID> =
         withContext(Dispatchers.IO) {
             return@withContext try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    return@withContext Result.failure(Exception("Offline mode is enabled"))
+                }
+
                 val currentSession =
                     sessionManager.currentSession.value
                         ?: return@withContext Result.failure(Exception("No active session"))
@@ -133,6 +134,8 @@ constructor(
                     }
 
                 val downloadId = UUID.randomUUID()
+                val qualityMode =
+                    DownloadQualityMode.fromPreference(preferencesRepository.getDownloadQuality())
 
                 val imageUrl =
                     when (item) {
@@ -173,11 +176,16 @@ constructor(
                                 else -> "Unknown"
                             },
                         sourceId = source.id,
-                        sourceName = source.name,
+                        sourceName =
+                            if (qualityMode.requiresTranscode) {
+                                "${source.name} - ${qualityMode.displayName}"
+                            } else {
+                                source.name
+                            },
                         status = DownloadStatus.QUEUED,
                         progress = 0f,
                         bytesDownloaded = 0L,
-                        totalBytes = source.size,
+                        totalBytes = if (qualityMode.requiresTranscode) 0L else source.size,
                         filePath = null,
                         error = null,
                         createdAt = System.currentTimeMillis(),
@@ -210,6 +218,11 @@ constructor(
         download: DownloadDto,
         policy: ExistingWorkPolicy = ExistingWorkPolicy.KEEP,
     ) {
+        if (offlineModeManager.isCurrentlyOffline()) {
+            Timber.d("Skipping download work enqueue in offline mode for ${download.itemId}")
+            return
+        }
+
         val wifiOnly = preferencesRepository.getDownloadOverWifiOnly()
 
         val constraints =
@@ -227,6 +240,7 @@ constructor(
                 .putString(KEY_SOURCE_ID, download.sourceId)
                 .putString(KEY_ITEM_NAME, download.itemName)
                 .putString(KEY_ITEM_TYPE, download.itemType)
+                .putString(KEY_DOWNLOAD_QUALITY_MODE, preferencesRepository.getDownloadQuality())
                 .build()
 
         val mediaDownloadRequest =
@@ -289,6 +303,10 @@ constructor(
     override suspend fun resumeDownload(downloadId: UUID): Result<Unit> =
         withContext(Dispatchers.IO) {
             return@withContext try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    return@withContext Result.failure(Exception("Offline mode is enabled"))
+                }
+
                 val download =
                     databaseRepository.getDownload(downloadId)
                         ?: return@withContext Result.failure(Exception("Download not found"))
@@ -324,7 +342,12 @@ constructor(
 
                 val download = databaseRepository.getDownload(downloadId)
                 if (download != null) {
-                    val itemDir = getItemDownloadDirectory(download.itemId)
+                    download.filePath?.takeIf(downloadStorageManager::isContentUri)?.let {
+                        downloadStorageManager.deleteDocumentUri(it)
+                    }
+
+                    val itemDir =
+                        downloadStorageManager.getItemDownloadDirectory(download, download.itemId)
                     val mediaDir = File(itemDir, "media")
                     if (mediaDir.exists()) {
                         mediaDir
@@ -360,8 +383,12 @@ constructor(
                     databaseRepository.getDownload(downloadId)
                         ?: return@withContext Result.failure(Exception("Download not found"))
 
-                val targetPath = download.folderPath ?: download.itemId.toString()
-                val itemFolder = File(downloadDir, targetPath)
+                val itemFolder =
+                    downloadStorageManager.getItemDownloadDirectory(download, download.itemId)
+
+                download.filePath?.takeIf(downloadStorageManager::isContentUri)?.let {
+                    downloadStorageManager.deleteDocumentUri(it)
+                }
 
                 if (itemFolder.exists()) {
                     itemFolder.deleteRecursively()
@@ -479,18 +506,52 @@ constructor(
             }
         }
 
-    fun getDownloadDirectory(): File = downloadDir
+    suspend fun getDownloadDirectory(): File = downloadStorageManager.getSelectedDownloadsRoot()
 
     suspend fun getItemDownloadDirectory(itemId: UUID): File {
-        val folderPath = databaseRepository.getDownloadByItemId(itemId)?.folderPath
-        return File(downloadDir, folderPath ?: itemId.toString()).also { it.mkdirs() }
+        val download = databaseRepository.getDownloadByItemId(itemId)
+        return downloadStorageManager.getItemDownloadDirectory(download, itemId)
     }
 
-    fun getShowDirectory(serverId: String, showId: UUID): File =
-        File(downloadDir, "$serverId/shows/$showId").also { it.mkdirs() }
+    suspend fun createMediaFileTarget(
+        download: DownloadDto,
+        itemId: UUID,
+        sourceId: String,
+        extension: String,
+    ): DownloadStorageManager.MediaFileTarget =
+        downloadStorageManager.createMediaFileTarget(
+            folderPath = download.folderPath,
+            itemId = itemId,
+            sourceId = sourceId,
+            extension = extension,
+        )
 
-    fun getSeasonDirectory(serverId: String, showId: UUID, seasonNumber: Int): File =
-        File(downloadDir, "$serverId/shows/$showId/seasons/$seasonNumber").also { it.mkdirs() }
+    suspend fun createSidecarFileTarget(
+        download: DownloadDto?,
+        itemId: UUID,
+        directoryName: String,
+        fileName: String,
+        mimeType: String,
+    ): DownloadStorageManager.SidecarFileTarget =
+        downloadStorageManager.createSidecarFileTarget(
+            download = download,
+            itemId = itemId,
+            directoryName = directoryName,
+            fileName = fileName,
+            mimeType = mimeType,
+        )
+
+    suspend fun getShowDirectory(serverId: String, showId: UUID): File =
+        File(downloadStorageManager.getSelectedDownloadsRoot(), "$serverId/shows/$showId").also {
+            it.mkdirs()
+        }
+
+    suspend fun getSeasonDirectory(serverId: String, showId: UUID, seasonNumber: Int): File =
+        File(
+                downloadStorageManager.getSelectedDownloadsRoot(),
+                "$serverId/shows/$showId/seasons/$seasonNumber",
+            )
+            .also { it.mkdirs() }
 
     override suspend fun startSeasonDownload(seasonId: UUID, seriesId: UUID?): Result<Int> =
         withContext(Dispatchers.IO) {

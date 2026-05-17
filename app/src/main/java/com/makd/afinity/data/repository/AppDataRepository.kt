@@ -2,6 +2,7 @@ package com.makd.afinity.data.repository
 
 import android.content.Context
 import com.makd.afinity.R
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
 import com.makd.afinity.data.models.GenreItem
 import com.makd.afinity.data.models.PersonSection
@@ -59,6 +60,7 @@ class AppDataRepository
 @Inject
 constructor(
     @param:ApplicationContext private val context: Context,
+    private val offlineModeManager: OfflineModeManager,
     private val mediaRepository: MediaRepository,
     private val preferencesRepository: PreferencesRepository,
     private val sessionManager: SessionManager,
@@ -184,6 +186,10 @@ constructor(
                     kotlinx.coroutines.delay(300)
 
                     try {
+                        if (offlineModeManager.isCurrentlyOffline()) {
+                            skipInitialDataLoad()
+                            return@collect
+                        }
                         loadInitialData()
                     } catch (e: Exception) {
                         Timber.e(e, "Failed to reload data after session switch")
@@ -205,6 +211,10 @@ constructor(
                         "Server base URL changed to $newUrl — clearing all URL-dependent caches and reloading"
                     )
                     try {
+                        if (offlineModeManager.isCurrentlyOffline()) {
+                            Timber.d("Skipping base URL reload in offline mode")
+                            return@collect
+                        }
                         clearAllData()
                         loadInitialData()
                     } catch (e: Exception) {

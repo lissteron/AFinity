@@ -1,9 +1,9 @@
 package com.makd.afinity.data.repository.media
 
-import android.content.Context
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
 import com.makd.afinity.data.models.GenreType
 import com.makd.afinity.data.models.common.CollectionType
@@ -32,8 +32,8 @@ import com.makd.afinity.data.paging.JellyfinItemsPagingSource
 import com.makd.afinity.data.repository.DatabaseRepository
 import com.makd.afinity.data.repository.FieldSets
 import com.makd.afinity.data.repository.SecurePreferencesRepository
+import com.makd.afinity.data.storage.DownloadStorageManager
 import com.makd.afinity.ui.library.FilterType
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -77,11 +77,12 @@ class JellyfinMediaRepository
 @Inject
 constructor(
     private val sessionManager: SessionManager,
-    @param:ApplicationContext private val context: Context,
     private val boxSetCache: BoxSetCache,
     private val mdbListApiService: MdbListApiService,
     private val securePreferencesRepository: SecurePreferencesRepository,
     private val databaseRepository: DatabaseRepository,
+    private val downloadStorageManager: DownloadStorageManager,
+    private val offlineModeManager: OfflineModeManager,
 ) : MediaRepository {
     override suspend fun refreshItemUserData(
         itemId: UUID,
@@ -89,6 +90,13 @@ constructor(
     ): AfinityItem? {
         return withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    Timber.d("Skipping user data refresh in offline mode for item: $itemId")
+                    val userId = getCurrentUserId() ?: return@withContext null
+                    return@withContext databaseRepository.getMovie(itemId, userId)
+                        ?: databaseRepository.getEpisode(itemId, userId)
+                }
+
                 val apiClient = sessionManager.getCurrentApiClient() ?: return@withContext null
                 val userId = getCurrentUserId() ?: return@withContext null
                 val userLibraryApi = UserLibraryApi(apiClient)
@@ -1024,7 +1032,7 @@ constructor(
                             true
                         }
                     }
-                    .distinctBy { episode -> "${episode.parentIndexNumber}_${episode.indexNumber}" }
+                    .distinctBy { episode -> episode.id }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to get episodes")
                 emptyList()
@@ -1432,36 +1440,40 @@ constructor(
             }
         }
 
-    override suspend fun getTrickplayData(itemId: UUID, width: Int, index: Int): ByteArray? =
+    override suspend fun getTrickplayData(
+        itemId: UUID,
+        width: Int,
+        index: Int,
+        allowRemote: Boolean,
+    ): ByteArray? =
         withContext(Dispatchers.IO) {
             try {
-                val externalFilesDir = context.getExternalFilesDir(null)
                 Timber.d(
                     "Attempting to load trickplay tile: itemId=$itemId, width=$width, index=$index"
                 )
 
-                if (externalFilesDir != null) {
-                    val downloadDir = File(externalFilesDir, "AFinity/Downloads")
-                    val folderPath = databaseRepository.getDownloadByItemId(itemId)?.folderPath
-                    val itemDir = File(downloadDir, folderPath ?: itemId.toString())
-                    val trickplayFile = File(itemDir, "trickplay/$width/$index.jpg")
+                val download = databaseRepository.getDownloadByItemId(itemId)
+                val itemDir = downloadStorageManager.getItemDownloadDirectory(download, itemId)
+                val trickplayFile = File(itemDir, "trickplay/$width/$index.jpg")
 
-                    Timber.d("Looking for trickplay file: ${trickplayFile.absolutePath}")
-                    Timber.d("File exists: ${trickplayFile.exists()}")
+                Timber.d("Looking for trickplay file: ${trickplayFile.absolutePath}")
+                Timber.d("File exists: ${trickplayFile.exists()}")
 
-                    if (trickplayFile.exists()) {
-                        Timber.i(
-                            "Loading trickplay tile from local storage: $width/$index.jpg (${trickplayFile.length()} bytes)"
-                        )
-                        return@withContext trickplayFile.readBytes()
-                    } else {
-                        Timber.d("Trickplay file not found locally, trying API")
-                    }
+                if (trickplayFile.exists()) {
+                    Timber.i(
+                        "Loading trickplay tile from local storage: $width/$index.jpg (${trickplayFile.length()} bytes)"
+                    )
+                    return@withContext trickplayFile.readBytes()
                 } else {
-                    Timber.w("External files directory is null")
+                    Timber.d("Trickplay file not found locally, trying API")
                 }
             } catch (e: Exception) {
                 Timber.w(e, "Failed to load trickplay from local storage, falling back to API")
+            }
+
+            if (!allowRemote) {
+                Timber.d("Skipping remote trickplay fetch for $itemId")
+                return@withContext null
             }
 
             return@withContext try {

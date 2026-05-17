@@ -2,6 +2,7 @@ package com.makd.afinity.ui.settings
 
 import android.app.LocaleConfig
 import android.app.LocaleManager
+import android.os.Build
 import android.os.LocaleList
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -76,6 +77,7 @@ import com.makd.afinity.navigation.Destination
 import com.makd.afinity.navigation.LocalPlayerOffset
 import com.makd.afinity.ui.components.AsyncImage
 import com.makd.afinity.ui.components.ConnectionType
+import com.makd.afinity.ui.components.PinDialog
 import com.makd.afinity.ui.settings.update.UpdateSection
 import com.makd.afinity.util.isLocalAddress
 import com.makd.afinity.util.isTailscaleAddress
@@ -114,17 +116,12 @@ fun SettingsScreen(
         viewModel.isJellyseerrAuthenticated.collectAsStateWithLifecycle()
     val isAudiobookshelfAuthenticated by
         viewModel.isAudiobookshelfAuthenticated.collectAsStateWithLifecycle()
+    val isKidModeEnabled by viewModel.isKidModeEnabled.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val defaultLangString = stringResource(R.string.lang_system_default)
     val appLanguageSubtitle =
-        remember(defaultLangString) {
-            val localeManager = context.getSystemService(LocaleManager::class.java)
-            val appLocales = localeManager.applicationLocales
-
-            if (appLocales.isEmpty) defaultLangString
-            else appLocales.get(0).let { it.getDisplayName(it).replaceFirstChar(Char::uppercase) }
-        }
+        remember(context, defaultLangString) { getAppLanguageSubtitle(context, defaultLangString) }
 
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
@@ -133,6 +130,9 @@ fun SettingsScreen(
     var showJellyseerrBottomSheet by remember { mutableStateOf(false) }
     var showAudiobookshelfBottomSheet by remember { mutableStateOf(false) }
     var showSessionSwitcherSheet by remember { mutableStateOf(false) }
+    var showEnableKidModeDialog by remember { mutableStateOf(false) }
+    var showDisableKidModeDialog by remember { mutableStateOf(false) }
+    var kidModePinError by remember { mutableStateOf<String?>(null) }
     val jellyseerrSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val audiobookshelfSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val sessionSwitcherSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -170,6 +170,53 @@ fun SettingsScreen(
 
     if (showLanguageDialog) {
         LanguagePickerDialog(onDismiss = { showLanguageDialog = false })
+    }
+
+    if (showEnableKidModeDialog) {
+        PinDialog(
+            title = "Enable kid mode",
+            message = "Create a 4-8 digit PIN. Settings, downloads, servers, and request actions will require it.",
+            confirmText = "Enable",
+            errorText = kidModePinError,
+            onConfirm = { pin ->
+                viewModel.enableKidMode(pin) { success, error ->
+                    if (success) {
+                        kidModePinError = null
+                        showEnableKidModeDialog = false
+                        onBackClick()
+                    } else {
+                        kidModePinError = error ?: "Could not enable kid mode"
+                    }
+                }
+            },
+            onDismiss = {
+                kidModePinError = null
+                showEnableKidModeDialog = false
+            },
+        )
+    }
+
+    if (showDisableKidModeDialog) {
+        PinDialog(
+            title = "Disable kid mode",
+            message = "Enter the parent PIN to unlock protected settings and dangerous actions.",
+            confirmText = "Disable",
+            errorText = kidModePinError,
+            onConfirm = { pin ->
+                viewModel.disableKidMode(pin) { success, error ->
+                    if (success) {
+                        kidModePinError = null
+                        showDisableKidModeDialog = false
+                    } else {
+                        kidModePinError = error ?: "Incorrect PIN"
+                    }
+                }
+            },
+            onDismiss = {
+                kidModePinError = null
+                showDisableKidModeDialog = false
+            },
+        )
     }
 
     if (showJellyseerrBottomSheet) {
@@ -293,6 +340,23 @@ fun SettingsScreen(
                             checked = effectiveOfflineMode,
                             onCheckedChange = viewModel::toggleOfflineMode,
                             enabled = isNetworkAvailable,
+                        )
+                        SettingsDivider()
+                        SettingsSwitchItem(
+                            icon = painterResource(id = R.drawable.ic_security),
+                            title = "Kid mode",
+                            subtitle =
+                                if (isKidModeEnabled) {
+                                    "PIN protects settings, downloads, servers, and request actions"
+                                } else {
+                                    "Require a PIN for settings and dangerous actions"
+                                },
+                            checked = isKidModeEnabled,
+                            onCheckedChange = { enabled ->
+                                kidModePinError = null
+                                if (enabled) showEnableKidModeDialog = true
+                                else showDisableKidModeDialog = true
+                            },
                         )
                         SettingsDivider()
                         SettingsSwitchItem(
@@ -837,6 +901,11 @@ private fun JellyseerrLogoutConfirmationDialog(onConfirm: () -> Unit, onDismiss:
 
 @Composable
 private fun LanguagePickerDialog(onDismiss: () -> Unit) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        LegacyLanguagePickerDialog(onDismiss = onDismiss)
+        return
+    }
+
     val context = LocalContext.current
     val localeManager = remember { context.getSystemService(LocaleManager::class.java) }
     val supportedLocales = remember { LocaleConfig(context).supportedLocales }
@@ -882,6 +951,47 @@ private fun LanguagePickerDialog(onDismiss: () -> Unit) {
                     }
                 }
             }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+        },
+        shape = RoundedCornerShape(28.dp),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+    )
+}
+
+@Suppress("NewApi")
+private fun getAppLanguageSubtitle(context: android.content.Context, defaultLangString: String): String {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        return defaultLangString
+    }
+
+    val localeManager = context.getSystemService(LocaleManager::class.java)
+    val appLocales = localeManager.applicationLocales
+
+    return if (appLocales.isEmpty) {
+        defaultLangString
+    } else {
+        appLocales.get(0).let { it.getDisplayName(it).replaceFirstChar(Char::uppercase) }
+    }
+}
+
+@Composable
+private fun LegacyLanguagePickerDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.dialog_select_language_title),
+                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+            )
+        },
+        text = {
+            LanguageOption(
+                name = stringResource(R.string.lang_system_default),
+                isSelected = true,
+                onClick = onDismiss,
+            )
         },
         confirmButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }

@@ -1,5 +1,7 @@
 package com.makd.afinity.ui.settings.downloads
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -32,6 +34,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -41,6 +44,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -71,6 +75,8 @@ import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.models.audiobookshelf.AbsDownloadInfo
 import com.makd.afinity.data.models.audiobookshelf.AbsDownloadStatus
 import com.makd.afinity.data.models.download.DownloadInfo
+import com.makd.afinity.data.models.download.DownloadQualityMode
+import com.makd.afinity.data.models.download.DownloadStorageLocation
 import com.makd.afinity.data.models.download.DownloadStatus
 import com.makd.afinity.navigation.LocalPlayerOffset
 import com.makd.afinity.ui.components.AsyncImage
@@ -88,9 +94,14 @@ fun DownloadSettingsScreen(
     offlineModeManager: OfflineModeManager,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val capabilityPolicy by viewModel.capabilityPolicy.collectAsStateWithLifecycle()
     val isOffline by offlineModeManager.isOffline.collectAsStateWithLifecycle(initialValue = false)
     val snackbarHostState = remember { SnackbarHostState() }
     val playerOffset = LocalPlayerOffset.current
+    val folderPickerLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri != null) viewModel.setCustomDownloadStorageLocation(uri)
+        }
 
     LaunchedEffect(uiState.error) {
         uiState.error?.let { error ->
@@ -168,6 +179,7 @@ fun DownloadSettingsScreen(
                     wifiOnly = uiState.downloadOverWifiOnly,
                     deviceStats = uiState.deviceStorageStats,
                     onWifiOnlyChanged = viewModel::setDownloadOverWifiOnly,
+                    canModify = capabilityPolicy.canManageDownloads,
                     formatSize = viewModel::formatStorageSize,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
@@ -182,11 +194,33 @@ fun DownloadSettingsScreen(
             }
 
             item {
+                DownloadStorageLocationCard(
+                    locations = uiState.storageLocations,
+                    hasActiveDownloads = uiState.activeDownloads.isNotEmpty(),
+                    onLocationSelected = viewModel::setDownloadStorageLocation,
+                    onChooseFolder = { folderPickerLauncher.launch(null) },
+                    canModify = capabilityPolicy.canManageDownloads,
+                    formatSize = viewModel::formatStorageSize,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+
+            item {
+                DownloadQualityModeCard(
+                    selectedMode = uiState.downloadQualityMode,
+                    onModeSelected = viewModel::setDownloadQualityMode,
+                    canModify = capabilityPolicy.canManageDownloads,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+
+            item {
                 ImageCacheSettingsCard(
                     isCacheEnabled = uiState.isImageCacheEnabled,
                     cacheSizeMb = uiState.imageCacheSizeMb.toFloat(),
                     onCacheEnabledChange = viewModel::setImageCacheEnabled,
                     onCacheSizeChange = { viewModel.setImageCacheSizeMb(it.toInt()) },
+                    canModify = capabilityPolicy.canManageDownloads,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
@@ -208,6 +242,7 @@ fun DownloadSettingsScreen(
                         onResume = viewModel::resumeDownload,
                         onCancel = viewModel::cancelDownload,
                         formatSize = viewModel::formatStorageSize,
+                        showControls = capabilityPolicy.canManageDownloads,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     )
                 }
@@ -217,6 +252,7 @@ fun DownloadSettingsScreen(
                         download = download,
                         onCancel = viewModel::cancelAbsDownload,
                         formatSize = viewModel::formatStorageSize,
+                        showControls = capabilityPolicy.canManageDownloads,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                     )
                 }
@@ -250,6 +286,7 @@ fun DownloadSettingsScreen(
                             download = download,
                             onDelete = viewModel::deleteDownload,
                             formatSize = viewModel::formatStorageSize,
+                            showDelete = capabilityPolicy.canDeleteDownloads,
                         )
                     }
                 }
@@ -267,6 +304,7 @@ fun DownloadSettingsScreen(
                             onClick = { onNavigateToAbsItem(download.libraryItemId) },
                             onDelete = viewModel::deleteAbsDownload,
                             formatSize = viewModel::formatStorageSize,
+                            showDelete = capabilityPolicy.canDeleteDownloads,
                         )
                     }
                 }
@@ -286,6 +324,7 @@ fun DownloadSettingsScreen(
                                 onClick = { onNavigateToAbsItem(libraryItemId) },
                                 onDelete = { viewModel.deleteAbsPodcast(libraryItemId) },
                                 formatSize = viewModel::formatStorageSize,
+                                showDelete = capabilityPolicy.canDeleteDownloads,
                             )
                         }
                     }
@@ -308,6 +347,7 @@ fun StatusHub(
     wifiOnly: Boolean,
     deviceStats: DownloadsViewModel.DeviceStorageStats?,
     onWifiOnlyChanged: (Boolean) -> Unit,
+    canModify: Boolean = true,
     formatSize: (Long) -> String,
     modifier: Modifier = Modifier,
 ) {
@@ -457,6 +497,7 @@ fun StatusHub(
                     Switch(
                         checked = wifiOnly,
                         onCheckedChange = onWifiOnlyChanged,
+                        enabled = canModify,
                         modifier = Modifier.scale(0.8f),
                         colors =
                             SwitchDefaults.colors(
@@ -475,12 +516,230 @@ fun StatusHub(
 }
 
 @Composable
+fun DownloadStorageLocationCard(
+    locations: List<DownloadStorageLocation>,
+    hasActiveDownloads: Boolean,
+    onLocationSelected: (String) -> Unit,
+    onChooseFolder: () -> Unit,
+    canModify: Boolean = true,
+    formatSize: (Long) -> String,
+    modifier: Modifier = Modifier,
+) {
+    if (locations.isEmpty()) return
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+    ) {
+        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+            ListItem(
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                headlineContent = {
+                    Text(
+                        text = stringResource(R.string.download_location_title),
+                        style =
+                            MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold
+                            ),
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        text =
+                            if (hasActiveDownloads) {
+                                stringResource(R.string.download_location_active_warning)
+                            } else {
+                                stringResource(R.string.download_location_summary)
+                            },
+                        color =
+                            if (hasActiveDownloads) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                leadingContent = {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_folder),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                },
+                trailingContent = {
+                    TextButton(enabled = canModify && !hasActiveDownloads, onClick = onChooseFolder) {
+                        Text(stringResource(R.string.download_location_choose_folder))
+                    }
+                },
+            )
+
+            locations.forEach { location ->
+                ListItem(
+                    modifier =
+                        Modifier.clickable(
+                            enabled = canModify && !hasActiveDownloads && !location.isSelected,
+                            onClick = { onLocationSelected(location.id) },
+                        ),
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    leadingContent = {
+                        RadioButton(
+                            selected = location.isSelected,
+                            enabled = canModify && !hasActiveDownloads,
+                            onClick = { onLocationSelected(location.id) },
+                        )
+                    },
+                    headlineContent = {
+                        Text(
+                            text = location.name,
+                            style =
+                                MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = FontWeight.Bold
+                                ),
+                        )
+                    },
+                    supportingContent = {
+                        Column {
+                            Text(
+                                text = location.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                text = location.path,
+                                style =
+                                    MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = FontFamily.Monospace
+                                    ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = locationStorageLabel(location, formatSize),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun locationStorageLabel(
+    location: DownloadStorageLocation,
+    formatSize: (Long) -> String,
+): String =
+    if (location.isCustom) {
+        stringResource(R.string.download_location_custom_permission)
+    } else {
+        stringResource(R.string.download_location_free_fmt, formatSize(location.freeBytes))
+}
+
+@Composable
+fun DownloadQualityModeCard(
+    selectedMode: DownloadQualityMode,
+    onModeSelected: (DownloadQualityMode) -> Unit,
+    canModify: Boolean = true,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+    ) {
+        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+            ListItem(
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                headlineContent = {
+                    Text(
+                        text = stringResource(R.string.download_quality_mode_title),
+                        style =
+                            MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold
+                            ),
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        text = stringResource(R.string.download_quality_mode_summary),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                leadingContent = {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_video_settings),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                },
+            )
+
+            DownloadQualityMode.entries.forEach { mode ->
+                ListItem(
+                    modifier =
+                        Modifier.clickable(
+                            enabled = canModify && selectedMode != mode,
+                            onClick = { onModeSelected(mode) },
+                        ),
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    leadingContent = {
+                        RadioButton(
+                            selected = selectedMode == mode,
+                            enabled = canModify,
+                            onClick = { onModeSelected(mode) },
+                        )
+                    },
+                    headlineContent = {
+                        Text(
+                            text =
+                                stringResource(
+                                    when (mode) {
+                                        DownloadQualityMode.ORIGINAL ->
+                                            R.string.download_quality_original_title
+                                        DownloadQualityMode.HEVC_QUALITY ->
+                                            R.string.download_quality_hevc_quality_title
+                                        DownloadQualityMode.HEVC_STORAGE_SAVER ->
+                                            R.string.download_quality_hevc_storage_saver_title
+                                    }
+                                ),
+                            style =
+                                MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = FontWeight.Bold
+                                ),
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            text =
+                                stringResource(
+                                    when (mode) {
+                                        DownloadQualityMode.ORIGINAL ->
+                                            R.string.download_quality_original_summary
+                                        DownloadQualityMode.HEVC_QUALITY ->
+                                            R.string.download_quality_hevc_quality_summary
+                                        DownloadQualityMode.HEVC_STORAGE_SAVER ->
+                                            R.string.download_quality_hevc_storage_saver_summary
+                                    }
+                                ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun ActiveDownloadCard(
     download: DownloadInfo,
     onPause: (UUID) -> Unit,
     onResume: (UUID) -> Unit,
     onCancel: (UUID) -> Unit,
     formatSize: (Long) -> String,
+    showControls: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val isEpisode = download.itemType.equals("Episode", ignoreCase = true)
@@ -534,16 +793,30 @@ fun ActiveDownloadCard(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                LinearProgressIndicator(
-                    progress = { download.progress },
-                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
-                    color =
-                        if (download.status == DownloadStatus.FAILED)
-                            MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    strokeCap = StrokeCap.Round,
-                )
+                if (download.totalBytes > 0) {
+                    LinearProgressIndicator(
+                        progress = { download.progress },
+                        modifier =
+                            Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                        color =
+                            if (download.status == DownloadStatus.FAILED)
+                                MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        strokeCap = StrokeCap.Round,
+                    )
+                } else {
+                    LinearProgressIndicator(
+                        modifier =
+                            Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                        color =
+                            if (download.status == DownloadStatus.FAILED)
+                                MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        strokeCap = StrokeCap.Round,
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
@@ -584,7 +857,11 @@ fun ActiveDownloadCard(
 
                         Text(
                             text =
-                                "${formatSize(download.bytesDownloaded)} / ${formatSize(download.totalBytes)}",
+                                if (download.totalBytes > 0) {
+                                    "${formatSize(download.bytesDownloaded)} / ${formatSize(download.totalBytes)}"
+                                } else {
+                                    formatSize(download.bytesDownloaded)
+                                },
                             style =
                                 MaterialTheme.typography.labelSmall.copy(
                                     fontFamily = FontFamily.Monospace,
@@ -594,51 +871,55 @@ fun ActiveDownloadCard(
                         )
                     }
 
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (
-                            download.status == DownloadStatus.DOWNLOADING ||
-                                download.status == DownloadStatus.QUEUED
+                    if (showControls) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            IconButton(
-                                onClick = { onPause(download.id) },
-                                modifier = Modifier.size(36.dp),
+                            if (
+                                download.status == DownloadStatus.DOWNLOADING ||
+                                    download.status == DownloadStatus.QUEUED
                             ) {
-                                Icon(
-                                    painter =
-                                        painterResource(id = R.drawable.ic_player_pause_filled),
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        } else if (
-                            download.status == DownloadStatus.PAUSED ||
-                                download.status == DownloadStatus.FAILED
-                        ) {
-                            IconButton(
-                                onClick = { onResume(download.id) },
-                                modifier = Modifier.size(36.dp),
+                                IconButton(
+                                    onClick = { onPause(download.id) },
+                                    modifier = Modifier.size(36.dp),
+                                ) {
+                                    Icon(
+                                        painter =
+                                            painterResource(id = R.drawable.ic_player_pause_filled),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            } else if (
+                                download.status == DownloadStatus.PAUSED ||
+                                    download.status == DownloadStatus.FAILED
                             ) {
-                                Icon(
-                                    painter =
-                                        painterResource(id = R.drawable.ic_player_play_filled),
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                )
+                                IconButton(
+                                    onClick = { onResume(download.id) },
+                                    modifier = Modifier.size(36.dp),
+                                ) {
+                                    Icon(
+                                        painter =
+                                            painterResource(
+                                                id = R.drawable.ic_player_play_filled
+                                            ),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
                             }
-                        }
 
-                        IconButton(
-                            onClick = { onCancel(download.id) },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_cancel),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            IconButton(
+                                onClick = { onCancel(download.id) },
+                                modifier = Modifier.size(36.dp),
+                            ) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_cancel),
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }
@@ -652,6 +933,7 @@ fun CompletedDownloadRow(
     download: DownloadInfo,
     onDelete: (UUID) -> Unit,
     formatSize: (Long) -> String,
+    showDelete: Boolean = true,
 ) {
     val isEpisode = download.itemType.equals("Episode", ignoreCase = true)
 
@@ -703,15 +985,18 @@ fun CompletedDownloadRow(
                 overflow = TextOverflow.Ellipsis,
             )
         },
-        trailingContent = {
-            IconButton(onClick = { onDelete(download.id) }) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_delete),
-                    contentDescription = stringResource(R.string.cd_delete_download),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                )
-            }
-        },
+        trailingContent =
+            if (showDelete) {
+                {
+                    IconButton(onClick = { onDelete(download.id) }) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_delete),
+                            contentDescription = stringResource(R.string.cd_delete_download),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        )
+                    }
+                }
+            } else null,
     )
 }
 
@@ -768,6 +1053,7 @@ fun AbsActiveDownloadCard(
     download: AbsDownloadInfo,
     onCancel: (UUID) -> Unit,
     formatSize: (Long) -> String,
+    showControls: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -856,15 +1142,17 @@ fun AbsActiveDownloadCard(
                         )
                     }
 
-                    IconButton(
-                        onClick = { onCancel(download.id) },
-                        modifier = Modifier.size(36.dp),
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_cancel),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    if (showControls) {
+                        IconButton(
+                            onClick = { onCancel(download.id) },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_cancel),
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }
@@ -878,6 +1166,7 @@ fun AbsCompletedDownloadRow(
     onClick: () -> Unit = {},
     onDelete: (UUID) -> Unit,
     formatSize: (Long) -> String,
+    showDelete: Boolean = true,
 ) {
     val durationMinutes = (download.duration / 60).toInt()
     val durationStr =
@@ -920,15 +1209,18 @@ fun AbsCompletedDownloadRow(
                 overflow = TextOverflow.Ellipsis,
             )
         },
-        trailingContent = {
-            IconButton(onClick = { onDelete(download.id) }) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_delete),
-                    contentDescription = stringResource(R.string.cd_delete_download),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                )
-            }
-        },
+        trailingContent =
+            if (showDelete) {
+                {
+                    IconButton(onClick = { onDelete(download.id) }) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_delete),
+                            contentDescription = stringResource(R.string.cd_delete_download),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        )
+                    }
+                }
+            } else null,
     )
 }
 
@@ -939,6 +1231,7 @@ fun AbsPodcastGroupRow(
     onClick: () -> Unit,
     onDelete: () -> Unit,
     formatSize: (Long) -> String,
+    showDelete: Boolean = true,
 ) {
     val first = episodes.first()
     val podcastName = first.authorName?.takeIf { it.isNotBlank() } ?: first.title
@@ -975,15 +1268,18 @@ fun AbsPodcastGroupRow(
                 overflow = TextOverflow.Ellipsis,
             )
         },
-        trailingContent = {
-            IconButton(onClick = onDelete) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_delete),
-                    contentDescription = stringResource(R.string.cd_delete_download),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                )
-            }
-        },
+        trailingContent =
+            if (showDelete) {
+                {
+                    IconButton(onClick = onDelete) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_delete),
+                            contentDescription = stringResource(R.string.cd_delete_download),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        )
+                    }
+                }
+            } else null,
     )
 }
 
@@ -993,6 +1289,7 @@ fun ImageCacheSettingsCard(
     cacheSizeMb: Float,
     onCacheEnabledChange: (Boolean) -> Unit,
     onCacheSizeChange: (Float) -> Unit,
+    canModify: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -1024,6 +1321,7 @@ fun ImageCacheSettingsCard(
                 Switch(
                     checked = isCacheEnabled,
                     onCheckedChange = onCacheEnabledChange,
+                    enabled = canModify,
                     modifier = Modifier.scale(0.8f),
                     colors =
                         SwitchDefaults.colors(
@@ -1103,6 +1401,7 @@ fun ImageCacheSettingsCard(
                     Slider(
                         value = cacheSizeMb,
                         onValueChange = onCacheSizeChange,
+                        enabled = canModify,
                         valueRange = 256f..2048f,
                         steps = 6,
                         colors =

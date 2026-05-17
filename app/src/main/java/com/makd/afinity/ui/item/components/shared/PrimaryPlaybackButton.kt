@@ -19,6 +19,7 @@ import com.makd.afinity.data.models.media.AfinityEpisode
 import com.makd.afinity.data.models.media.AfinityItem
 import com.makd.afinity.data.models.media.AfinitySeason
 import com.makd.afinity.data.models.media.AfinityShow
+import com.makd.afinity.data.models.media.preferredPlaybackSourceId
 import timber.log.Timber
 
 @Composable
@@ -78,12 +79,7 @@ fun PrimaryPlaybackButton(
 
             val mediaSourceId =
                 selectedMediaSource?.id
-                    ?: targetItem.sources
-                        .firstOrNull {
-                            it.type == com.makd.afinity.data.models.media.AfinitySourceType.LOCAL
-                        }
-                        ?.id
-                    ?: targetItem.sources.firstOrNull()?.id
+                    ?: targetItem.sources.preferredPlaybackSourceId()
                     ?: ""
 
             val startPositionMs =

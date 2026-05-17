@@ -5,6 +5,7 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
 import com.makd.afinity.data.repository.DatabaseRepository
 import dagger.assisted.Assisted
@@ -22,6 +23,7 @@ class UserDataSyncWorker
 constructor(
     @Assisted appContext: Context,
     @Assisted workerParams: WorkerParameters,
+    private val offlineModeManager: OfflineModeManager,
     private val sessionManager: SessionManager,
     private val databaseRepository: DatabaseRepository,
 ) : CoroutineWorker(appContext, workerParams) {
@@ -29,6 +31,11 @@ constructor(
     override suspend fun doWork(): Result =
         withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    Timber.d("Skipping user data sync worker in offline mode")
+                    return@withContext Result.success()
+                }
+
                 Timber.d("Starting user data sync")
 
                 val servers = databaseRepository.getAllServers()

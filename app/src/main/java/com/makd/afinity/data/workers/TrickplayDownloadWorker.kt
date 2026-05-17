@@ -6,6 +6,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.makd.afinity.data.database.entities.DownloadDto
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
 import com.makd.afinity.data.models.extensions.toAfinityEpisode
 import com.makd.afinity.data.models.extensions.toAfinityMovie
@@ -15,8 +16,6 @@ import com.makd.afinity.data.repository.download.JellyfinDownloadRepository
 import com.makd.afinity.di.DownloadClient
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
-import java.io.File
-import java.io.FileOutputStream
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -42,6 +41,7 @@ constructor(
     private val sessionManager: SessionManager,
     private val databaseRepository: DatabaseRepository,
     private val downloadRepository: JellyfinDownloadRepository,
+    private val offlineModeManager: OfflineModeManager,
     @DownloadClient private val okHttpClient: OkHttpClient,
 ) : CoroutineWorker(appContext, workerParams) {
 
@@ -74,6 +74,11 @@ constructor(
             val sourceId =
                 inputData.getString(KEY_SOURCE_ID)
                     ?: return@withContext Result.failure(workDataOf("error" to "Missing source ID"))
+
+            if (offlineModeManager.isCurrentlyOffline()) {
+                Timber.d("TrickplayDownloadWorker: offline mode active, skipping $downloadIdString")
+                return@withContext Result.success()
+            }
 
             try {
                 Timber.d("Starting trickplay download for item: $itemId")
@@ -136,9 +141,6 @@ constructor(
                     return@withContext Result.success()
                 }
 
-                val itemDir = downloadRepository.getItemDownloadDirectory(itemId)
-                val trickplayDir = File(itemDir, "trickplay").also { it.mkdirs() }
-                Timber.d("Trickplay download base directory: ${trickplayDir.absolutePath}")
                 Timber.d("Trickplay resolutions available: ${trickplayInfo.keys.joinToString()}")
 
                 coroutineScope {
@@ -150,11 +152,11 @@ constructor(
                             try {
                                 downloadTrickplayTiles(
                                     apiClient = apiClient,
+                                    download = download,
                                     itemId = itemId,
                                     resolution = resolution,
                                     info = info,
                                     baseUrl = baseUrl,
-                                    outputDir = trickplayDir,
                                 )
                             } catch (e: Exception) {
                                 Timber.w(e, "Failed to download trickplay for resolution: $resolution")
@@ -191,14 +193,12 @@ constructor(
 
     private suspend fun downloadTrickplayTiles(
         apiClient: ApiClient,
+        download: DownloadDto,
         itemId: UUID,
         resolution: String,
         info: AfinityTrickplayInfo,
         baseUrl: String,
-        outputDir: File,
     ) {
-        val resolutionDir = File(outputDir, resolution).also { it.mkdirs() }
-
         val width = info.width
 
         val thumbnailsPerTile = info.tileWidth * info.tileHeight
@@ -215,14 +215,21 @@ constructor(
                 async {
                     semaphore.withPermit {
                         try {
-                            val outputFile = File(resolutionDir, "$tileIndex.jpg")
-                            if (outputFile.exists()) {
+                            val outputTarget =
+                                downloadRepository.createSidecarFileTarget(
+                                    download = download,
+                                    itemId = itemId,
+                                    directoryName = "trickplay/$resolution",
+                                    fileName = "$tileIndex.jpg",
+                                    mimeType = "image/jpeg",
+                                )
+                            if (outputTarget.existsAndNonEmpty) {
                                 Timber.d("Trickplay tile $tileIndex already exists, skipping")
                                 return@withPermit
                             }
                             val tileUrl =
                                 "$baseUrl/Videos/$itemId/Trickplay/$width/$tileIndex.jpg?api_key=${apiClient.accessToken}"
-                            Timber.d("Downloading trickplay tile to: ${outputFile.absolutePath}")
+                            Timber.d("Downloading trickplay tile to: ${outputTarget.displayPath}")
                             val request =
                                 Request.Builder()
                                     .url(tileUrl)
@@ -234,7 +241,7 @@ constructor(
                                     return@use
                                 }
                                 response.body?.byteStream()?.use { input ->
-                                    FileOutputStream(outputFile).use { output ->
+                                    outputTarget.openOutputStream().use { output ->
                                         val buffer = ByteArray(BUFFER_SIZE)
                                         var bytes: Int
                                         while (input.read(buffer).also { bytes = it } != -1) {
@@ -243,7 +250,7 @@ constructor(
                                     }
                                 }
                             }
-                            Timber.i("Downloaded trickplay tiled image: $resolution/$tileIndex.jpg (${outputFile.length()} bytes)")
+                            Timber.i("Downloaded trickplay tiled image: ${outputTarget.displayPath}")
                         } catch (e: Exception) {
                             Timber.w(e, "Failed to download trickplay tile $tileIndex")
                         }

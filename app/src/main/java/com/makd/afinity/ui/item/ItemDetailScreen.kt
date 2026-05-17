@@ -71,7 +71,9 @@ import com.makd.afinity.data.models.media.AfinityItem
 import com.makd.afinity.data.models.media.AfinityMovie
 import com.makd.afinity.data.models.media.AfinitySeason
 import com.makd.afinity.data.models.media.AfinityShow
+import com.makd.afinity.data.models.media.AfinitySourceType
 import com.makd.afinity.data.models.media.AfinityVideo
+import com.makd.afinity.data.models.media.preferredPlaybackSourceId
 import com.makd.afinity.data.models.tmdb.TmdbReview
 import com.makd.afinity.navigation.Destination
 import com.makd.afinity.navigation.LocalPlayerOffset
@@ -96,6 +98,7 @@ import com.makd.afinity.ui.utils.IntentUtils
 import com.makd.afinity.ui.utils.verticalLayoutOffset
 import com.makd.afinity.util.rememberPreferencesRepository
 import kotlinx.coroutines.flow.Flow
+import java.util.UUID
 import org.jellyfin.sdk.model.api.MediaStreamType
 import timber.log.Timber
 
@@ -116,6 +119,30 @@ fun ItemDetailScreen(
     val selectedEpisodeDownloadInfo by
         viewModel.selectedEpisodeDownloadInfo.collectAsStateWithLifecycle()
     val canDownload by viewModel.canDownload.collectAsStateWithLifecycle()
+    val capabilityPolicy by viewModel.capabilityPolicy.collectAsStateWithLifecycle()
+    val isOffline by viewModel.isOffline.collectAsStateWithLifecycle()
+    val completedDownloadItemIds by viewModel.completedDownloadItemIds.collectAsStateWithLifecycle()
+    val isDownloadReadOnly = isOffline || !capabilityPolicy.canManageDownloads
+    val displayItem =
+        remember(uiState.item, isOffline, completedDownloadItemIds) {
+            uiState.item?.let { item ->
+                if (isOffline) filterItemToDownloadedContent(item, completedDownloadItemIds) else item
+            }
+        }
+    val displaySeasons =
+        remember(uiState.seasons, isOffline, completedDownloadItemIds) {
+            if (isOffline) {
+                uiState.seasons.mapNotNull {
+                    filterSeasonToDownloadedContent(it, completedDownloadItemIds)
+                }
+            } else {
+                uiState.seasons
+            }
+        }
+    val displayNextEpisode =
+        remember(nextEpisode, isOffline, completedDownloadItemIds) {
+            if (isOffline) nextEpisode?.takeIf { it.id in completedDownloadItemIds } else nextEpisode
+        }
 
     var pendingPlayItem by remember { mutableStateOf<AfinityItem?>(null) }
     var pendingPlaySelection by remember { mutableStateOf<PlaybackSelection?>(null) }
@@ -123,10 +150,24 @@ fun ItemDetailScreen(
     var pendingNavigationSeriesId by remember { mutableStateOf<String?>(null) }
 
     fun interceptPlayClick(item: AfinityItem, selection: PlaybackSelection?) {
-        val remoteSources =
-            item.sources.filter {
-                it.type == com.makd.afinity.data.models.media.AfinitySourceType.REMOTE
-            }
+        val selectedSource = item.sources.firstOrNull { it.id == selection?.mediaSourceId }
+        val localSource = item.sources.firstOrNull { it.type == AfinitySourceType.LOCAL }
+        if (selectedSource?.type == AfinitySourceType.LOCAL || (selection == null && localSource != null)) {
+            val localSelection =
+                selection
+                    ?: PlaybackSelection(
+                        mediaSourceId = localSource?.id.orEmpty(),
+                        audioStreamIndex = null,
+                        subtitleStreamIndex = null,
+                        videoStreamIndex = null,
+                        startPositionMs =
+                            if (item.playbackPositionTicks > 0) item.playbackPositionTicks / 10000 else 0L,
+                    )
+            onPlayClick(item, localSelection)
+            return
+        }
+
+        val remoteSources = item.sources.filter { it.type == AfinitySourceType.REMOTE }
         if (remoteSources.size > 1 && item !is AfinityMovie) {
             pendingPlayItem = item
             pendingPlaySelection = selection
@@ -166,21 +207,27 @@ fun ItemDetailScreen(
                     )
                 }
             }
-            uiState.item != null -> {
+            displayItem != null -> {
                 ItemDetailContent(
-                    item = uiState.item!!,
-                    seasons = uiState.seasons,
+                    item = displayItem,
+                    seasons = displaySeasons,
                     boxSetItems = uiState.boxSetItems,
                     containingBoxSets = uiState.containingBoxSets,
-                    similarItems = uiState.similarItems,
-                    nextEpisode = nextEpisode,
+                    similarItems =
+                        if (capabilityPolicy.canUseDiscoveryUi) uiState.similarItems
+                        else emptyList(),
+                    nextEpisode = displayNextEpisode,
                     baseUrl = viewModel.getBaseUrl(),
                     specialFeatures = uiState.specialFeatures,
-                    isInWatchlist = uiState.item?.liked == true,
+                    isInWatchlist = displayItem.liked,
                     episodesPagingData = uiState.episodesPagingData,
                     downloadInfo = uiState.downloadInfo,
-                    tmdbReviews = uiState.tmdbReviews,
-                    mdbRatings = uiState.mdbRatings,
+                    tmdbReviews =
+                        if (capabilityPolicy.canUseDiscoveryUi) uiState.tmdbReviews
+                        else emptyList(),
+                    mdbRatings =
+                        if (capabilityPolicy.canUseDiscoveryUi) uiState.mdbRatings
+                        else emptyList(),
                     isRatingsFromCache = uiState.isRatingsFromCache,
                     movieParts = uiState.movieParts,
                     onPlayClick = { item, selection -> interceptPlayClick(item, selection) },
@@ -203,7 +250,7 @@ fun ItemDetailScreen(
                         }
                     },
                     onSpecialFeatureClick = { specialFeature ->
-                        val mediaSourceId = specialFeature.sources.firstOrNull()?.id
+                        val mediaSourceId = specialFeature.sources.preferredPlaybackSourceId()
                         if (mediaSourceId != null) {
                             val startPos =
                                 if (specialFeature.playbackPositionTicks > 0)
@@ -226,7 +273,28 @@ fun ItemDetailScreen(
                     navController = navController,
                     viewModel = viewModel,
                     widthSizeClass = widthSizeClass,
+                    isReadOnly = isDownloadReadOnly,
                 )
+            }
+            isOffline -> {
+                Column(
+                    modifier = Modifier.align(Alignment.Center).padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = "Not downloaded",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = TextAlign.Center,
+                    )
+                    Text(
+                        text = "This item is not available offline.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
+                }
             }
         }
 
@@ -247,7 +315,8 @@ fun ItemDetailScreen(
                 onPauseDownload = { viewModel.pauseDownload() },
                 onResumeDownload = { viewModel.resumeDownload() },
                 onCancelDownload = { viewModel.cancelDownload() },
-                canDownload = canDownload,
+                canDownload = canDownload && !isDownloadReadOnly,
+                readOnly = isDownloadReadOnly,
                 onGoToSeries =
                     if (uiState.item !is AfinityShow && uiState.item !is AfinitySeason) {
                         {
@@ -274,9 +343,7 @@ fun ItemDetailScreen(
         if (uiState.showQualityDialog) {
             val currentItem = selectedEpisode ?: uiState.item
             val remoteSources =
-                currentItem?.sources?.filter {
-                    it.type == com.makd.afinity.data.models.media.AfinitySourceType.REMOTE
-                } ?: emptyList()
+                currentItem?.sources?.filter { it.type == AfinitySourceType.REMOTE } ?: emptyList()
 
             if (remoteSources.isNotEmpty()) {
                 QualitySelectionDialog(
@@ -291,9 +358,7 @@ fun ItemDetailScreen(
             val item = pendingPlayItem
             if (item != null) {
                 val remoteSources =
-                    item.sources.filter {
-                        it.type == com.makd.afinity.data.models.media.AfinitySourceType.REMOTE
-                    }
+                    item.sources.filter { it.type == AfinitySourceType.REMOTE }
                 VersionPickerDialog(
                     sources = remoteSources,
                     onVersionSelected = { source ->
@@ -344,6 +409,7 @@ private fun ItemDetailContent(
     navController: NavController,
     viewModel: ItemDetailViewModel,
     widthSizeClass: WindowWidthSizeClass,
+    isReadOnly: Boolean,
 ) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
@@ -373,6 +439,7 @@ private fun ItemDetailContent(
             viewModel = viewModel,
             context = context,
             widthSizeClass = widthSizeClass,
+            isReadOnly = isReadOnly,
         )
     } else {
         PortraitItemDetailContent(
@@ -398,6 +465,7 @@ private fun ItemDetailContent(
             viewModel = viewModel,
             context = context,
             widthSizeClass = widthSizeClass,
+            isReadOnly = isReadOnly,
         )
     }
 }
@@ -426,6 +494,7 @@ private fun LandscapeItemDetailContent(
     viewModel: ItemDetailViewModel,
     context: Context,
     widthSizeClass: WindowWidthSizeClass,
+    isReadOnly: Boolean,
 ) {
     val preferencesRepository = rememberPreferencesRepository()
     val canDownload by viewModel.canDownload.collectAsStateWithLifecycle()
@@ -536,7 +605,7 @@ private fun LandscapeItemDetailContent(
                             ActionButtonsRow(
                                 item = item,
                                 isInWatchlist = isInWatchlist,
-                                hasTrailer = hasTrailer(item),
+                                hasTrailer = !isReadOnly && hasTrailer(item),
                                 downloadInfo = downloadInfo,
                                 onPlayTrailer = { playTrailer(item, context, viewModel) },
                                 onToggleWatchlist = { viewModel.toggleWatchlist() },
@@ -548,6 +617,7 @@ private fun LandscapeItemDetailContent(
                                 onResumeDownload = { viewModel.resumeDownload() },
                                 onCancelDownload = { viewModel.cancelDownload() },
                                 canDownload = canDownload,
+                                readOnly = isReadOnly,
                                 isLandscape = true,
                                 modifier = Modifier.weight(2f),
                             )
@@ -610,6 +680,7 @@ private fun PortraitItemDetailContent(
     viewModel: ItemDetailViewModel,
     context: Context,
     widthSizeClass: WindowWidthSizeClass,
+    isReadOnly: Boolean,
 ) {
     val preferencesRepository = rememberPreferencesRepository()
     val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -663,7 +734,7 @@ private fun PortraitItemDetailContent(
                 ActionButtonsRow(
                     item = item,
                     isInWatchlist = isInWatchlist,
-                    hasTrailer = hasTrailer(item),
+                    hasTrailer = !isReadOnly && hasTrailer(item),
                     downloadInfo = downloadInfo,
                     onPlayTrailer = { playTrailer(item, context, viewModel) },
                     onToggleWatchlist = { viewModel.toggleWatchlist() },
@@ -675,6 +746,7 @@ private fun PortraitItemDetailContent(
                     onResumeDownload = { viewModel.resumeDownload() },
                     onCancelDownload = { viewModel.cancelDownload() },
                     canDownload = canDownload,
+                    readOnly = isReadOnly,
                     isLandscape = false,
                 )
 
@@ -775,16 +847,18 @@ private fun TypeSpecificContent(
     widthSizeClass: WindowWidthSizeClass,
 ) {
     when (item) {
-        is AfinityShow ->
+        is AfinityShow -> {
+            val displaySeasons = item.seasons.takeIf { it.isNotEmpty() } ?: seasons
             SeriesDetailContent(
                 item = item,
-                seasons = seasons,
+                seasons = displaySeasons,
                 nextEpisode = nextEpisode,
                 specialFeatures = specialFeatures,
                 containingBoxSets = containingBoxSets,
                 tmdbReviews = tmdbReviews,
                 onEpisodeClick = { ep ->
-                    val mediaSourceId = ep.sources.firstOrNull()?.id ?: return@SeriesDetailContent
+                    val mediaSourceId =
+                        ep.sources.preferredPlaybackSourceId() ?: return@SeriesDetailContent
                     val startPos =
                         if (ep.playbackPositionTicks > 0) ep.playbackPositionTicks / 10000 else 0L
                     PlayerLauncher.launch(
@@ -797,7 +871,7 @@ private fun TypeSpecificContent(
                     )
                 },
                 onSpecialFeatureClick = { sf ->
-                    val mediaSourceId = sf.sources.firstOrNull()?.id
+                    val mediaSourceId = sf.sources.preferredPlaybackSourceId()
                     if (mediaSourceId != null) {
                         val startPos =
                             if (sf.playbackPositionTicks > 0) sf.playbackPositionTicks / 10000
@@ -819,6 +893,7 @@ private fun TypeSpecificContent(
                 navController = navController,
                 widthSizeClass = widthSizeClass,
             )
+        }
         is AfinitySeason ->
             SeasonDetailContent(
                 season = item,
@@ -915,6 +990,49 @@ private fun hasTrailer(item: AfinityItem): Boolean =
         (item as? AfinityShow)?.trailer != null ||
         (item as? AfinityVideo)?.trailer != null
 
+private fun filterItemToDownloadedContent(
+    item: AfinityItem,
+    downloadedItemIds: Set<UUID>,
+): AfinityItem? =
+    when (item) {
+        is AfinityMovie -> item.takeIf { it.id in downloadedItemIds }
+        is AfinityEpisode -> item.takeIf { it.id in downloadedItemIds }
+        is AfinitySeason -> filterSeasonToDownloadedContent(item, downloadedItemIds)
+        is AfinityShow -> {
+            val seasons =
+                item.seasons.mapNotNull {
+                    filterSeasonToDownloadedContent(it, downloadedItemIds)
+                }
+            if (seasons.isEmpty()) {
+                null
+            } else {
+                item.copy(
+                    seasons = seasons,
+                    seasonCount = seasons.size,
+                    episodeCount = null,
+                    unplayedItemCount = null,
+                )
+            }
+        }
+        else -> null
+    }
+
+private fun filterSeasonToDownloadedContent(
+    season: AfinitySeason,
+    downloadedItemIds: Set<UUID>,
+): AfinitySeason? {
+    val episodes =
+        season.episodes
+            .filter { episode -> episode.id in downloadedItemIds }
+            .sortedBy { episode -> episode.indexNumber }
+    if (episodes.isEmpty()) return null
+    return season.copy(
+        episodes = episodes,
+        episodeCount = null,
+        unplayedItemCount = null,
+    )
+}
+
 private fun playTrailer(item: AfinityItem, context: Context, viewModel: ItemDetailViewModel) {
     viewModel.getTrailerUrl(item)?.let { IntentUtils.openYouTubeUrl(context, it) }
 }
@@ -949,7 +1067,7 @@ private fun shufflePlay(item: AfinityItem, nextEpisode: AfinityEpisode?, context
             else -> null
         }
     episode?.let { ep ->
-        val mediaSourceId = ep.sources.firstOrNull()?.id ?: return
+        val mediaSourceId = ep.sources.preferredPlaybackSourceId() ?: return
         PlayerLauncher.launch(
             context = context,
             itemId = ep.id,

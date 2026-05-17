@@ -4,6 +4,7 @@ import com.makd.afinity.data.manager.PlaybackStateManager
 import com.makd.afinity.data.models.media.AfinityEpisode
 import com.makd.afinity.data.models.media.AfinityItem
 import com.makd.afinity.data.repository.AppDataRepository
+import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.data.repository.userdata.UserDataRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -16,6 +17,7 @@ constructor(
     private val userDataRepository: UserDataRepository,
     private val playbackStateManager: PlaybackStateManager,
     private val appDataRepository: AppDataRepository,
+    private val kidModeRepository: KidModeRepository,
 ) {
     fun toggleFavorite(
         scope: CoroutineScope,
@@ -23,6 +25,7 @@ constructor(
         updateOptimisticUI: () -> Unit,
         revertUI: () -> Unit,
     ) {
+        if (!kidModeRepository.policy.value.canModifyUserData) return
         updateOptimisticUI()
         scope.launch {
             try {
@@ -57,6 +60,7 @@ constructor(
         updateOptimisticUI: () -> Unit,
         revertUI: () -> Unit,
     ) {
+        if (!kidModeRepository.policy.value.canModifyUserData) return
         updateOptimisticUI()
         scope.launch {
             try {
@@ -85,6 +89,7 @@ constructor(
         episode: AfinityEpisode,
         onSuccess: () -> Unit,
     ) {
+        if (!kidModeRepository.policy.value.canModifyUserData) return
         scope.launch {
             try {
                 val success =

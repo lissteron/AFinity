@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.makd.afinity.R
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
 import com.makd.afinity.data.models.livetv.AfinityChannel
 import com.makd.afinity.data.models.livetv.ChannelType
@@ -32,6 +33,7 @@ constructor(
     private val databaseRepository: DatabaseRepository,
     private val sessionManager: SessionManager,
     private val liveTvRepository: LiveTvRepository,
+    private val offlineModeManager: OfflineModeManager,
 ) : ViewModel() {
 
     private val _item = MutableStateFlow<AfinityItem?>(null)
@@ -138,7 +140,7 @@ constructor(
                     Timber.e("PlayerWrapperViewModel: Could not determine userId")
                 }
 
-                if (loadedItem == null) {
+                if (loadedItem == null && !offlineModeManager.isCurrentlyOffline()) {
                     Timber.d("PlayerWrapperViewModel: Trying to load from API")
                     try {
                         loadedItem = mediaRepository.getItemById(itemId)

@@ -16,6 +16,7 @@ import com.makd.afinity.data.repository.AppDataRepository
 import com.makd.afinity.data.repository.AudiobookshelfRepository
 import com.makd.afinity.data.repository.DatabaseRepository
 import com.makd.afinity.data.repository.JellyseerrRepository
+import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.data.repository.PreferencesRepository
 import com.makd.afinity.data.repository.SecurePreferencesRepository
 import com.makd.afinity.data.repository.auth.AuthRepository
@@ -53,6 +54,7 @@ constructor(
     private val jellyseerrRepository: JellyseerrRepository,
     private val audiobookshelfRepository: AudiobookshelfRepository,
     private val audiobookshelfPlayer: AudiobookshelfPlayer,
+    private val kidModeRepository: KidModeRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -94,6 +96,13 @@ constructor(
 
     val isAudiobookshelfAuthenticated: StateFlow<Boolean> =
         audiobookshelfRepository.isAuthenticated.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            false,
+        )
+
+    val isKidModeEnabled: StateFlow<Boolean> =
+        kidModeRepository.isKidModeEnabled.stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
             false,
@@ -426,6 +435,24 @@ constructor(
             } catch (e: Exception) {
                 Timber.e(e, "Failed to toggle offline mode")
             }
+        }
+    }
+
+    fun enableKidMode(pin: String, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            kidModeRepository
+                .enableKidMode(pin)
+                .onSuccess { onResult(true, null) }
+                .onFailure { onResult(false, it.message) }
+        }
+    }
+
+    fun disableKidMode(pin: String, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            kidModeRepository
+                .disableKidMode(pin)
+                .onSuccess { onResult(true, null) }
+                .onFailure { onResult(false, it.message) }
         }
     }
 

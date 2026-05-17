@@ -185,7 +185,12 @@ interface MediaRepository {
 
     suspend fun getSpecialFeatures(itemId: UUID, userId: UUID): List<AfinityItem>
 
-    suspend fun getTrickplayData(itemId: UUID, width: Int, index: Int): ByteArray?
+    suspend fun getTrickplayData(
+        itemId: UUID,
+        width: Int,
+        index: Int,
+        allowRemote: Boolean = true,
+    ): ByteArray?
 
     suspend fun searchItems(
         query: String,

@@ -78,6 +78,7 @@ fun EpisodeDetailOverlay(
     onResumeDownload: () -> Unit,
     onCancelDownload: () -> Unit,
     canDownload: Boolean = true,
+    readOnly: Boolean = false,
     onGoToSeries: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
@@ -493,7 +494,7 @@ fun EpisodeDetailOverlay(
                         }
                     }
 
-                    if (!episode.missing) {
+                    if (!episode.missing && !readOnly) {
                         DownloadProgressIndicator(
                             downloadInfo = downloadInfo,
                             onDownloadClick = onDownloadClick,

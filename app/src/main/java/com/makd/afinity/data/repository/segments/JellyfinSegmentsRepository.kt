@@ -1,5 +1,6 @@
 package com.makd.afinity.data.repository.segments
 
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
 import com.makd.afinity.data.models.media.AfinitySegment
 import com.makd.afinity.data.models.media.toAfinitySegment
@@ -16,6 +17,7 @@ import timber.log.Timber
 class JellyfinSegmentsRepository
 @Inject
 constructor(
+    private val offlineModeManager: OfflineModeManager,
     private val sessionManager: SessionManager,
     private val databaseRepository: DatabaseRepository,
 ) : SegmentsRepository {
@@ -33,6 +35,10 @@ constructor(
                 }
 
                 Timber.d("No cached segments found in database, fetching from API")
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    Timber.d("Skipping remote segment fetch in offline mode")
+                    return@withContext emptyList()
+                }
 
                 try {
                     val apiClient =

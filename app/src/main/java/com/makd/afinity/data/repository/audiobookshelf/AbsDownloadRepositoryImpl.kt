@@ -9,6 +9,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.makd.afinity.data.database.dao.AbsDownloadDao
 import com.makd.afinity.data.database.entities.AbsDownloadEntity
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
 import com.makd.afinity.data.models.audiobookshelf.AbsDownloadInfo
 import com.makd.afinity.data.models.audiobookshelf.AbsDownloadStatus
@@ -35,6 +36,7 @@ constructor(
     private val absDownloadDao: AbsDownloadDao,
     private val preferencesRepository: PreferencesRepository,
     private val workManager: WorkManager,
+    private val offlineModeManager: OfflineModeManager,
 ) : AbsDownloadRepository {
 
     companion object {
@@ -89,6 +91,10 @@ constructor(
     }
 
     override suspend fun startDownload(libraryItemId: String, episodeId: String?): Result<UUID> {
+        if (offlineModeManager.isCurrentlyOffline()) {
+            return Result.failure(Exception("Offline mode is enabled"))
+        }
+
         val session =
             sessionManager.currentSession.value
                 ?: return Result.failure(Exception("No active session"))
@@ -188,6 +194,11 @@ constructor(
     }
 
     private suspend fun enqueueWorker(downloadId: UUID, libraryItemId: String, episodeId: String?) {
+        if (offlineModeManager.isCurrentlyOffline()) {
+            Timber.d("AbsDownload: skipping worker enqueue in offline mode for $downloadId")
+            return
+        }
+
         val wifiOnly = preferencesRepository.getDownloadOverWifiOnly()
         val networkType = if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
         val constraints = Constraints.Builder()

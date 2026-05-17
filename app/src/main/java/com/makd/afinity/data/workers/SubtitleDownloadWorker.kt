@@ -6,6 +6,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.makd.afinity.data.database.entities.DownloadDto
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
 import com.makd.afinity.data.models.extensions.toAfinityEpisode
 import com.makd.afinity.data.models.extensions.toAfinityMovie
@@ -15,8 +16,6 @@ import com.makd.afinity.data.repository.download.JellyfinDownloadRepository
 import com.makd.afinity.di.DownloadClient
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
-import java.io.File
-import java.io.FileOutputStream
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -38,6 +37,7 @@ constructor(
     private val sessionManager: SessionManager,
     private val databaseRepository: DatabaseRepository,
     private val downloadRepository: JellyfinDownloadRepository,
+    private val offlineModeManager: OfflineModeManager,
     @DownloadClient private val okHttpClient: OkHttpClient,
 ) : CoroutineWorker(appContext, workerParams) {
 
@@ -70,6 +70,11 @@ constructor(
             val sourceId =
                 inputData.getString(KEY_SOURCE_ID)
                     ?: return@withContext Result.failure(workDataOf("error" to "Missing source ID"))
+
+            if (offlineModeManager.isCurrentlyOffline()) {
+                Timber.d("SubtitleDownloadWorker: offline mode active, skipping $downloadIdString")
+                return@withContext Result.success()
+            }
 
             try {
                 Timber.d("Starting subtitle download for item: $itemId")
@@ -143,17 +148,14 @@ constructor(
                     return@withContext Result.success()
                 }
 
-                val itemDir = downloadRepository.getItemDownloadDirectory(itemId)
-                val subtitlesDir = File(itemDir, "subtitles").also { it.mkdirs() }
-
                 subtitleStreams.forEach { stream ->
                     try {
                         downloadSubtitle(
                             apiClient = apiClient,
+                            download = download,
                             itemId = itemId,
                             stream = stream,
                             baseUrl = baseUrl,
-                            outputDir = subtitlesDir,
                             mediaSourceId = sourceId,
                         )
                     } catch (e: Exception) {
@@ -180,10 +182,10 @@ constructor(
 
     private suspend fun downloadSubtitle(
         apiClient: ApiClient,
+        download: DownloadDto,
         itemId: UUID,
         stream: AfinityMediaStream,
         baseUrl: String,
-        outputDir: File,
         mediaSourceId: String,
     ) {
         val language = stream.language ?: "unknown"
@@ -199,9 +201,16 @@ constructor(
                 else -> "srt"
             }
 
-        val outputFile = File(outputDir, "${language}_${stream.index}.$extension")
+        val outputTarget =
+            downloadRepository.createSidecarFileTarget(
+                download = download,
+                itemId = itemId,
+                directoryName = "subtitles",
+                fileName = "${language}_${stream.index}.$extension",
+                mimeType = "text/plain",
+            )
 
-        if (!outputFile.exists()) {
+        if (!outputTarget.existsAndNonEmpty) {
             val subtitleUrl =
                 "$baseUrl/Videos/$itemId/$mediaSourceId/Subtitles/${stream.index}/Stream.$extension?api_key=${apiClient.accessToken}"
 
@@ -219,7 +228,7 @@ constructor(
                     }
 
                     response.body?.byteStream()?.use { input ->
-                        FileOutputStream(outputFile).use { output ->
+                        outputTarget.openOutputStream().use { output ->
                             val buffer = ByteArray(BUFFER_SIZE)
                             var bytes: Int
                             while (input.read(buffer).also { bytes = it } != -1) {
@@ -234,12 +243,12 @@ constructor(
             }
         }
 
-        if (outputFile.exists() && outputFile.length() > 0) {
+        if (outputTarget.existsAndNonEmpty) {
             val localSourceId = "${mediaSourceId}_local"
             try {
-                val localStream = stream.copy(path = outputFile.absolutePath, isExternal = true)
+                val localStream = stream.copy(path = outputTarget.uriString, isExternal = true)
                 databaseRepository.insertMediaStream(localStream, localSourceId)
-                Timber.d("Registered local subtitle in DB: ${outputFile.name}")
+                Timber.d("Registered local subtitle in DB: ${outputTarget.displayPath}")
             } catch (e: Exception) {
                 Timber.e(e, "Failed to insert subtitle stream into database")
             }

@@ -74,6 +74,12 @@ constructor(@ApplicationContext private val context: Context) {
                                 lastInternetState = hasInternet
                                 lastValidatedState = isValidated
                             }
+                            if (hasInternet && isValidated) {
+                                networks.add(network)
+                            } else {
+                                networks.remove(network)
+                            }
+                            trySend(networks.isNotEmpty())
                         }
                     }
 

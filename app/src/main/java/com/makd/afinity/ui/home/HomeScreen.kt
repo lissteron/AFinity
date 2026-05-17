@@ -102,6 +102,7 @@ fun HomeScreen(
     onAbsItemClick: (String) -> Unit = {},
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val capabilityPolicy by viewModel.capabilityPolicy.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val playerOffset = LocalPlayerOffset.current
 
@@ -172,7 +173,11 @@ fun HomeScreen(
                     val statusBarHeight = WindowInsets.statusBars.getTop(density)
                     val bottomPadding =
                         WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-                    val showCarousel = !uiState.isOffline && uiState.heroCarouselItems.isNotEmpty()
+                    val canUseDiscoveryUi = capabilityPolicy.canUseDiscoveryUi
+                    val showCarousel =
+                        canUseDiscoveryUi &&
+                            !uiState.isOffline &&
+                            uiState.heroCarouselItems.isNotEmpty()
 
                     val continueWatchingItems =
                         if (uiState.isOffline) {
@@ -202,7 +207,7 @@ fun HomeScreen(
                         }
 
                     fun getItemModifier(key: String): Modifier {
-                        return if (isLandscape && key == firstContentKey) {
+                        return if (isLandscape && showCarousel && key == firstContentKey) {
                             Modifier.fillMaxWidth().verticalLayoutOffset((-70).dp)
                         } else {
                             Modifier.fillMaxWidth()
@@ -469,7 +474,11 @@ fun HomeScreen(
                             }
                         }
 
-                        if (!uiState.isOffline && uiState.highestRated.isNotEmpty()) {
+                        if (
+                            canUseDiscoveryUi &&
+                                !uiState.isOffline &&
+                                uiState.highestRated.isNotEmpty()
+                        ) {
                             item(key = "highest_rated") {
                                 Column(modifier = Modifier.fillMaxWidth()) {
                                     Spacer(modifier = Modifier.height(24.dp))
@@ -482,7 +491,11 @@ fun HomeScreen(
                             }
                         }
 
-                        if (!uiState.isOffline && uiState.studios.isNotEmpty()) {
+                        if (
+                            canUseDiscoveryUi &&
+                                !uiState.isOffline &&
+                                uiState.studios.isNotEmpty()
+                        ) {
                             item(key = "popular_studios") {
                                 Column(modifier = Modifier.fillMaxWidth()) {
                                     Spacer(modifier = Modifier.height(24.dp))
@@ -497,7 +510,11 @@ fun HomeScreen(
                             }
                         }
 
-                        if (!uiState.isOffline && uiState.combinedSections.isNotEmpty()) {
+                        if (
+                            canUseDiscoveryUi &&
+                                !uiState.isOffline &&
+                                uiState.combinedSections.isNotEmpty()
+                        ) {
                             items(
                                 items = uiState.combinedSections,
                                 key = { section ->
@@ -641,10 +658,15 @@ fun HomeScreen(
                     }
                 }
             },
-            onSearchClick = {
-                val route = Destination.createSearchRoute()
-                navController.navigate(route)
-            },
+            onSearchClick =
+                if (capabilityPolicy.canUseSearch) {
+                    {
+                        val route = Destination.createSearchRoute()
+                        navController.navigate(route)
+                    }
+                } else {
+                    null
+                },
             onProfileClick = onProfileClick,
             userName = mainUiState.userName,
             userProfileImageUrl = mainUiState.userProfileImageUrl,
@@ -656,6 +678,7 @@ fun HomeScreen(
         val selectedEpisodeDownloadInfo by
             viewModel.selectedEpisodeDownloadInfo.collectAsStateWithLifecycle()
         val canDownload by viewModel.canDownload.collectAsStateWithLifecycle()
+        val canManageDownloads = capabilityPolicy.canManageDownloads
 
         var pendingNavigationSeriesId by remember { mutableStateOf<String?>(null) }
 
@@ -669,7 +692,8 @@ fun HomeScreen(
                     episode = episode,
                     isInWatchlist = selectedEpisodeWatchlistStatus,
                     downloadInfo = selectedEpisodeDownloadInfo,
-                    canDownload = canDownload,
+                    canDownload = canDownload && canManageDownloads,
+                    readOnly = !canManageDownloads,
                     onDismiss = {
                         viewModel.clearSelectedEpisode()
                         pendingNavigationSeriesId = null

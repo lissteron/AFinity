@@ -27,6 +27,7 @@ import androidx.media3.ui.PlayerView
 import com.makd.afinity.R
 import com.makd.afinity.cast.CastEvent
 import com.makd.afinity.cast.CastManager
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.PlaybackStateManager
 import com.makd.afinity.data.models.livetv.AfinityChannel
 import com.makd.afinity.data.models.livetv.ChannelType
@@ -39,6 +40,8 @@ import com.makd.afinity.data.models.media.AfinitySegment
 import com.makd.afinity.data.models.media.AfinitySegmentType
 import com.makd.afinity.data.models.media.AfinitySource
 import com.makd.afinity.data.models.media.AfinitySourceType
+import com.makd.afinity.data.models.media.preferredPlaybackSource
+import com.makd.afinity.data.models.media.preferredPlaybackSourceId
 import com.makd.afinity.data.models.player.GestureConfig
 import com.makd.afinity.data.models.player.PlayerEvent
 import com.makd.afinity.data.models.player.SkipMode
@@ -92,6 +95,7 @@ constructor(
     private val appDataRepository: AppDataRepository,
     private val apiClient: ApiClient,
     private val audiobookshelfPlayer: AudiobookshelfPlayer,
+    private val offlineModeManager: OfflineModeManager,
 ) : ViewModel(), Player.Listener {
 
     lateinit var player: Player
@@ -334,6 +338,23 @@ constructor(
                                 _uiState.value.subtitleStreamIndex?.let {
                                     subStreams?.getOrNull(it)?.index
                                 } ?: -1
+
+                            if (source?.type == AfinitySourceType.LOCAL) {
+                                if (offlineModeManager.isCurrentlyOffline()) {
+                                    playbackRepository.reportPlaybackProgress(
+                                        itemId = item.id,
+                                        sessionId = sessionId,
+                                        positionTicks = positionTicks,
+                                        isPaused = isPaused,
+                                        audioStreamIndex = jfAudioIndex,
+                                        subtitleStreamIndex = jfSubIndex,
+                                        playMethod = "DirectPlay",
+                                        repeatMode = "RepeatNone",
+                                    )
+                                }
+                                Timber.d("Skipping remote progress report for local playback")
+                                return@let
+                            }
 
                             playbackRepository.reportPlaybackProgress(
                                 itemId = item.id,
@@ -865,7 +886,7 @@ constructor(
             val mediaSource =
                 fullItem.sources.firstOrNull {
                     if (finalMediaSourceId.isBlank()) true else it.id == finalMediaSourceId
-                } ?: fullItem.sources.firstOrNull()
+                } ?: fullItem.sources.preferredPlaybackSource()
 
             val actualMediaSourceId = mediaSource?.id
 
@@ -898,11 +919,18 @@ constructor(
                 }
             }
 
+            val useLocalSource = mediaSource.type == AfinitySourceType.LOCAL
+            val isOffline = offlineModeManager.isCurrentlyOffline()
             val playbackInfo =
-                playbackRepository.getPlaybackInfo(
-                    itemId = fullItem.id,
-                    mediaSourceId = actualMediaSourceId,
-                )
+                if (useLocalSource || isOffline) {
+                    Timber.d("Skipping playback info lookup for offline/local playback")
+                    null
+                } else {
+                    playbackRepository.getPlaybackInfo(
+                        itemId = fullItem.id,
+                        mediaSourceId = actualMediaSourceId,
+                    )
+                }
             val negotiatedSource =
                 playbackInfo?.mediaSources?.firstOrNull { it.id == actualMediaSourceId }
                     ?: playbackInfo?.mediaSources?.firstOrNull()
@@ -950,11 +978,16 @@ constructor(
             )
             playbackStateManager.trackCurrentItem(fullItem.id)
             coroutineScope {
-                val useLocalSource = mediaSource.type == AfinitySourceType.LOCAL
                 val streamUrlDeferred =
                     async(Dispatchers.IO) {
                         if (useLocalSource) {
-                            mediaSource.path?.let { "file://$it" }
+                            mediaSource.path?.let { path ->
+                                if (path.startsWith("content://") || path.startsWith("file://")) {
+                                    path
+                                } else {
+                                    "file://$path"
+                                }
+                            }
                         } else {
                             playbackRepository.getStreamUrl(
                                 itemId = fullItem.id,
@@ -969,10 +1002,11 @@ constructor(
                     }
 
                 val segmentsJob = launch(Dispatchers.IO) { loadSegments(fullItem.id) }
-                val trickplayJob = launch(Dispatchers.IO) { loadTrickplayData() }
+                val trickplayJob =
+                    launch(Dispatchers.IO) { loadTrickplayData(allowRemote = !useLocalSource && !isOffline) }
                 val reportStartJob =
                     launch(Dispatchers.IO) {
-                        if (!useLocalSource) {
+                        if (!useLocalSource && !isOffline) {
                             reportPlaybackStart(fullItem)
                         }
                     }
@@ -1094,7 +1128,7 @@ constructor(
                     }
                 }
 
-                if (fullItem is AfinityMovie || fullItem is AfinityEpisode) {
+                if (!isOffline && !useLocalSource && (fullItem is AfinityMovie || fullItem is AfinityEpisode)) {
                     viewModelScope.launch(Dispatchers.IO) {
                         try {
                             Timber.d(
@@ -1221,7 +1255,7 @@ constructor(
         }
     }
 
-    private fun loadTrickplayData() {
+    private fun loadTrickplayData(allowRemote: Boolean = true) {
         val currentItem = uiState.value.currentItem ?: return
 
         val trickplayInfo =
@@ -1265,6 +1299,7 @@ constructor(
                                     currentItem.id,
                                     info.width,
                                     tileIndex,
+                                    allowRemote = allowRemote,
                                 )
 
                             if (imageData != null) {
@@ -1543,7 +1578,8 @@ constructor(
     ) {
 
         val targetSource =
-            item.sources.firstOrNull { it.id == mediaSourceId } ?: item.sources.firstOrNull()
+            item.sources.firstOrNull { it.id == mediaSourceId }
+                ?: item.sources.preferredPlaybackSource()
         val videoStream =
             targetSource?.mediaStreams?.firstOrNull { it.type == MediaStreamType.VIDEO }
 
@@ -1591,7 +1627,7 @@ constructor(
                 handlePlayerEvent(
                     PlayerEvent.LoadMedia(
                         item = firstItem,
-                        mediaSourceId = firstItem.sources.firstOrNull()?.id ?: "",
+                        mediaSourceId = firstItem.sources.preferredPlaybackSourceId() ?: "",
                         audioStreamIndex = null,
                         subtitleStreamIndex = null,
                         startPositionMs = 0L,
@@ -1632,7 +1668,13 @@ constructor(
         candidates: List<AfinitySource>,
     ): AfinitySource? {
         if (candidates.isEmpty()) return null
-        if (reference == null) return candidates.first()
+        if (reference == null) return candidates.preferredPlaybackSource()
+
+        if (reference.type == AfinitySourceType.LOCAL) {
+            candidates.firstOrNull { it.type == AfinitySourceType.LOCAL }?.let {
+                return it
+            }
+        }
 
         // 1. Name match
         val refName = reference.name.trim().lowercase()
@@ -1655,7 +1697,7 @@ constructor(
         }
 
         // 3. Fallback
-        return candidates.first()
+        return candidates.preferredPlaybackSource()
     }
 
     private fun toggleControls() {
@@ -1793,7 +1835,7 @@ constructor(
             _uiState.value.currentItem?.sources?.firstOrNull { it.id == currentSourceId }
 
         val bestMatch = findBestMatchingSource(reference = currentSource, candidates = item.sources)
-        val mediaSourceId = bestMatch?.id ?: item.sources.firstOrNull()?.id ?: ""
+        val mediaSourceId = bestMatch?.id ?: item.sources.preferredPlaybackSourceId() ?: ""
 
         handlePlayerEvent(
             PlayerEvent.LoadMedia(

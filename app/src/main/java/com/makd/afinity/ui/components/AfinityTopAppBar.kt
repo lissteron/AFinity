@@ -47,6 +47,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.makd.afinity.R
 import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
+import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.util.isLocalAddress
 import com.makd.afinity.util.isTailscaleAddress
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -64,8 +65,15 @@ enum class ConnectionType {
 @HiltViewModel
 class AfinityTopAppBarViewModel
 @Inject
-constructor(offlineModeManager: OfflineModeManager, sessionManager: SessionManager) : ViewModel() {
-    val isOffline = offlineModeManager.isOffline
+constructor(
+    offlineModeManager: OfflineModeManager,
+    sessionManager: SessionManager,
+    kidModeRepository: KidModeRepository,
+) : ViewModel() {
+    val canUseSearch =
+        combine(kidModeRepository.policy, offlineModeManager.isOffline) { policy, offline ->
+            policy.canUseSearch && !offline
+        }
 
     val connectionType =
         combine(
@@ -96,11 +104,12 @@ fun AfinityTopAppBar(
 ) {
     val connectionType by
         viewModel.connectionType.collectAsStateWithLifecycle(initialValue = ConnectionType.REMOTE)
+    val canUseSearch by viewModel.canUseSearch.collectAsStateWithLifecycle(initialValue = true)
 
     TopAppBar(
         title = title,
         actions = {
-            if (onSearchClick != null) {
+            if (onSearchClick != null && canUseSearch) {
                 Button(
                     onClick = onSearchClick,
                     modifier = Modifier.height(42.dp).widthIn(min = 120.dp),

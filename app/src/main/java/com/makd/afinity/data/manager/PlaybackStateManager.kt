@@ -25,6 +25,7 @@ constructor(
     private val mediaRepository: MediaRepository,
     private val playbackRepository: PlaybackRepository,
     private val syncScheduler: UserDataSyncScheduler,
+    private val offlineModeManager: OfflineModeManager,
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -60,6 +61,16 @@ constructor(
 
                 try {
                     updatePlaybackPosition(positionMs)
+                    if (offlineModeManager.isCurrentlyOffline()) {
+                        Timber.d("Saving playback stop locally in offline mode for item=$itemId")
+                        reportPlaybackStop(
+                            itemId,
+                            capturedSessionId,
+                            capturedMediaSourceId,
+                            positionTicks,
+                        )
+                        return@withContext
+                    }
                     reportPlaybackStop(itemId, capturedSessionId, capturedMediaSourceId, positionTicks)
                     handlePlaybackStopped(itemId)
                 } catch (e: Exception) {

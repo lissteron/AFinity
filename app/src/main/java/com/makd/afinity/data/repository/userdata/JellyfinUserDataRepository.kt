@@ -1,6 +1,9 @@
 package com.makd.afinity.data.repository.userdata
 
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
+import com.makd.afinity.data.models.user.AfinityUserDataDto
+import com.makd.afinity.data.repository.DatabaseRepository
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -20,8 +23,13 @@ import org.jellyfin.sdk.model.api.UserItemDataDto
 import timber.log.Timber
 
 @Singleton
-class JellyfinUserDataRepository @Inject constructor(private val sessionManager: SessionManager) :
-    UserDataRepository {
+class JellyfinUserDataRepository
+@Inject
+constructor(
+    private val sessionManager: SessionManager,
+    private val databaseRepository: DatabaseRepository,
+    private val offlineModeManager: OfflineModeManager,
+) : UserDataRepository {
 
     private suspend fun getCurrentUserId(): UUID? {
         return sessionManager.currentSession.value?.userId
@@ -30,6 +38,14 @@ class JellyfinUserDataRepository @Inject constructor(private val sessionManager:
     override suspend fun markWatched(itemId: UUID): Boolean {
         return withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    return@withContext saveUserDataLocally(
+                        itemId = itemId,
+                        played = true,
+                        playbackPositionTicks = 0L,
+                    )
+                }
+
                 val userId = getCurrentUserId() ?: return@withContext false
                 val apiClient = sessionManager.getCurrentApiClient() ?: return@withContext false
                 val playStateApi = PlayStateApi(apiClient)
@@ -53,6 +69,14 @@ class JellyfinUserDataRepository @Inject constructor(private val sessionManager:
     override suspend fun markUnwatched(itemId: UUID): Boolean {
         return withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    return@withContext saveUserDataLocally(
+                        itemId = itemId,
+                        played = false,
+                        playbackPositionTicks = 0L,
+                    )
+                }
+
                 val userId = getCurrentUserId() ?: return@withContext false
                 val apiClient = sessionManager.getCurrentApiClient() ?: return@withContext false
                 val playStateApi = PlayStateApi(apiClient)
@@ -72,6 +96,13 @@ class JellyfinUserDataRepository @Inject constructor(private val sessionManager:
     override suspend fun updatePlaybackPosition(itemId: UUID, positionTicks: Long): Boolean {
         return withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    return@withContext saveUserDataLocally(
+                        itemId = itemId,
+                        playbackPositionTicks = positionTicks,
+                    )
+                }
+
                 val apiClient = sessionManager.getCurrentApiClient() ?: return@withContext false
                 val playStateApi = PlayStateApi(apiClient)
 
@@ -94,6 +125,11 @@ class JellyfinUserDataRepository @Inject constructor(private val sessionManager:
     override suspend fun getUserData(itemId: UUID): UserItemDataDto? {
         return withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    Timber.d("Skipping user data fetch in offline mode for item: $itemId")
+                    return@withContext null
+                }
+
                 val userId = getCurrentUserId() ?: return@withContext null
                 val apiClient = sessionManager.getCurrentApiClient() ?: return@withContext null
                 val itemsApi = ItemsApi(apiClient)
@@ -113,6 +149,10 @@ class JellyfinUserDataRepository @Inject constructor(private val sessionManager:
     override suspend fun addToFavorites(itemId: UUID): Boolean {
         return withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    return@withContext saveUserDataLocally(itemId = itemId, favorite = true)
+                }
+
                 val userId = getCurrentUserId() ?: return@withContext false
                 val apiClient = sessionManager.getCurrentApiClient() ?: return@withContext false
                 val userLibraryApi = UserLibraryApi(apiClient)
@@ -132,6 +172,10 @@ class JellyfinUserDataRepository @Inject constructor(private val sessionManager:
     override suspend fun removeFromFavorites(itemId: UUID): Boolean {
         return withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    return@withContext saveUserDataLocally(itemId = itemId, favorite = false)
+                }
+
                 val userId = getCurrentUserId() ?: return@withContext false
                 val apiClient = sessionManager.getCurrentApiClient() ?: return@withContext false
                 val userLibraryApi = UserLibraryApi(apiClient)
@@ -155,6 +199,11 @@ class JellyfinUserDataRepository @Inject constructor(private val sessionManager:
     ): List<UUID> {
         return withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    Timber.d("Skipping favorite items fetch in offline mode")
+                    return@withContext emptyList()
+                }
+
                 val userId = getCurrentUserId() ?: return@withContext emptyList()
                 val apiClient =
                     sessionManager.getCurrentApiClient() ?: return@withContext emptyList()
@@ -192,6 +241,11 @@ class JellyfinUserDataRepository @Inject constructor(private val sessionManager:
     override suspend fun setRating(itemId: UUID, rating: Int): Boolean {
         return withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    Timber.d("Skipping rating update in offline mode for item: $itemId")
+                    return@withContext false
+                }
+
                 val userId = getCurrentUserId() ?: return@withContext false
                 val apiClient = sessionManager.getCurrentApiClient() ?: return@withContext false
                 val itemsApi = ItemsApi(apiClient)
@@ -217,6 +271,11 @@ class JellyfinUserDataRepository @Inject constructor(private val sessionManager:
     override suspend fun removeRating(itemId: UUID): Boolean {
         return withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    Timber.d("Skipping rating removal in offline mode for item: $itemId")
+                    return@withContext false
+                }
+
                 val userId = getCurrentUserId() ?: return@withContext false
                 val apiClient = sessionManager.getCurrentApiClient() ?: return@withContext false
                 val itemsApi = ItemsApi(apiClient)
@@ -240,6 +299,11 @@ class JellyfinUserDataRepository @Inject constructor(private val sessionManager:
     override suspend fun setLike(itemId: UUID, isLiked: Boolean): Boolean {
         return withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    Timber.d("Skipping like update in offline mode for item: $itemId")
+                    return@withContext false
+                }
+
                 val userId = getCurrentUserId() ?: return@withContext false
                 val apiClient = sessionManager.getCurrentApiClient() ?: return@withContext false
                 val itemsApi = ItemsApi(apiClient)
@@ -263,6 +327,11 @@ class JellyfinUserDataRepository @Inject constructor(private val sessionManager:
     override suspend fun syncUserData(items: List<UserItemDataDto>): Boolean {
         return withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    Timber.d("Skipping user data sync in offline mode")
+                    return@withContext false
+                }
+
                 val userId = getCurrentUserId() ?: return@withContext false
                 val apiClient = sessionManager.getCurrentApiClient() ?: return@withContext false
                 var successCount = 0
@@ -304,6 +373,11 @@ class JellyfinUserDataRepository @Inject constructor(private val sessionManager:
     override suspend fun getUserDataBatch(itemIds: List<UUID>): Map<UUID, UserItemDataDto> {
         return withContext(Dispatchers.IO) {
             try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    Timber.d("Skipping user data batch fetch in offline mode")
+                    return@withContext emptyMap()
+                }
+
                 coroutineScope {
                     itemIds.map { itemId -> async { itemId to getUserData(itemId) } }
                         .awaitAll()
@@ -315,5 +389,32 @@ class JellyfinUserDataRepository @Inject constructor(private val sessionManager:
                 emptyMap()
             }
         }
+    }
+
+    private suspend fun saveUserDataLocally(
+        itemId: UUID,
+        played: Boolean? = null,
+        favorite: Boolean? = null,
+        playbackPositionTicks: Long? = null,
+    ): Boolean {
+        val userId = getCurrentUserId() ?: return false
+        val serverId = sessionManager.currentSession.value?.serverId ?: return false
+        val existing = databaseRepository.getUserData(userId, itemId)
+        val updatedData =
+            AfinityUserDataDto(
+                userId = userId,
+                itemId = itemId,
+                serverId = serverId,
+                played = played ?: existing?.played ?: false,
+                favorite = favorite ?: existing?.favorite ?: false,
+                playbackPositionTicks =
+                    playbackPositionTicks ?: existing?.playbackPositionTicks ?: 0L,
+                toBeSynced = true,
+                audioStreamIndex = existing?.audioStreamIndex,
+                subtitleStreamIndex = existing?.subtitleStreamIndex,
+            )
+        databaseRepository.insertUserData(updatedData)
+        Timber.d("Saved user data locally in offline mode for item: $itemId")
+        return true
     }
 }

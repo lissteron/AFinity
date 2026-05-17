@@ -14,6 +14,7 @@ import com.makd.afinity.data.models.media.AfinityShow
 import com.makd.afinity.data.models.media.toAfinityEpisode
 import com.makd.afinity.data.repository.AppDataRepository
 import com.makd.afinity.data.repository.FieldSets
+import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.data.repository.PreferencesRepository
 import com.makd.afinity.data.repository.download.DownloadRepository
 import com.makd.afinity.data.repository.media.MediaRepository
@@ -47,6 +48,7 @@ constructor(
     private val itemDownloadDelegate: ItemDownloadDelegate,
     private val preferencesRepository: PreferencesRepository,
     private val networkMonitor: NetworkConnectivityMonitor,
+    private val kidModeRepository: KidModeRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FavoritesUiState())
@@ -54,7 +56,13 @@ constructor(
     val canDownload: StateFlow<Boolean> =
         preferencesRepository.getDownloadWifiOnlyFlow()
             .combine(networkMonitor.isOnWifiFlow) { wifiOnly, onWifi -> !wifiOnly || onWifi }
+            .combine(kidModeRepository.policy) { networkAllowed, policy ->
+                networkAllowed && policy.canManageDownloads
+            }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    val capabilityPolicy = kidModeRepository.policy
+
     val uiState: StateFlow<FavoritesUiState> = _uiState.asStateFlow()
 
     private val _selectedEpisode = MutableStateFlow<AfinityEpisode?>(null)

@@ -6,6 +6,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.makd.afinity.data.database.entities.DownloadDto
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
 import com.makd.afinity.data.models.media.AfinityEpisode
 import com.makd.afinity.data.models.media.AfinityImages
@@ -16,8 +17,6 @@ import com.makd.afinity.data.repository.download.JellyfinDownloadRepository
 import com.makd.afinity.di.DownloadClient
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
-import java.io.File
-import java.io.FileOutputStream
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -35,6 +34,7 @@ constructor(
     private val sessionManager: SessionManager,
     private val databaseRepository: DatabaseRepository,
     private val downloadRepository: JellyfinDownloadRepository,
+    private val offlineModeManager: OfflineModeManager,
     @DownloadClient private val okHttpClient: OkHttpClient,
 ) : CoroutineWorker(appContext, workerParams) {
 
@@ -68,6 +68,11 @@ constructor(
                 inputData.getString(KEY_SOURCE_ID)
                     ?: return@withContext Result.failure(workDataOf("error" to "Missing source ID"))
 
+            if (offlineModeManager.isCurrentlyOffline()) {
+                Timber.d("ImageDownloadWorker: offline mode active, skipping $downloadIdString")
+                return@withContext Result.success()
+            }
+
             try {
                 Timber.d("Starting image download for item: $itemId")
 
@@ -99,14 +104,11 @@ constructor(
                     "Loaded item from database: ${item.name}, has images: ${item.images.primary != null}"
                 )
 
-                val itemDir = downloadRepository.getItemDownloadDirectory(itemId)
-                val imagesDir = File(itemDir, "images").also { it.mkdirs() }
-
                 val images = item.images
                 val downloadedImages = mutableMapOf<String, android.net.Uri>()
 
-                fun downloadWithClient(url: String, baseName: String): android.net.Uri? {
-                    return downloadImage(apiClient, url, imagesDir, baseName)
+                suspend fun downloadWithClient(url: String, baseName: String): android.net.Uri? {
+                    return downloadImage(apiClient, url, download, itemId, baseName)
                 }
 
                 if (images.primary != null) {
@@ -224,10 +226,11 @@ constructor(
             }
         }
 
-    private fun downloadImage(
+    private suspend fun downloadImage(
         apiClient: ApiClient,
         url: String,
-        outputDir: File,
+        download: DownloadDto,
+        itemId: UUID,
         baseName: String,
     ): android.net.Uri? {
         val request =
@@ -248,17 +251,24 @@ constructor(
                     else -> "jpg"
                 }
 
-            val outputFile = File(outputDir, "$baseName.$extension")
+            val outputTarget =
+                downloadRepository.createSidecarFileTarget(
+                    download = download,
+                    itemId = itemId,
+                    directoryName = "images",
+                    fileName = "$baseName.$extension",
+                    mimeType = contentType,
+                )
 
-            if (outputFile.exists()) {
-                Timber.d("Image already exists, returning existing: ${outputFile.name}")
-                return android.net.Uri.fromFile(outputFile)
+            if (outputTarget.existsAndNonEmpty) {
+                Timber.d("Image already exists, returning existing: ${outputTarget.displayPath}")
+                return android.net.Uri.parse(outputTarget.uriString)
             }
 
-            Timber.d("Saving image to: ${outputFile.absolutePath} (Content-Type: $contentType)")
+            Timber.d("Saving image to: ${outputTarget.displayPath} (Content-Type: $contentType)")
 
             response.body?.byteStream()?.use { input ->
-                FileOutputStream(outputFile).use { output ->
+                outputTarget.openOutputStream().use { output ->
                     val buffer = ByteArray(BUFFER_SIZE)
                     var bytes: Int
                     var totalBytes = 0L
@@ -266,12 +276,12 @@ constructor(
                         output.write(buffer, 0, bytes)
                         totalBytes += bytes
                     }
-                    Timber.d("Wrote $totalBytes bytes to ${outputFile.name}")
+                    Timber.d("Wrote $totalBytes bytes to ${outputTarget.displayPath}")
                 }
             }
 
-            Timber.d("Downloaded image: ${outputFile.name}")
-            return android.net.Uri.fromFile(outputFile)
+            Timber.d("Downloaded image: ${outputTarget.displayPath}")
+            return android.net.Uri.parse(outputTarget.uriString)
         }
     }
 

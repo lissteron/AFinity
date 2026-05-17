@@ -7,6 +7,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.work.WorkManager
 import com.makd.afinity.data.repository.DatabaseRepository
 import com.makd.afinity.data.repository.JellyfinRepository
+import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.data.repository.PreferencesRepository
 import com.makd.afinity.data.repository.auth.AuthRepository
 import com.makd.afinity.data.repository.auth.JellyfinAuthRepository
@@ -14,6 +15,7 @@ import com.makd.afinity.data.repository.download.DownloadRepository
 import com.makd.afinity.data.repository.download.JellyfinDownloadRepository
 import com.makd.afinity.data.repository.impl.DatabaseRepositoryImpl
 import com.makd.afinity.data.repository.impl.JellyfinRepositoryImpl
+import com.makd.afinity.data.repository.impl.KidModeRepositoryImpl
 import com.makd.afinity.data.repository.impl.PreferencesRepositoryImpl
 import com.makd.afinity.data.repository.media.JellyfinMediaRepository
 import com.makd.afinity.data.repository.media.MediaRepository
@@ -83,6 +85,10 @@ abstract class RepositoryModule {
     abstract fun bindPreferencesRepository(
         preferencesRepositoryImpl: PreferencesRepositoryImpl
     ): PreferencesRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindKidModeRepository(kidModeRepositoryImpl: KidModeRepositoryImpl): KidModeRepository
 
     @Binds
     @Singleton

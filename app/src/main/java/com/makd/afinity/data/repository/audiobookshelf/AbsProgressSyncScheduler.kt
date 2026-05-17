@@ -25,10 +25,11 @@ constructor(
             val constraints =
                 Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 
-            val inputData = workDataOf(
-                KEY_SERVER_ID to serverId,
-                KEY_USER_ID to userId.toString(),
-            )
+            val inputData =
+                workDataOf(
+                    KEY_SERVER_ID to serverId,
+                    KEY_USER_ID to userId.toString(),
+                )
 
             val request =
                 OneTimeWorkRequestBuilder<AbsProgressSyncWorker>()

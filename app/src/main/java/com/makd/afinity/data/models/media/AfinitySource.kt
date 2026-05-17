@@ -74,3 +74,8 @@ enum class AfinitySourceType {
     REMOTE,
     LOCAL,
 }
+
+fun List<AfinitySource>.preferredPlaybackSource(): AfinitySource? =
+    firstOrNull { it.type == AfinitySourceType.LOCAL } ?: firstOrNull()
+
+fun List<AfinitySource>.preferredPlaybackSourceId(): String? = preferredPlaybackSource()?.id

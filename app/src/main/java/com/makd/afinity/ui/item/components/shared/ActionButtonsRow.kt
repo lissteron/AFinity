@@ -37,6 +37,7 @@ fun ActionButtonsRow(
     onResumeDownload: () -> Unit,
     onCancelDownload: () -> Unit,
     canDownload: Boolean = true,
+    readOnly: Boolean = false,
     isLandscape: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
@@ -47,15 +48,15 @@ fun ActionButtonsRow(
             else Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onPlayTrailer, enabled = hasTrailer) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_video),
-                contentDescription = stringResource(R.string.hero_btn_play_trailer),
-                tint =
-                    if (hasTrailer) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                modifier = Modifier.size(28.dp),
-            )
+        if (hasTrailer) {
+            IconButton(onClick = onPlayTrailer) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_video),
+                    contentDescription = stringResource(R.string.hero_btn_play_trailer),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp),
+                )
+            }
         }
 
         IconButton(onClick = onToggleWatchlist) {
@@ -110,14 +111,16 @@ fun ActionButtonsRow(
             )
         }
 
-        DownloadProgressIndicator(
-            downloadInfo = downloadInfo,
-            onDownloadClick = onDownloadClick,
-            onPauseClick = onPauseDownload,
-            onResumeClick = onResumeDownload,
-            onCancelClick = onCancelDownload,
-            canDownload = canDownload,
-            isLandscape = isLandscape,
-        )
+        if (!readOnly) {
+            DownloadProgressIndicator(
+                downloadInfo = downloadInfo,
+                onDownloadClick = onDownloadClick,
+                onPauseClick = onPauseDownload,
+                onResumeClick = onResumeDownload,
+                onCancelClick = onCancelDownload,
+                canDownload = canDownload,
+                isLandscape = isLandscape,
+            )
+        }
     }
 }

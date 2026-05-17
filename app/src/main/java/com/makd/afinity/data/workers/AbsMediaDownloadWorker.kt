@@ -14,6 +14,7 @@ import com.makd.afinity.R
 import com.makd.afinity.data.database.dao.AbsDownloadDao
 import com.makd.afinity.data.database.dao.AudiobookshelfDao
 import com.makd.afinity.data.database.entities.AudiobookshelfItemEntity
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.models.audiobookshelf.AbsDownloadStatus
 import com.makd.afinity.data.models.audiobookshelf.AudioFile
 import com.makd.afinity.data.models.audiobookshelf.AudioTrack
@@ -45,6 +46,7 @@ constructor(
     private val audiobookshelfDao: AudiobookshelfDao,
     private val apiService: Lazy<AudiobookshelfApiService>,
     private val securePreferencesRepository: SecurePreferencesRepository,
+    private val offlineModeManager: OfflineModeManager,
     @DownloadClient private val okHttpClient: OkHttpClient,
 ) : CoroutineWorker(appContext, workerParams) {
 
@@ -66,6 +68,11 @@ constructor(
         val libraryItemId = inputData.getString(AbsDownloadRepositoryImpl.KEY_LIBRARY_ITEM_ID)
             ?: return@withContext Result.failure(workDataOf("error" to "Missing libraryItemId"))
         val episodeId = inputData.getString(AbsDownloadRepositoryImpl.KEY_EPISODE_ID)
+
+        if (offlineModeManager.isCurrentlyOffline()) {
+            Timber.d("AbsDownload: offline mode active, postponing $downloadId")
+            return@withContext Result.retry()
+        }
 
         val entity = absDownloadDao.getById(downloadId)
             ?: return@withContext Result.failure(workDataOf("error" to "Download record not found"))

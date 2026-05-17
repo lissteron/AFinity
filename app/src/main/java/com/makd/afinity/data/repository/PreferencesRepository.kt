@@ -160,6 +160,20 @@ interface PreferencesRepository {
 
     suspend fun getDownloadQuality(): String
 
+    fun getDownloadQualityFlow(): Flow<String>
+
+    suspend fun setDownloadStorageLocationId(locationId: String)
+
+    suspend fun getDownloadStorageLocationId(): String?
+
+    fun getDownloadStorageLocationIdFlow(): Flow<String?>
+
+    suspend fun setCustomDownloadTreeUri(uri: String?)
+
+    suspend fun getCustomDownloadTreeUri(): String?
+
+    fun getCustomDownloadTreeUriFlow(): Flow<String?>
+
     suspend fun setMaxDownloads(maxDownloads: Int)
 
     suspend fun getMaxDownloads(): Int

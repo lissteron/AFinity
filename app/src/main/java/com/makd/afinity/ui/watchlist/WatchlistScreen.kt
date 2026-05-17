@@ -63,6 +63,7 @@ fun WatchlistScreen(
     val selectedEpisodeDownloadInfo by
         viewModel.selectedEpisodeDownloadInfo.collectAsStateWithLifecycle()
     val canDownload by viewModel.canDownload.collectAsStateWithLifecycle()
+    val capabilityPolicy by viewModel.capabilityPolicy.collectAsStateWithLifecycle()
     var pendingNavigationSeriesId by remember { mutableStateOf<String?>(null) }
     val playerOffset = LocalPlayerOffset.current
 
@@ -197,7 +198,8 @@ fun WatchlistScreen(
             episode = episode,
             isInWatchlist = selectedEpisodeWatchlistStatus,
             downloadInfo = selectedEpisodeDownloadInfo,
-            canDownload = canDownload,
+            canDownload = canDownload && capabilityPolicy.canManageDownloads,
+            readOnly = !capabilityPolicy.canManageDownloads,
             onDismiss = { viewModel.clearSelectedEpisode() },
             onPlayClick = { episodeToPlay, selection ->
                 viewModel.clearSelectedEpisode()
