@@ -20,6 +20,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
@@ -416,9 +417,17 @@ constructor(
             }
         )
 
-        Timber.d(
-            "ExoPlayer preferences: preferredAudioLang=$preferredAudioLang, preferredSubLang=$preferredSubLang"
-        )
+        val bufferSizeMb = preferencesRepository.getBufferSizeMb()
+        val loadControl =
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    DefaultLoadControl.DEFAULT_MIN_BUFFER_MS,
+                    Int.MAX_VALUE,
+                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
+                    DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS,
+                )
+                .setTargetBufferBytes(bufferSizeMb * 1024 * 1024)
+                .build()
 
         val renderersFactory =
             DefaultRenderersFactory(context)
@@ -427,6 +436,7 @@ constructor(
         return ExoPlayer.Builder(context, renderersFactory)
             .setAudioAttributes(audioAttributes, true)
             .setTrackSelector(trackSelector)
+            .setLoadControl(loadControl)
             .setSeekBackIncrementMs(10000)
             .setSeekForwardIncrementMs(10000)
             .setPauseAtEndOfMediaItems(true)
@@ -464,6 +474,8 @@ constructor(
             "MPV preferences: hwdec=$mpvHwDec, vo=$mpvVideoOutput, ao=$mpvAudioOutput, alang=$preferredAudioLang, slang=$preferredSubLang"
         )
 
+        val bufferSizeMb = preferencesRepository.getBufferSizeMb()
+
         val mpvPlayer =
             MPVPlayer.Builder(application)
                 .setAudioAttributes(audioAttributes, true)
@@ -473,6 +485,7 @@ constructor(
                 .setVideoOutput(mpvVideoOutput)
                 .setAudioOutput(mpvAudioOutput)
                 .setHwDec(mpvHwDec)
+                .setBufferSizeMb(bufferSizeMb)
                 .build()
 
         mpvPlayer.setOption("sub-ass-override", "no")
@@ -620,12 +633,15 @@ constructor(
         lastKnownPosition = position
         lastKnownDuration = duration
 
+        val bufferedPosition = player.bufferedPosition.coerceAtLeast(0)
+
         _uiState.value =
             _uiState.value.copy(
                 isPlaying = isActuallyPlaying,
                 isPaused = isPausedState,
                 isBuffering = isBuffering,
                 currentPosition = position,
+                bufferedPosition = bufferedPosition,
                 duration = duration,
                 showPlayButton = if (isBuffering) false else _uiState.value.showPlayButton,
             )
@@ -2022,6 +2038,7 @@ constructor(
         val isBuffering: Boolean = false,
         val isLoading: Boolean = false,
         val currentPosition: Long = 0L,
+        val bufferedPosition: Long = 0L,
         val duration: Long = 0L,
         val showControls: Boolean = false,
         val isFullscreen: Boolean = false,
