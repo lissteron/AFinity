@@ -113,6 +113,7 @@ constructor(
 
     private val _episodesPagingData = MutableStateFlow<Flow<PagingData<AfinityEpisode>>?>(null)
     private val _episodeStatusUpdates = MutableStateFlow<Map<UUID, Boolean>>(emptyMap())
+    private val _loadedSeasonEpisodeIds = MutableStateFlow<Set<UUID>>(emptySet())
     private var bulkDownloadJob: Job? = null
     private val _seasonWatchStatusOverride = MutableStateFlow<Boolean?>(null)
 
@@ -264,8 +265,9 @@ constructor(
                 combine(
                         _uiState.map { it.item }.distinctUntilChanged(),
                         downloadRepository.getAllDownloadsFlow(),
-                    ) { item, downloads ->
-                        computeDownloadInfo(item, downloads)
+                        _loadedSeasonEpisodeIds,
+                    ) { item, downloads, loadedSeasonEpisodeIds ->
+                        computeDownloadInfo(item, downloads, loadedSeasonEpisodeIds)
                     }
                     .collect { downloadInfo ->
                         _uiState.value = _uiState.value.copy(downloadInfo = downloadInfo)
@@ -280,6 +282,7 @@ constructor(
     private fun computeDownloadInfo(
         item: AfinityItem?,
         downloads: List<DownloadInfo>,
+        loadedSeasonEpisodeIds: Set<UUID>,
     ): DownloadInfo? {
         return when (item) {
             is AfinityShow -> {
@@ -287,7 +290,7 @@ constructor(
                 aggregateDownloadInfo(seriesDownloads, item.id, item.expectedEpisodeCount())
             }
             is AfinitySeason -> {
-                val seasonEpisodeIds = item.episodes.map { it.id }.toSet()
+                val seasonEpisodeIds = item.episodes.map { it.id }.toSet() + loadedSeasonEpisodeIds
                 val seriesDownloads =
                     if (seasonEpisodeIds.isNotEmpty()) {
                         downloads.filter { it.itemId in seasonEpisodeIds }
@@ -760,6 +763,23 @@ constructor(
                 if (seriesId != null) {
                     viewModelScope.launch {
                         try {
+                            val episodes = mediaRepository.getEpisodes(itemId, seriesId)
+                            val episodeIds = episodes.map { it.id }.toSet()
+                            _loadedSeasonEpisodeIds.value = episodeIds
+                            _uiState.update { state ->
+                                val season = state.item as? AfinitySeason
+                                if (season != null && episodes.isNotEmpty()) {
+                                    state.copy(item = season.copy(episodes = episodes))
+                                } else {
+                                    state
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Timber.e(e, "Failed to load season episode ids")
+                        }
+                    }
+                    viewModelScope.launch {
+                        try {
                             val basePagerFlow =
                                 Pager(
                                         config =
@@ -1203,11 +1223,13 @@ constructor(
                 bulkDownloadJob?.cancel()
                 bulkDownloadJob = null
                 viewModelScope.launch {
+                    val episodeIds =
+                        currentItem.episodes.map { it.id }.toSet() + _loadedSeasonEpisodeIds.value
                     downloadRepository
                         .cancelAllSeasonDownloads(
                             currentItem.seriesId,
                             currentItem.indexNumber,
-                            currentItem.episodes.map { it.id }.toSet(),
+                            episodeIds,
                         )
                         .onFailure { Timber.e(it, "Failed to cancel season downloads") }
                 }
