@@ -51,6 +51,7 @@ import com.makd.afinity.data.models.player.SubtitlePreferences
 import com.makd.afinity.data.models.player.Trickplay
 import com.makd.afinity.data.models.player.VideoZoomMode
 import com.makd.afinity.data.repository.AppDataRepository
+import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.data.repository.PreferencesRepository
 import com.makd.afinity.data.repository.download.JellyfinDownloadRepository
 import com.makd.afinity.data.repository.media.MediaRepository
@@ -97,6 +98,7 @@ constructor(
     private val apiClient: ApiClient,
     private val audiobookshelfPlayer: AudiobookshelfPlayer,
     private val offlineModeManager: OfflineModeManager,
+    kidModeRepository: KidModeRepository,
 ) : ViewModel(), Player.Listener {
 
     lateinit var player: Player
@@ -108,6 +110,7 @@ constructor(
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
+    val capabilityPolicy = kidModeRepository.policy
 
     val playlistState: StateFlow<PlaylistState> = playlistManager.playlistState
 

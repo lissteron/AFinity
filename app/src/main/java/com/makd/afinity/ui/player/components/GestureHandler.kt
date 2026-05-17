@@ -38,6 +38,7 @@ private enum class GestureType {
 fun GestureHandler(
     modifier: Modifier = Modifier,
     isSeekEnabled: Boolean = true,
+    isVolumeBrightnessGesturesEnabled: Boolean = true,
     onSingleTap: () -> Unit,
     onDoubleTap: (isForward: Boolean) -> Unit,
     onLongPressStart: () -> Unit = {},
@@ -73,6 +74,8 @@ fun GestureHandler(
     val currentOnSeekGesture by rememberUpdatedState(onSeekGesture)
     val currentOnSeekPreview by rememberUpdatedState(onSeekPreview)
     val currentIsSeekEnabled by rememberUpdatedState(isSeekEnabled)
+    val currentIsVolumeBrightnessGesturesEnabled by
+        rememberUpdatedState(isVolumeBrightnessGesturesEnabled)
 
     var isDragging by remember { mutableStateOf(false) }
     var isLongPressActive by remember { mutableStateOf(false) }
@@ -194,12 +197,16 @@ fun GestureHandler(
                                     gestureType =
                                         when {
                                             abs(totalVerticalDelta) > abs(totalHorizontalDelta) -> {
-                                                when {
-                                                    dragStartOffset.x < leftZoneWidth ->
-                                                        GestureType.BRIGHTNESS
-                                                    dragStartOffset.x > rightZoneStart ->
-                                                        GestureType.VOLUME
-                                                    else -> null
+                                                if (currentIsVolumeBrightnessGesturesEnabled) {
+                                                    when {
+                                                        dragStartOffset.x < leftZoneWidth ->
+                                                            GestureType.BRIGHTNESS
+                                                        dragStartOffset.x > rightZoneStart ->
+                                                            GestureType.VOLUME
+                                                        else -> null
+                                                    }
+                                                } else {
+                                                    null
                                                 }
                                             }
                                             currentIsSeekEnabled -> GestureType.SEEK

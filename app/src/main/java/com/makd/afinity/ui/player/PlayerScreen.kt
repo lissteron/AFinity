@@ -72,6 +72,9 @@ fun PlayerScreen(
     viewModel: PlayerViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val capabilityPolicy by viewModel.capabilityPolicy.collectAsStateWithLifecycle()
+    val canUseVolumeBrightnessGestures =
+        !capabilityPolicy.isKidModeEnabled || capabilityPolicy.isParentUnlocked
     val playlistState by
         viewModel.playlistState.collectAsStateWithLifecycle(initialValue = PlaylistState())
 
@@ -178,6 +181,7 @@ fun PlayerScreen(
         } else {
             GestureHandler(
                 isSeekEnabled = !uiState.isPlayingIntro,
+                isVolumeBrightnessGesturesEnabled = canUseVolumeBrightnessGestures,
                 onSingleTap = { viewModel.onSingleTap() },
                 onDoubleTap = { isForward ->
                     if (!uiState.isControlsLocked) viewModel.onDoubleTapSeek(isForward)
