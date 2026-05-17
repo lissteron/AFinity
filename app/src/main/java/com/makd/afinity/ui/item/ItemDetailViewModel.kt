@@ -284,31 +284,55 @@ constructor(
         return when (item) {
             is AfinityShow -> {
                 val seriesDownloads = downloads.filter { it.seriesId == item.id.toString() }
-                aggregateDownloadInfo(seriesDownloads, item.id)
+                aggregateDownloadInfo(seriesDownloads, item.id, item.expectedEpisodeCount())
             }
             is AfinitySeason -> {
                 val seriesDownloads = downloads.filter {
                     it.seriesId == item.seriesId.toString() && it.seasonNumber == item.indexNumber
                 }
-                aggregateDownloadInfo(seriesDownloads, item.id)
+                aggregateDownloadInfo(seriesDownloads, item.id, item.expectedEpisodeCount())
             }
             else -> downloads.find { it.itemId == itemId }
         }
     }
 
+    private fun AfinityShow.expectedEpisodeCount(): Int? {
+        episodeCount?.takeIf { it > 0 }?.let { return it }
+        val seasonCounts = seasons.mapNotNull { it.expectedEpisodeCount() }
+        val totalFromSeasonCounts = seasonCounts.sum()
+        if (totalFromSeasonCounts > 0) return totalFromSeasonCounts
+        val totalLoadedEpisodes = seasons.sumOf { it.episodes.size }
+        return totalLoadedEpisodes.takeIf { it > 0 }
+    }
+
+    private fun AfinitySeason.expectedEpisodeCount(): Int? =
+        episodeCount?.takeIf { it > 0 } ?: episodes.size.takeIf { it > 0 }
+
     private fun aggregateDownloadInfo(
         downloads: List<DownloadInfo>,
         parentId: UUID,
+        expectedItemCount: Int?,
     ): DownloadInfo? {
         if (downloads.isEmpty()) return null
+        val completedItemCount =
+            downloads
+                .filter { it.status == DownloadStatus.COMPLETED }
+                .map { it.itemId }
+                .distinct()
+                .count()
+        val isComplete =
+            expectedItemCount != null &&
+                expectedItemCount > 0 &&
+                completedItemCount >= expectedItemCount
         val status =
             when {
                 downloads.any { it.status == DownloadStatus.DOWNLOADING } ->
                     DownloadStatus.DOWNLOADING
                 downloads.any { it.status == DownloadStatus.QUEUED } -> DownloadStatus.QUEUED
-                downloads.all { it.status == DownloadStatus.COMPLETED } -> DownloadStatus.COMPLETED
+                isComplete -> DownloadStatus.COMPLETED
                 downloads.any { it.status == DownloadStatus.FAILED } -> DownloadStatus.FAILED
-                else -> DownloadStatus.PAUSED
+                downloads.any { it.status == DownloadStatus.PAUSED } -> DownloadStatus.PAUSED
+                else -> return null
             }
         val first = downloads.first()
         return DownloadInfo(
