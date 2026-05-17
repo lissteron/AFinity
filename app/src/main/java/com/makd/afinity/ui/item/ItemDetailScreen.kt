@@ -124,6 +124,8 @@ fun ItemDetailScreen(
     val isOffline by viewModel.isOffline.collectAsStateWithLifecycle()
     val completedDownloadItemIds by viewModel.completedDownloadItemIds.collectAsStateWithLifecycle()
     val isDownloadReadOnly = isOffline || !capabilityPolicy.canManageDownloads
+    val shouldDirectPlayEpisodeClicks =
+        capabilityPolicy.isKidModeEnabled && !capabilityPolicy.isParentUnlocked
     val displayItem =
         remember(uiState.item, isOffline, completedDownloadItemIds) {
             uiState.item?.let { item ->
@@ -178,6 +180,26 @@ fun ItemDetailScreen(
         }
     }
 
+    fun directPlayEpisode(episode: AfinityEpisode) {
+        val mediaSourceId = episode.sources.preferredPlaybackSourceId()
+        if (mediaSourceId == null) {
+            Timber.w("Episode has no playable source: ${episode.name}")
+            return
+        }
+        val startPositionMs =
+            if (episode.playbackPositionTicks > 0) episode.playbackPositionTicks / 10000 else 0L
+        onPlayClick(
+            episode,
+            PlaybackSelection(
+                mediaSourceId = mediaSourceId,
+                audioStreamIndex = null,
+                subtitleStreamIndex = null,
+                videoStreamIndex = null,
+                startPositionMs = startPositionMs,
+            ),
+        )
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         when {
             uiState.isLoading -> {
@@ -212,7 +234,11 @@ fun ItemDetailScreen(
                     onPlayClick = { item, selection -> interceptPlayClick(item, selection) },
                     onBoxSetItemClick = { item ->
                         if (item is AfinityEpisode) {
-                            viewModel.selectEpisode(item)
+                            if (shouldDirectPlayEpisodeClicks) {
+                                directPlayEpisode(item)
+                            } else {
+                                viewModel.selectEpisode(item)
+                            }
                         } else {
                             val route =
                                 Destination.createItemDetailRoute(
@@ -253,6 +279,7 @@ fun ItemDetailScreen(
                     viewModel = viewModel,
                     widthSizeClass = widthSizeClass,
                     isReadOnly = isDownloadReadOnly,
+                    shouldDirectPlayEpisodeClicks = shouldDirectPlayEpisodeClicks,
                 )
             }
             isOffline -> {
@@ -389,6 +416,7 @@ private fun ItemDetailContent(
     viewModel: ItemDetailViewModel,
     widthSizeClass: WindowWidthSizeClass,
     isReadOnly: Boolean,
+    shouldDirectPlayEpisodeClicks: Boolean,
 ) {
     val context = LocalContext.current
     val configuration = LocalConfiguration.current
@@ -419,6 +447,7 @@ private fun ItemDetailContent(
             context = context,
             widthSizeClass = widthSizeClass,
             isReadOnly = isReadOnly,
+            shouldDirectPlayEpisodeClicks = shouldDirectPlayEpisodeClicks,
         )
     } else {
         PortraitItemDetailContent(
@@ -445,6 +474,7 @@ private fun ItemDetailContent(
             context = context,
             widthSizeClass = widthSizeClass,
             isReadOnly = isReadOnly,
+            shouldDirectPlayEpisodeClicks = shouldDirectPlayEpisodeClicks,
         )
     }
 }
@@ -474,6 +504,7 @@ private fun LandscapeItemDetailContent(
     context: Context,
     widthSizeClass: WindowWidthSizeClass,
     isReadOnly: Boolean,
+    shouldDirectPlayEpisodeClicks: Boolean,
 ) {
     val preferencesRepository = rememberPreferencesRepository()
     val canDownload by viewModel.canDownload.collectAsStateWithLifecycle()
@@ -627,6 +658,7 @@ private fun LandscapeItemDetailContent(
                             viewModel = viewModel,
                             preferencesRepository = preferencesRepository,
                             widthSizeClass = widthSizeClass,
+                            shouldDirectPlayEpisodeClicks = shouldDirectPlayEpisodeClicks,
                         )
                     }
                 }
@@ -660,6 +692,7 @@ private fun PortraitItemDetailContent(
     context: Context,
     widthSizeClass: WindowWidthSizeClass,
     isReadOnly: Boolean,
+    shouldDirectPlayEpisodeClicks: Boolean,
 ) {
     val preferencesRepository = rememberPreferencesRepository()
     val bottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -754,6 +787,7 @@ private fun PortraitItemDetailContent(
                     viewModel = viewModel,
                     preferencesRepository = preferencesRepository,
                     widthSizeClass = widthSizeClass,
+                    shouldDirectPlayEpisodeClicks = shouldDirectPlayEpisodeClicks,
                 )
             }
         }
@@ -824,7 +858,28 @@ private fun TypeSpecificContent(
     viewModel: ItemDetailViewModel,
     preferencesRepository: com.makd.afinity.data.repository.PreferencesRepository,
     widthSizeClass: WindowWidthSizeClass,
+    shouldDirectPlayEpisodeClicks: Boolean,
 ) {
+    fun directPlayEpisode(episode: AfinityEpisode) {
+        val mediaSourceId = episode.sources.preferredPlaybackSourceId()
+        if (mediaSourceId == null) {
+            Timber.w("Episode has no playable source: ${episode.name}")
+            return
+        }
+        val startPositionMs =
+            if (episode.playbackPositionTicks > 0) episode.playbackPositionTicks / 10000 else 0L
+        onPlayClick(
+            episode,
+            PlaybackSelection(
+                mediaSourceId = mediaSourceId,
+                audioStreamIndex = null,
+                subtitleStreamIndex = null,
+                videoStreamIndex = null,
+                startPositionMs = startPositionMs,
+            ),
+        )
+    }
+
     when (item) {
         is AfinityShow -> {
             val displaySeasons = item.seasons.takeIf { it.isNotEmpty() } ?: seasons
@@ -880,7 +935,13 @@ private fun TypeSpecificContent(
                 specialFeatures = specialFeatures,
                 containingBoxSets = containingBoxSets,
                 tmdbReviews = tmdbReviews,
-                onEpisodeClick = { ep -> viewModel.selectEpisode(ep) },
+                onEpisodeClick = { ep ->
+                    if (shouldDirectPlayEpisodeClicks) {
+                        directPlayEpisode(ep)
+                    } else {
+                        viewModel.selectEpisode(ep)
+                    }
+                },
                 onSpecialFeatureClick = onSpecialFeatureClick,
                 navController = navController,
                 preferencesRepository = preferencesRepository,
