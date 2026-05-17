@@ -43,5 +43,9 @@ interface DownloadRepository {
 
     suspend fun cancelAllSeriesDownloads(showId: UUID): Result<Unit>
 
-    suspend fun cancelAllSeasonDownloads(seriesId: UUID, seasonNumber: Int): Result<Unit>
+    suspend fun cancelAllSeasonDownloads(
+        seriesId: UUID,
+        seasonNumber: Int,
+        episodeIds: Set<UUID> = emptySet(),
+    ): Result<Unit>
 }

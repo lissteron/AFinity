@@ -287,9 +287,16 @@ constructor(
                 aggregateDownloadInfo(seriesDownloads, item.id, item.expectedEpisodeCount())
             }
             is AfinitySeason -> {
-                val seriesDownloads = downloads.filter {
-                    it.seriesId == item.seriesId.toString() && it.seasonNumber == item.indexNumber
-                }
+                val seasonEpisodeIds = item.episodes.map { it.id }.toSet()
+                val seriesDownloads =
+                    if (seasonEpisodeIds.isNotEmpty()) {
+                        downloads.filter { it.itemId in seasonEpisodeIds }
+                    } else {
+                        downloads.filter {
+                            it.seriesId == item.seriesId.toString() &&
+                                it.seasonNumber == item.indexNumber
+                        }
+                    }
                 aggregateDownloadInfo(seriesDownloads, item.id, item.expectedEpisodeCount())
             }
             else -> downloads.find { it.itemId == itemId }
@@ -1197,7 +1204,11 @@ constructor(
                 bulkDownloadJob = null
                 viewModelScope.launch {
                     downloadRepository
-                        .cancelAllSeasonDownloads(currentItem.seriesId, currentItem.indexNumber)
+                        .cancelAllSeasonDownloads(
+                            currentItem.seriesId,
+                            currentItem.indexNumber,
+                            currentItem.episodes.map { it.id }.toSet(),
+                        )
                         .onFailure { Timber.e(it, "Failed to cancel season downloads") }
                 }
             }

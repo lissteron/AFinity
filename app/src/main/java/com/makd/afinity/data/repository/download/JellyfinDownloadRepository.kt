@@ -611,14 +611,22 @@ constructor(
             }
         }
 
-    override suspend fun cancelAllSeasonDownloads(seriesId: UUID, seasonNumber: Int): Result<Unit> =
+    override suspend fun cancelAllSeasonDownloads(
+        seriesId: UUID,
+        seasonNumber: Int,
+        episodeIds: Set<UUID>,
+    ): Result<Unit> =
         withContext(Dispatchers.IO) {
             return@withContext try {
                 val downloads = getAllDownloadsFlow().first()
                 val toCancel = downloads.filter {
-                    it.seriesId == seriesId.toString() &&
-                        it.seasonNumber == seasonNumber &&
-                        it.status != DownloadStatus.COMPLETED
+                    val matchesSeason =
+                        if (episodeIds.isNotEmpty()) {
+                            it.itemId in episodeIds
+                        } else {
+                            it.seriesId == seriesId.toString() && it.seasonNumber == seasonNumber
+                        }
+                    matchesSeason && it.status != DownloadStatus.COMPLETED
                 }
                 for (download in toCancel) {
                     cancelDownload(download.id)
