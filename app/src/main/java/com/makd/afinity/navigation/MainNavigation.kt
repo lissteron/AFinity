@@ -51,9 +51,12 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.makd.afinity.data.manager.OfflineModeManager
+import com.makd.afinity.data.models.media.AfinityEpisode
 import com.makd.afinity.data.models.media.AfinityItem
+import com.makd.afinity.data.models.media.AfinityMovie
 import com.makd.afinity.data.models.media.AfinitySeason
 import com.makd.afinity.data.models.media.AfinityShow
+import com.makd.afinity.data.models.media.AfinityVideo
 import com.makd.afinity.data.models.media.preferredPlaybackSource
 import com.makd.afinity.data.repository.AudiobookshelfRepository
 import com.makd.afinity.data.repository.JellyseerrRepository
@@ -215,7 +218,17 @@ fun MainNavigation(
     }
 
     fun handleItemClick(item: AfinityItem) {
-        if (capabilityPolicy.isKidModeEnabled && !capabilityPolicy.isParentUnlocked) {
+        val shouldDirectPlay =
+            capabilityPolicy.isKidModeEnabled &&
+                !capabilityPolicy.isParentUnlocked &&
+                when (item) {
+                    is AfinityEpisode,
+                    is AfinityMovie,
+                    is AfinityVideo -> true
+                    else -> false
+                }
+
+        if (shouldDirectPlay) {
             launchPlayableItem(item)
         } else {
             navigateToItemDetail(item)
