@@ -32,9 +32,11 @@ class PlaylistManager @Inject constructor(private val mediaRepository: MediaRepo
         startingItem: AfinityItem,
         seasonId: UUID? = null,
         startPositionMs: Long = 0L,
+        includeIntros: Boolean = true,
     ): Boolean {
         if (
-            startingItem is AfinityEpisode &&
+            includeIntros &&
+                startingItem is AfinityEpisode &&
                 currentSeriesId == startingItem.seriesId &&
                 currentQueue.isNotEmpty()
         ) {
@@ -49,10 +51,10 @@ class PlaylistManager @Inject constructor(private val mediaRepository: MediaRepo
         return try {
             val intros =
                 try {
-                    if (startPositionMs == 0L) {
+                    if (includeIntros && startPositionMs == 0L) {
                         mediaRepository.getIntros(startingItem.id)
                     } else {
-                        Timber.d("Resuming media at ${startPositionMs}ms, skipping intros")
+                        Timber.d("Skipping intros for playlist initialization")
                         emptyList()
                     }
                 } catch (e: Exception) {
@@ -300,44 +302,10 @@ class PlaylistManager @Inject constructor(private val mediaRepository: MediaRepo
             return
         }
 
-        val resumableIndex =
-            currentQueue.indexOfFirst { item ->
-                item.playbackPositionTicks > 0 && item.playbackPositionTicks < item.runtimeTicks
-            }
+        currentQueue.shuffle()
+        currentIndex = 0
 
-        val unwatchedIndex =
-            if (resumableIndex == -1) {
-                currentQueue.indexOfFirst { item ->
-                    !item.played && item.playbackPositionTicks == 0L
-                }
-            } else {
-                -1
-            }
-
-        val priorityIndex = if (resumableIndex != -1) resumableIndex else unwatchedIndex
-
-        if (priorityIndex != -1) {
-            val priorityEpisode = currentQueue[priorityIndex]
-            val remainingEpisodes =
-                currentQueue.toMutableList().apply {
-                    removeAt(priorityIndex)
-                    shuffle()
-                }
-
-            currentQueue.clear()
-            currentQueue.add(priorityEpisode)
-            currentQueue.addAll(remainingEpisodes)
-            currentIndex = 0
-
-            Timber.d(
-                "Queue shuffled with priority episode: ${priorityEpisode.name} (${currentQueue.size} total items)"
-            )
-        } else {
-            currentQueue.shuffle()
-            currentIndex = 0
-
-            Timber.d("Queue pure shuffled (${currentQueue.size} items)")
-        }
+        Timber.d("Queue shuffled (${currentQueue.size} items)")
 
         updatePlaylistState()
     }

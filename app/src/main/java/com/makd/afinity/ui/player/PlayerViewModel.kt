@@ -1622,13 +1622,38 @@ constructor(
             }
         }
         viewModelScope.launch {
-            playlistManager.initializePlaylist(item, seasonId, startPositionMs)
+            playlistManager.initializePlaylist(
+                startingItem = item,
+                seasonId = seasonId,
+                startPositionMs = startPositionMs,
+                includeIntros = !shuffle,
+            )
             if (shuffle) {
                 playlistManager.shuffleQueue()
             }
             val firstItem = playlistManager.getCurrentItem() ?: item
 
-            if (firstItem.id != item.id) {
+            if (shuffle) {
+                val isOriginalItem = firstItem.id == item.id
+                pendingMainItemOptions = null
+                updateUiState { it.copy(isPlayingIntro = false) }
+                Timber.d("Shuffle playback starting with: ${firstItem.name}")
+                suppressNextControlShow = false
+                handlePlayerEvent(
+                    PlayerEvent.LoadMedia(
+                        item = firstItem,
+                        mediaSourceId =
+                            if (isOriginalItem) {
+                                mediaSourceId
+                            } else {
+                                firstItem.sources.preferredPlaybackSourceId() ?: ""
+                            },
+                        audioStreamIndex = if (isOriginalItem) audioStreamIndex else null,
+                        subtitleStreamIndex = if (isOriginalItem) subtitleStreamIndex else null,
+                        startPositionMs = if (isOriginalItem) startPositionMs else 0L,
+                    )
+                )
+            } else if (firstItem.id != item.id) {
                 pendingMainItemOptions =
                     MainItemPlaybackOptions(
                         itemId = item.id,
