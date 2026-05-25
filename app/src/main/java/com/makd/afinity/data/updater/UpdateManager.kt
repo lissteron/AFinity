@@ -163,25 +163,6 @@ constructor(
         }
     }
 
-    fun triggerAutoDownload() {
-        coroutineScope.launch {
-            val currentState = _updateState.value
-            if (currentState is UpdateState.Downloaded) {
-                return@launch
-            }
-            if (currentState is UpdateState.Downloading) {
-                return@launch
-            }
-            val release =
-                if (currentState is UpdateState.Available) {
-                    currentState.release
-                } else {
-                    checkForUpdates()
-                }
-            release?.let { downloadUpdate(it) }
-        }
-    }
-
     private fun trackDownloadProgress() {
         progressJob?.cancel()
         progressJob = coroutineScope.launch {

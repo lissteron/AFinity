@@ -13,6 +13,7 @@ plugins {
 val appName = project.property("app.name") as String
 val appVersionName = project.property("app.versionName") as String
 val appVersionCode = project.property("app.versionCode") as String
+val appUpdateRepository = project.property("app.updateRepository") as String
 
 base { archivesName.set("afinity-v${appVersionName}") }
 
@@ -37,6 +38,7 @@ configure<ApplicationExtension> {
         buildConfigField("String", "APP_NAME", "\"${appName}\"")
         buildConfigField("String", "VERSION_NAME", "\"${appVersionName}\"")
         buildConfigField("int", "VERSION_CODE", appVersionCode)
+        buildConfigField("String", "UPDATE_REPOSITORY", "\"${appUpdateRepository}\"")
     }
 
     buildTypes {

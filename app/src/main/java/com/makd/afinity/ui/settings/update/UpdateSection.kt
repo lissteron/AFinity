@@ -3,12 +3,10 @@ package com.makd.afinity.ui.settings.update
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,9 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -42,7 +37,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.makd.afinity.BuildConfig
 import com.makd.afinity.R
 import com.makd.afinity.data.updater.models.GitHubRelease
-import com.makd.afinity.data.updater.models.UpdateCheckFrequency
 import com.makd.afinity.data.updater.models.UpdateState
 
 @Composable
@@ -93,13 +87,6 @@ fun UpdateSection(modifier: Modifier = Modifier, viewModel: UpdateViewModel = hi
             lastCheckTime = uiState.lastCheckTime,
             onCheckClick = { viewModel.checkForUpdates() },
         )
-
-        SettingsDivider()
-
-        UpdateFrequencySelector(
-            currentFrequency = uiState.checkFrequency,
-            onFrequencySelected = { viewModel.setCheckFrequency(it) },
-        )
     }
 }
 
@@ -127,14 +114,6 @@ private fun SettingsGroup(
             Column(modifier = Modifier.padding(vertical = 4.dp)) { content() }
         }
     }
-}
-
-@Composable
-private fun SettingsDivider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(start = 56.dp, end = 16.dp),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f),
-    )
 }
 
 @Composable
@@ -238,92 +217,5 @@ private fun CheckForUpdatesItem(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun UpdateFrequencySelector(
-    currentFrequency: UpdateCheckFrequency,
-    onFrequencySelected: (UpdateCheckFrequency) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Box(modifier = modifier.fillMaxWidth()) {
-        Row(
-            modifier =
-                Modifier.fillMaxWidth()
-                    .clickable { expanded = true }
-                    .padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_schedule),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp),
-            )
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-                Text(
-                    text = stringResource(R.string.pref_check_frequency_title),
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = getUpdateCheckFrequencyDisplayName(currentFrequency),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-        }
-
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh),
-        ) {
-            UpdateCheckFrequency.entries.forEach { frequency ->
-                DropdownMenuItem(
-                    text = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Text(
-                                text = getUpdateCheckFrequencyDisplayName(frequency),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            if (frequency == currentFrequency) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_circle_check),
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                        }
-                    },
-                    onClick = {
-                        onFrequencySelected(frequency)
-                        expanded = false
-                    },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun getUpdateCheckFrequencyDisplayName(frequency: UpdateCheckFrequency): String {
-    return when (frequency) {
-        UpdateCheckFrequency.ON_APP_OPEN -> stringResource(R.string.freq_on_app_open)
-        UpdateCheckFrequency.SIX_HOURS -> stringResource(R.string.freq_6_hours)
-        UpdateCheckFrequency.TWELVE_HOURS -> stringResource(R.string.freq_12_hours)
-        UpdateCheckFrequency.TWENTY_FOUR_HOURS -> stringResource(R.string.freq_24_hours)
     }
 }

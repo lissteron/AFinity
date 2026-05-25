@@ -38,16 +38,3 @@ sealed class UpdateState {
 
     data class Error(val message: String) : UpdateState()
 }
-
-enum class UpdateCheckFrequency(val hours: Int, val displayName: String) {
-    ON_APP_OPEN(0, "On App Open"),
-    SIX_HOURS(6, "Every 6 Hours"),
-    TWELVE_HOURS(12, "Every 12 Hours"),
-    TWENTY_FOUR_HOURS(24, "Every 24 Hours");
-
-    companion object {
-        fun fromHours(hours: Int): UpdateCheckFrequency {
-            return entries.find { it.hours == hours } ?: ON_APP_OPEN
-        }
-    }
-}

@@ -1,0 +1,6 @@
+total 18
+drwx------ 2 u0_a190 u0_a190 3440 2026-05-17 11:07 .
+drwxrwx--x 5 u0_a190 u0_a190 3440 2026-05-17 11:07 ..
+-rw------- 1 u0_a190 u0_a190  250 2026-05-17 11:07 app_preferences.preferences_pb
+-rw------- 1 u0_a190 u0_a190  368 2026-05-17 09:28 app_preferences.preferences_pb.kid-test-backup
+-rw------- 1 u0_a190 u0_a190 2009 2026-05-17 11:07 secure_settings.preferences_pb

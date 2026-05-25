@@ -1,0 +1,728 @@
+--------- beginning of main
+05-17 11:09:08.383  2667  2889 I HwPacketFilterBypass: kernelAddTrackUid uid:10024 allowed:true
+05-17 11:09:08.383  2667  2889 E HwPacketFilterBypass: sendRequestToKernel ADD_UID [10024]
+05-17 11:09:08.384  6777 11432 I CAWARENESS_32390_AbilityContext: [1779005348802] deliver {dataId=1001000011, mode=0} to 1 receivers
+05-17 11:09:08.407  6176  6176 D HiTraceC: entered HiTraceInit, Log Registered: 1
+05-17 11:09:08.410  1241  3045 I AGPService: Bn-> set touch event - 1
+05-17 11:09:08.411 22506 22506 W HwDamageRectFpsManager: submitFps mFpsDecisionHandler == null
+05-17 11:09:08.411  1732  1750 I StylusGestureDetector: isHardwareKeyboardConnected--begin
+05-17 11:09:08.411  1732  1750 I StylusGestureDetector: isHardwareKeyboardConnected--end
+05-17 11:09:08.411   878   903 I uniperf server: UniPerfEvent Close NoOperation Action
+05-17 11:09:08.411   878   903 D uniperf server: EnterActionProc DoParse failed, cmdId=5002
+05-17 11:09:08.411   878   903 D uniperf server: EnterActionProc DoParse failed, cmdId=5003
+05-17 11:09:08.411  1732  1750 I StylusGestureListener: stylusMotionEvent ACTION_DOWN MotionEvent { action=ACTION_DOWN, actionButton=0, id[0]=0, x[0]=1748.0, y[0]=145.0, toolType[0]=TOOL_TYPE_FINGER, buttonState=0, classification=NONE, metaState=0, flags=0x0, edgeFlags=0x0, pointerCount=1, historySize=0, eventTime=300904327, downTime=300904327, deviceId=-1, source=0x1002, displayId=0, eventId=-670603037 }
+05-17 11:09:08.412  1241  3045 I AGPService: Bn-> set touch event - 0
+05-17 11:09:08.412  1732  1966 W AwareLog: CpuCommonUtil: Failed to set cgroup policy for pid:1732, tid:1753, isSet:true
+05-17 11:09:08.413 22506 22506 D WebViewDragEnhancement: dragReset.
+05-17 11:09:08.413 22506 22506 D WebViewDragEnhancement: dragReset cacheSize = 0
+05-17 11:09:08.413   883   911 I PF_FREQ_GRP: [RecordLimitCmd:68] [CPU_L] start limit freq 864000 ~ 1550000
+05-17 11:09:08.425  1280  1297 W AwareLog: iawared: ChangePropertyContent open /proc/22506/task/6163/static_vip fail errno(2)!
+--------- beginning of system
+05-17 11:09:08.434  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:08.555  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:08.577 16171 16171 I HwMSDPMovementManager: getCurrentMovement type 0
+05-17 11:09:08.578   824   849 I ArHal   : (ArDataGetState:1477):id[2]
+05-17 11:09:08.579 16171 16171 I L_HmsMsdpClient: [LocKit LogLocation.java:1] arId = 4
+05-17 11:09:08.633 13863 13866 I bms_behavior: [WaitConditionStatus]: runState = 1, cvStatus = 1 
+05-17 11:09:08.633 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:08.634 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:08.634 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:08.634 13863 13866 D bms_behavior: [GetChargeMaxPower]: mode:0, max_power:0
+05-17 11:09:08.637 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:08.637 13863 13866 D bms_behavior: [GetCableType]: cable type:0
+05-17 11:09:08.638  2667  8098 I fast_decay: HandleBeaconRssiInfo, fastDecayResult is : 1, wifiFastDecayTotalResult is : 1
+05-17 11:09:08.638  2667  8098 I asymmetric_link: getPer, getPer: 0.000000, filterTxRate: 17388.722656, filterRxRate: 18590.832031
+05-17 11:09:08.638  2667  8098 I asymmetric_link: IsAsymmetricLinkSuccess, return false. filterFlow is : 2.028351
+05-17 11:09:08.638  2667  8098 I asymmetric_link: HandleAsymmetricLinkInfo, the txRssi: -77.715164, the activeNodeCnt: -1, the wifiAsymmetricLinkResult : 0
+05-17 11:09:08.643 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:08.656 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:08.666   883   911 I PF_FREQ_GRP: [RecordLimitCmd:72] [CPU_L] end limit freq 418000 ~ 1600000
+05-17 11:09:08.668 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/coul/coul_data/rbatt is invalid
+05-17 11:09:08.668 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/bat_heating/heat_up is invalid
+05-17 11:09:08.677 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:08.678  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:08.691  1300  1522 E RUNTIME : ContextSetCurrentRef:54 ctx is nullptr!
+05-17 11:09:08.691  1300  1522 E hiaiserver: DEVDRV : DevdrvOpenDeviceManager:61 open device manager fail, errno = 2
+05-17 11:09:08.692  1300  1522 E hiaiserver: DEVDRV : reportStat:44 get file stat fail, errno = 2
+05-17 11:09:08.692  1300  1522 E hiaiserver: DEVDRV : DrvDeviceGetCount:131 open device error
+05-17 11:09:08.692  1300  1522 E RUNTIME : GetDeviceCount:72 Get device count fail, errorcode = 2
+05-17 11:09:08.692  1300  1522 E RUNTIME : rtSetDevice:81 Get device count failed
+05-17 11:09:08.692  1300  1522 E AI_NPUCL: npu_resilience.cc SetDevice(27)::"rtSetDevice fail"
+05-17 11:09:08.693 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:08.694 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:08.697 13863 13866 I bms_behavior: [Monitor]: monitor interval count 2247, name: Battery
+05-17 11:09:08.717  2667  4075 D HwCommBoosterService: reportBoosterPara enter
+05-17 11:09:08.717  2667  4075 D HwCommBoosterManager: reportBoosterPara enter
+05-17 11:09:08.717  2667  4075 D HwCommBoosterManager: pluginId: 2dataType:801
+05-17 11:09:08.718  2667  2889 D HwCommBoosterManager: handleBoosterMessageSendModuleDataToPlugin enter
+05-17 11:09:08.740  1732  2085 I TrafficMonitor: update:rxPkts:8,txPkts:4,rxBytes:2046,txBytes:1462
+05-17 11:09:08.741  1732  2085 I TrafficMonitor: gettimer:interval=2000
+05-17 11:09:08.756  2667  8098 I Booster_Qoe: Ada,index:8,NisPsSlow:0,NProba:285,rsrp(rssi):-60,rsrq(noise):-87,rtt(chload):25,BFH(uldelay):1,BFC(rtt):6 Real:0,0,6,0,0, dlBler:0, ulBler:0
+05-17 11:09:08.756  2667  8098 I Booster_Qoe: Ada,index:2,NisPsSlow:0,NProba:285,rsrp(rssi):-60,rsrq(noise):-87,rtt(chload):25,BFH(uldelay):1,BFC(rtt):10 Real:0,0,10,0,0, dlBler:0, ulBler:0
+05-17 11:09:08.757  2667  2889 E NetworkQoeProxy: invalid channelId = 0
+05-17 11:09:08.757  2667  2889 E NetworkQoeProxy: invalid channelId = 1
+05-17 11:09:08.757  2667  2889 D BoosterUtil: convertSubIdToSlotId, subId invalid: -1
+05-17 11:09:08.758  2667  2889 D BoosterUtil: getDefaultDataSlotId failed, invalid slotId:-1, subId:-1
+05-17 11:09:08.758  2667  2889 D BoosterUtil: convertSubIdToSlotId, subId invalid: -1
+05-17 11:09:08.758  2667  2889 D BoosterUtil: getDefaultDataSlotId failed, invalid slotId:-1, subId:-1
+05-17 11:09:08.759  2667  2889 E Booster_BroadcastProxy: [isDebugModemEnabled]get package info fail.
+05-17 11:09:08.760  2667  2889 E Booster_NetworkQoeChr: [chrBlerMonitorAndReport]modemQoeData is not present
+05-17 11:09:08.762  1732  2182 I WiFi_PRO_WifiProStateMachine: APP_SERVICE_QOE_NOTIFY Qoe info 10024,4,0,285,1,2,4,0,285,1729400,1921500,11,10,0,0,3,0 CID 2 mMasterWifiRssi -60 mMasterCardAmbr 1048576 mSlaveCardAmbr 1048576
+05-17 11:09:08.762  2667  3512 D Hicom_XEngineProc: isSupportLocalSocketKit packageNam: com.huawei.appmarket isSupported: false
+05-17 11:09:08.762  1732  2182 V HwWifiServiceFactory: get AllImpl object = com.android.server.wifi.HwWifiServiceFactoryImpl@f1bb540
+05-17 11:09:08.763  1732  2182 I HwWifiProServiceProxy: ctrlHwWifiNetwork pkgName: WIFIPRO_SERVICE interfaceId: 9
+05-17 11:09:08.763  1732  2182 I WiFi_PRO_WifiProStateMachine: isWifi2WifiProcess = false, mIsNeedIgnoreQoeUpdate = false, mIsAppInBlacklistFullScreen = false, mIsWiFiNoInternet false, screen on = true, full screen = false, isLandscapeMode = false, mNotifyWifiLinkPoorReason = -1, mIsAppInBlacklistQoe false, mIsAppInBlackListAll true
+05-17 11:09:08.763  1732  2182 I WiFi_PRO_WifiProStateMachine: ignore app qoe info update
+05-17 11:09:08.763  1732  2182 I WiFi_PRO_WifiProStateMachine: resetWifiQoeBad
+05-17 11:09:08.763  1732  2182 I WiFi_PRO_WifiProStateMachine: the fast decay result in WifiProStateMachine : 1
+05-17 11:09:08.764  1732  2182 I WiFi_PRO_WifiProStateMachine: Non-corporate && open network, the fast decay result is : 1
+05-17 11:09:08.764  1732  2182 I WiFi_PRO_WifiProStateMachine: ignore fastdecay and asymmetricLink
+05-17 11:09:08.797  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:08.820  1241  1440 D AGPService: AppDynamicFps: SF is ACTIVE, diff 0.3s
+05-17 11:09:08.919  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:08.935  2729 17458 I AppInfo : getPid size is bad, size: -1
+05-17 11:09:08.935  2729 17458 I PGServer: android calls fast HApps
+05-17 11:09:08.935  2729 17458 I AppAct  : fastHibernation hurry_h pkg list: [com.makd.afinity.debug]
+05-17 11:09:08.936  2729  3563 I PG_ash  : request H pkgs: [com.makd.afinity.debug] reason: hurry_h
+05-17 11:09:08.937  2729  3563 I PG_ash  : com.makd.afinity.debug timeout trigger time sources: BgBroadcast, triggerTime: 300174916
+05-17 11:09:08.937  2729  3563 I PG_ash  : com.makd.afinity.debug update time, cur: 300904855, trigger: 300174916
+05-17 11:09:08.940  2729  3563 I PG_ash  : com.makd.afinity.debug not check download condition with no dl requisites
+05-17 11:09:08.941  2729  3563 I ash_trans: com.makd.afinity.debug { doze duration=1013 Uptime=1014 } transition to: hibernation reason:app_type_unknown unknown_state unknown_state
+05-17 11:09:08.941  2729  3563 I PG_ash  : perform H actions: com.makd.afinity.debug
+05-17 11:09:08.946   634   634 I android.system.suspend@1.0-service: incSuspendCounter kname=native_PowerManagerService.WakeLocks ++mSuspendCounter= 3
+05-17 11:09:08.947  2729  3563 I PG_ash  : treat as im in oversea for smart opt and frequent used: com.makd.afinity.debug
+05-17 11:09:08.948  2729  3563 I PG_ash  : add care com.makd.afinity.debug packet OK !,uid:10190
+05-17 11:09:08.948  2729  3563 I PG_ash  : not perform H_B action:com.makd.afinity.debug
+05-17 11:09:08.949  1732 15093 I PGManagerService: notify frz state to nsd, pkg: com.makd.afinity.debug
+05-17 11:09:08.949  1732  2104 E NsdService: App com.makd.afinity.debug enter frozen with non-existent package name
+05-17 11:09:08.949  1732 15093 I PGManagerService: proxy gps com.makd.afinity.debug 10190 success
+05-17 11:09:08.949  2729  3563 I PG_ash  : P_GPS com.makd.afinity.debug OK !
+05-17 11:09:08.949  1732 15093 I PGManagerService: proxyBroadcast:[com.makd.afinity.debug] proxy:true
+05-17 11:09:08.950  2729  3563 I PG_ash  : P_BC com.makd.afinity.debug OK ! delayMs:0
+05-17 11:09:08.950  2729  3563 I PG_ash  : perform delay action: com.makd.afinity.debug
+05-17 11:09:08.950  1280  9144 I Pged-IPgedBinderService: ****action is 1, pid num is 2***
+05-17 11:09:08.950  1280  9144 I Pged-Freezer: freezePids
+05-17 11:09:08.950  1280  9144 I Pged-Freezer: check recent binder
+05-17 11:09:08.950  1280  9144 I Pged-Freezer: Freeze process: 29946
+05-17 11:09:08.950  1280  9144 I Pged-Freezer: get tgid:29946
+05-17 11:09:08.950  2729  3563 D PgedBinderAdapter: F_Z ok, pid: [29946]
+05-17 11:09:08.950  2729  3563 I PGServer: report state:6 event type:1 pid:0 uid:10190 pkg:com.makd.afinity.debug to pid: 1732
+05-17 11:09:08.950  2729  3563 I PGServer: report state:100 event type:1 pid:0 uid:10190 pkg:29946 to pid: 1732
+05-17 11:09:08.951  2729  3563 I PG_ash  : F_Z com.makd.afinity.debug OK ! Type: -1
+05-17 11:09:08.951  2729  3563 I PG_ash  : h takeover P_Sensor pkg:com.makd.afinity.debug
+05-17 11:09:08.951  1732 12564 I PGManagerService: pid:29946 uid:10190 proxy:true
+05-17 11:09:08.951  2729  3563 I PG_ash  : P_wl uids = [10190] pids = [29946]
+05-17 11:09:08.951  1732 15093 I SWAP_Scene: Entering notifySceneData notifySceneData. EventType:FREEZE pkg:com.makd.afinity.debug uid:10190 pid:0 proc: activity:null
+05-17 11:09:08.951  2729  3563 I PG_ash  : com.makd.afinity.debug delay restrict net due to hurryh, delay : 3000
+05-17 11:09:08.953   634   634 I android.system.suspend@1.0-service: decSuspendCounter kname=native_PowerManagerService.WakeLocks --mSuspendCounter= 2
+05-17 11:09:09.024  1241  1440 D AGPService: AppDynamicFps: SF is NOT ACTIVE, diff 0.5s
+05-17 11:09:09.024  1241  1440 I AGPService: AppDynamicFps idle
+05-17 11:09:09.024  1241  1440 I AGPService: AppDynamicFps: change lcd freq to 60 - touch up after 0.6s
+05-17 11:09:09.025  1241  1285 I AGPService: FrameRateManager:[CheckAnimationTimeOut] timeout animation check Before 0, After 0
+05-17 11:09:09.025  1241  1285 I AGPService: FrameRateManager:[HandleFrameRateRefresh] currPkgName: com.huawei.appmarket, strategyCode 60120: dynamicCode 1, isFactor 0, min 60, max 120, down 120, idle 60
+05-17 11:09:09.025  1241  1285 D AGPService: FrameRateManager:[GetUiAnimationData] not support LTPO2.0
+05-17 11:09:09.025  1241  1285 I AGPService: FrameRateManager:[JudgeFinalLcdFps] sceneinfo(0, -2, 0, 0);touchinfo(1, 1, 3, 60);isFHF 0 animFps -1 sfFps 0 damageFps -1 pkg  isSurface 1
+05-17 11:09:09.025  1241  1285 I AGPService: FrameRateManager:[JudgeFinalLcdFps] Finish judging and final lcd fps: 60
+05-17 11:09:09.025  1241  1285 D AGPService: Bp<- displayGetFps
+05-17 11:09:09.026   851   851 D HW_DISPLAY_TEST: display_get_fps: Get FPS successful
+05-17 11:09:09.026   851   851 D HW_DISPLAY_TEST: display_get_fps: open file /sys/class/graphics/fb0/lcd_fps_scence:current_fps:120;default_fps:120;support_fps_list:120,144,60;product_panel_num:1;current_panel_id:0;panel_id:0;panel_type:LTPO2;support_fps:120,144,60
+05-17 11:09:09.026   851   851 D HW_DISPLAY_TEST:  success
+05-17 11:09:09.026  1241  1285 I AGPService: display get fps - current_fps:120;default_fps:120;support_fps_list:120,144,60;product_panel_num:1;current_panel_id:0;panel_id:0;panel_type:LTPO2;support_fps:120,144,60
+05-17 11:09:09.026  1241  1285 D AGPService: FrameRefreshThread: set refreshrate - 60
+05-17 11:09:09.027  1241  1290 I AGPService: FrameRateManager:[SetActiveConfigByFps] reset Pkg isSurface, AnimFps -1, fps to sf 60
+05-17 11:09:09.027   909  1796 D surfaceflinger: getRefreshRateFromFps: get target refresh rate fps 60
+05-17 11:09:09.027   909  1796 I SurfaceFlinger: changeRefreshRate: new mode 2, fps 60, active display 0
+05-17 11:09:09.027   909  1796 D DisplayDevice: setDesiredActiveMode({id=2, hwcId=32, width=2800, height=1840, refreshRate=60.00fps, dpiX=274.59, dpiY=274.92, group=0}) on display 0
+05-17 11:09:09.027  1241  1290 I AGPService: FrameRateManager: set active config - fps 60 pkgName  isSurface 1
+05-17 11:09:09.027  1241  1290 I AGPService: FrameRefreshThread: [CheckRefreshRateSuccess]: fps 60
+05-17 11:09:09.028   851   851 D HW_DISPLAY_TEST: display_set_fps: display_set_fps:3
+05-17 11:09:09.028   851   851 D HW_DISPLAY_TEST: get_oled_type: panel info is blmax:16380,blmin:4,blmax_nit_actual:0,blmax_nit_standard:0,lcdtype:AMOLED,bl_type: ,oled_type:LTPO2
+05-17 11:09:09.028   851   851 D HW_DISPLAY_TEST: get_oled_type: lcd type is LTPO
+05-17 11:09:09.028   851   851 D HW_DISPLAY_TEST: ltpo_set_fps: display_set_fps_ltpo:3
+05-17 11:09:09.028   851   851 E HW_DISPLAY_TEST: ltpo_set_fps: open file /sys/class/graphics/fb0/lcd_fps_cmd fail
+05-17 11:09:09.029   851   851 E vendor.huawei.hardware.hwdisplay@1.1-service: call display_set_brightness failed: -1
+05-17 11:09:09.029  1241  1290 E AGPService: DisplayFreqClient: displaySetFps error, freqIndex: 3, ret: -2
+05-17 11:09:09.029  1241  1290 D AGPService: Bp<- displayGetFps
+05-17 11:09:09.029   851   851 D HW_DISPLAY_TEST: display_get_fps: Get FPS successful
+05-17 11:09:09.029   851   851 D HW_DISPLAY_TEST: display_get_fps: open file /sys/class/graphics/fb0/lcd_fps_scence:current_fps:120;default_fps:120;support_fps_list:120,144,60;product_panel_num:1;current_panel_id:0;panel_id:0;panel_type:LTPO2;support_fps:120,144,60
+05-17 11:09:09.029   851   851 D HW_DISPLAY_TEST:  success
+05-17 11:09:09.029  1241  1290 I AGPService: display get fps - current_fps:120;default_fps:120;support_fps_list:120,144,60;product_panel_num:1;current_panel_id:0;panel_id:0;panel_type:LTPO2;support_fps:120,144,60
+05-17 11:09:09.029   909   909 I DisplayDevice: initiateModeChange: change to mode 2(60fps) on display 0
+05-17 11:09:09.030   845  2245 W HDM[core]: SetDisplayResolution:2071: User set resolution is equal to current active resolution
+05-17 11:09:09.030   845  2245 W HDM[core]: SetActiveAttrId:2095: Attr Id:32, active Fps : 60, Dvfs Fps : 144
+05-17 11:09:09.033   909  1406 I VSyncPredictor: setPeriod: 16666666
+05-17 11:09:09.035  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:09.046  1241  1290 D AGPService: Bp<- displayGetFps
+05-17 11:09:09.046   851   851 D HW_DISPLAY_TEST: display_get_fps: Get FPS successful
+05-17 11:09:09.046   851   851 D HW_DISPLAY_TEST: display_get_fps: open file /sys/class/graphics/fb0/lcd_fps_scence:current_fps:60;default_fps:120;support_fps_list:120,144,60;product_panel_num:1;current_panel_id:0;panel_id:0;panel_type:LTPO2;support_fps:120,144,60
+05-17 11:09:09.046   851   851 D HW_DISPLAY_TEST:  success
+05-17 11:09:09.046  1241  1290 I AGPService: display get fps - current_fps:60;default_fps:120;support_fps_list:120,144,60;product_panel_num:1;current_panel_id:0;panel_id:0;panel_type:LTPO2;support_fps:120,144,60
+05-17 11:09:09.046  1241  1290 I AGPService: FrameRefreshThread: set refreshrate finished, tryRefreshCount = 1, lcdFps = 60
+05-17 11:09:09.046  1241  1290 I AGPService: ScheduleProxy:[SendSlideRefreshRate] refreshrate - 60
+05-17 11:09:09.046   874   874 I Sched hal: SlideResMng receive currentFps = 60
+05-17 11:09:09.046  1241  1290 D AGPService: FrameRateManager: NotifyPackageUpdatedToITouch: currPkgName - com.huawei.appmarket, type - 31, lcdFps - 60
+05-17 11:09:09.046   874   874 I vendor.huawei.hardware.hwsched@1.0-service: [SlidResMng]: lastFpsAGP is 120: current is 60
+05-17 11:09:09.047   874   874 I vendor.huawei.hardware.hwsched@1.0-service: [SlidResMng]: Ioctl SetPara!
+05-17 11:09:09.048  1241  1290 D ITouchService: GameSceneManager: game scene not changed, set game mode returned
+05-17 11:09:09.049  1241  1290 D ITouchService: itouch OneFrameInfo check OneFrameSence in RefreshRateConfig 1
+05-17 11:09:09.049  1241  1290 E ITouchService: itouch OneFrameDetect instance is nullptr or oneFrameSwitch is not change
+05-17 11:09:09.052   909   909 D DisplayDevice: setActiveMode: new mode 2, old mode 0, on display 0
+05-17 11:09:09.052   909   909 D SurfaceFlinger: performSetActiveMode: already at the requested mode 2 on display 0
+05-17 11:09:09.052  1732  1752 D ThirdPartyParser: pkgName is :null
+05-17 11:09:09.052  1732  1752 D ThirdPartyParser: pkgName is :null
+05-17 11:09:09.052  1732  1752 D ThirdPartyParser: pkgName is :null
+05-17 11:09:09.052  1732  1752 D ThirdPartyParser: pkgName is :null
+05-17 11:09:09.052  1732  1752 D ThirdPartyParser: pkgName is :null
+05-17 11:09:09.052  1732  1752 D ThirdPartyParser: pkgName is :null
+05-17 11:09:09.053  1732  1752 V LocalDisplayAdapter: getDisplayDeviceInfoLocked called,2800x1840, 2800x1840displayCutout null
+05-17 11:09:09.053  1732  1752 I DisplayDeviceRepository: changed: ddi{Встроенный экран,2800x1840,3,1,0,[0, 7, 9],HC{[2, 3],500.0,102.0,1.0},false,false,2000000,15666666,1,0,1,2,0.0,1.0,0.4,1,2,4,8}
+05-17 11:09:09.054  1732  1752 I DisplayInfo: diff:131072
+05-17 11:09:09.055  1732  1771 I HwMediaSessionServiceEx: MediaDisplayEventReceiver onDisplayChanged: 0
+05-17 11:09:09.055  1732  2499 I NetworkTimeUpdateService: Display displayState:2
+05-17 11:09:09.056  1732  1750 I HwActivityTaskSupervisorEx: handleVrDisplayChanged displayId = 0
+05-17 11:09:09.056  1732  1750 W HwActivityTaskSupervisorEx: handleVrDisplayChanged other vr mode displayId: 0
+05-17 11:09:09.056  1732  1753 E ParseBarrageHideWhitelistXml: isWhitelistActivity  useNotchNeverMode
+05-17 11:09:09.056  1732  1753 E ParseBarrageHideWhitelistXml: isWhitelistActivity  useNotchNeverMode
+05-17 11:09:09.057  1732  1753 E ParseBarrageHideWhitelistXml: isWhitelistActivity  useNotchNeverMode
+05-17 11:09:09.057  1732  1753 E ParseBarrageHideWhitelistXml: isWhitelistActivity  useNotchNeverMode
+05-17 11:09:09.057  1732  1753 D ThirdPartyParser: pkgName is :null
+05-17 11:09:09.057  1732  1753 D ThirdPartyParser: pkgName is :null
+05-17 11:09:09.057  1732  1753 D ThirdPartyParser: pkgName is :null
+05-17 11:09:09.057  1732  1753 D ThirdPartyParser: pkgName is :null
+05-17 11:09:09.057  1732  1753 D ThirdPartyParser: pkgName is :null
+05-17 11:09:09.057  1732  1753 D ThirdPartyParser: pkgName is :null
+05-17 11:09:09.057  1732  1753 I LogicalDisplay: displayInfo = (0,0,1840,2800,0)
+05-17 11:09:09.057  1732  1753 D LogicalDisplay: configureDisplayLocked mTempLayerStackRect=Rect(0, 0 - 1840, 2800) mTempDisplayRect=Rect(0, 0 - 1840, 2800) orientation = 0
+05-17 11:09:09.057  1732  1753 I DisplayDevice: setProjectionLocked begin displayId 0 isDefaultDisplay true orientation(3->0) LayerStackRect(Rect(0, 0 - 1840, 2800)->Rect(0, 0 - 1840, 2800)) DisplayRect(Rect(0, 0 - 1840, 2800)->Rect(0, 0 - 1840, 2800))
+05-17 11:09:09.058  1732  1753 I DisplayDevice: isNeedRefreshOrientaion orientation 3
+05-17 11:09:09.059  1732  1753 E ParseBarrageHideWhitelistXml: isWhitelistActivity  useNotchNeverMode
+05-17 11:09:09.059  1732  1753 E ParseBarrageHideWhitelistXml: isWhitelistActivity  useNotchNeverMode
+05-17 11:09:09.060  2729  3110 I CpugovFpsLink: performance end
+05-17 11:09:09.060   878   903 D uniperf server: EnterActionProc DoParse failed, cmdId=12353
+05-17 11:09:09.060   878   903 D uniperf hal: do UniPerfEvent failed, cmdId=12353, ret=2
+05-17 11:09:09.060  1732  1732 I HwMultiDisplayManager: onDisplayChanged: 0
+05-17 11:09:09.061  2304  2304 I HwDisplayInfo: updateDisplayInfoInner begin
+05-17 11:09:09.062  2304  2304 I HwDisplayInfo: get display Info: display Id: 0, RealSize: Point(1840, 2800), mRotation: 0, mFoldMode: 0, WidthPixels: 1840, HeightPixels: 2800
+05-17 11:09:09.062  2304  2304 I HwDisplayInfo: updateDisplayInfoInner finish
+05-17 11:09:09.062  2304  2304 I WallpaperService: onDisplayChanged(0), state = 2
+05-17 11:09:09.157  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:09.273  1280  4125 I CPU_STATS: iawared: query next cpu load with 2!
+05-17 11:09:09.273  1280  4125 I CPU_STATS: total cost time 2007505000 ns
+05-17 11:09:09.275  1280  4125 I CPU_STATS: iawared: current total load is 0.060319, capacity : 5166, pre load:  91452832711425, current load : 91453443601821
+05-17 11:09:09.275  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:09.277  1280  4125 I CPU_STATS: read once cost time 3883 us
+05-17 11:09:09.319   588   588 E SELinux : avc:  denied  { find } for pid=3924 uid=5531 name=huawei.android.security.IAppBehaviorDataAnalyzer scontext=u:r:sle:s0:c155,c277,c512,c768 tcontext=u:object_r:hsm_aiprotection_analyzer_service:s0 tclass=service_manager permissive=0
+05-17 11:09:09.320   588   588 E servicemanager: 'huawei.android.security.IAppBehaviorDataAnalyzer' is not accessible by 3924 (SELinux restricted)
+05-17 11:09:09.382  2667  2889 I ConnCureStateMonitor: handleMessage: msg[4]
+05-17 11:09:09.383  2667  2889 I ConnCureStateMonitor: canPerformConnCure: network is not in service.
+05-17 11:09:09.383  2667  2889 D ConnCureConfigUtil: isCaredApp: input = com.huawei.appmarket
+05-17 11:09:09.384  2667  2889 I ConnCureStateMonitor: isCaredApp:false,isAllowed:true,isDataEnabled:true
+05-17 11:09:09.396  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:09.516  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:09.578 16171 16171 I HwMSDPMovementManager: getCurrentMovement type 0
+05-17 11:09:09.581   824   849 I ArHal   : (ArDataGetState:1477):id[2]
+05-17 11:09:09.585 16171 16171 I L_HmsMsdpClient: [LocKit LogLocation.java:1] arId = 4
+05-17 11:09:09.636  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:09.653  2667  8098 I fast_decay: HandleBeaconRssiInfo, fastDecayResult is : 1, wifiFastDecayTotalResult is : 1
+05-17 11:09:09.653  2667  8098 I asymmetric_link: getPer, getPer: 0.000000, filterTxRate: 17376.882812, filterRxRate: 18668.853516
+05-17 11:09:09.653  2667  8098 I asymmetric_link: IsAsymmetricLinkSuccess, return false. filterFlow is : 1.553514
+05-17 11:09:09.653  2667  8098 I asymmetric_link: HandleAsymmetricLinkInfo, the txRssi: -78.142807, the activeNodeCnt: -1, the wifiAsymmetricLinkResult : 0
+05-17 11:09:09.694  1300  1522 E RUNTIME : ContextSetCurrentRef:54 ctx is nullptr!
+05-17 11:09:09.694  1300  1522 E hiaiserver: DEVDRV : DevdrvOpenDeviceManager:61 open device manager fail, errno = 2
+05-17 11:09:09.694  1300  1522 E hiaiserver: DEVDRV : reportStat:44 get file stat fail, errno = 2
+05-17 11:09:09.694  1300  1522 E hiaiserver: DEVDRV : DrvDeviceGetCount:131 open device error
+05-17 11:09:09.694  1300  1522 E RUNTIME : GetDeviceCount:72 Get device count fail, errorcode = 2
+05-17 11:09:09.694  1300  1522 E RUNTIME : rtSetDevice:81 Get device count failed
+05-17 11:09:09.694  1300  1522 E AI_NPUCL: npu_resilience.cc SetDevice(27)::"rtSetDevice fail"
+05-17 11:09:09.722  1732  2182 I WifiNl80211Manager: Noise: -87, Snr: 37, Chload: 25, rssi: -60, txBitrate: 1729, rxBitrate: 1921, frequency: 5220, UlDelay: 1, currentTxBytes: 38568296, currentTxPackets: 387641, currentTxFailed: 0, currentRxBytes: 198861553, currentRxPackets: 3254957, chloadSelf: 0, c0RssiDbm: -128, c1RssiDbm: -128
+05-17 11:09:09.722  1732  2182 I HwDualBandLearningAlg: update5gBetaAttribute, m24gConnectionRateList is empty or not full, ignore
+05-17 11:09:09.722  2667  4075 D HwCommBoosterService: reportBoosterPara enter
+05-17 11:09:09.723  2667  4075 D HwCommBoosterManager: reportBoosterPara enter
+05-17 11:09:09.723  2667  4075 D HwCommBoosterManager: pluginId: 2dataType:801
+05-17 11:09:09.723  2667  2889 D HwCommBoosterManager: handleBoosterMessageSendModuleDataToPlugin enter
+05-17 11:09:09.735  1732  2085 I TrafficMonitor: expired arrive. level:-1
+05-17 11:09:09.736  1732  2085 I TrafficMonitor: during_ms:2004,period_ms:2000
+05-17 11:09:09.736  1732  2085 I TrafficMonitor: count:60,rx_sum:8,tx_sum:4,rxBytes:2046,during_ms:2004,rx_speed:1020.9580838323353,tx_speed:729.5409181636727,rto:2.0
+05-17 11:09:09.736  1732  2085 I HuaweiWifiWatchdogStateMachine: Get speed information rx_speed = 1020 ,tx_speed = 729 ,isSpeedOk = false ,mBestSpeedInPeriod = 1020
+05-17 11:09:09.756  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:09.780  2667  8098 I Booster_Qoe: Ada,index:8,NisPsSlow:0,NProba:285,rsrp(rssi):-60,rsrq(noise):-87,rtt(chload):25,BFH(uldelay):1,BFC(rtt):2 Real:0,0,2,0,0, dlBler:0, ulBler:0
+05-17 11:09:09.780  2667  8098 I Booster_Qoe: Ada,index:2,NisPsSlow:0,NProba:285,rsrp(rssi):-60,rsrq(noise):-87,rtt(chload):25,BFH(uldelay):1,BFC(rtt):4 Real:0,0,4,0,0, dlBler:0, ulBler:0
+05-17 11:09:09.781  2667  2889 E NetworkQoeProxy: invalid channelId = 0
+05-17 11:09:09.781  2667  2889 E NetworkQoeProxy: invalid channelId = 1
+05-17 11:09:09.781  2667  2889 D BoosterUtil: convertSubIdToSlotId, subId invalid: -1
+05-17 11:09:09.781  2667  2889 D BoosterUtil: getDefaultDataSlotId failed, invalid slotId:-1, subId:-1
+05-17 11:09:09.781  2667  2889 D BoosterUtil: convertSubIdToSlotId, subId invalid: -1
+05-17 11:09:09.782  2667  2889 D BoosterUtil: getDefaultDataSlotId failed, invalid slotId:-1, subId:-1
+05-17 11:09:09.783  2667  2889 E Booster_BroadcastProxy: [isDebugModemEnabled]get package info fail.
+05-17 11:09:09.783  2667  2889 E Booster_NetworkQoeChr: [chrBlerMonitorAndReport]modemQoeData is not present
+05-17 11:09:09.785  2667  3512 D Hicom_XEngineProc: isSupportLocalSocketKit packageNam: com.huawei.appmarket isSupported: false
+05-17 11:09:09.786  1732  2182 I WiFi_PRO_WifiProStateMachine: APP_SERVICE_QOE_NOTIFY Qoe info 10024,4,0,285,1,2,4,0,285,1729400,1921500,11,10,0,0,1,0 CID 2 mMasterWifiRssi -60 mMasterCardAmbr 1048576 mSlaveCardAmbr 1048576
+05-17 11:09:09.787  1732  2182 V HwWifiServiceFactory: get AllImpl object = com.android.server.wifi.HwWifiServiceFactoryImpl@f1bb540
+05-17 11:09:09.787  1732  2182 I HwWifiProServiceProxy: ctrlHwWifiNetwork pkgName: WIFIPRO_SERVICE interfaceId: 9
+05-17 11:09:09.787  1732  2182 I WiFi_PRO_WifiProStateMachine: isWifi2WifiProcess = false, mIsNeedIgnoreQoeUpdate = false, mIsAppInBlacklistFullScreen = false, mIsWiFiNoInternet false, screen on = true, full screen = false, isLandscapeMode = false, mNotifyWifiLinkPoorReason = -1, mIsAppInBlacklistQoe false, mIsAppInBlackListAll true
+05-17 11:09:09.787  1732  2182 I WiFi_PRO_WifiProStateMachine: ignore app qoe info update
+05-17 11:09:09.788  1732  2182 I WiFi_PRO_WifiProStateMachine: resetWifiQoeBad
+05-17 11:09:09.788  1732  2182 I WiFi_PRO_WifiProStateMachine: the fast decay result in WifiProStateMachine : 1
+05-17 11:09:09.788  1732  2182 I WiFi_PRO_WifiProStateMachine: Non-corporate && open network, the fast decay result is : 1
+05-17 11:09:09.788  1732  2182 I WiFi_PRO_WifiProStateMachine: ignore fastdecay and asymmetricLink
+05-17 11:09:09.876  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:09.914  1732  1966 W AwareLog: CpuCommonUtil: Failed to set cgroup policy for pid:1732, tid:1753, isSet:false
+05-17 11:09:09.966  1732  2085 I WifiNl80211Manager: Noise: -87, Snr: 37, Chload: 25, rssi: -60, txBitrate: 1729, rxBitrate: 1921, frequency: 5220, UlDelay: 1, currentTxBytes: 38568296, currentTxPackets: 387641, currentTxFailed: 0, currentRxBytes: 198861553, currentRxPackets: 3254957, chloadSelf: 0, c0RssiDbm: -128, c1RssiDbm: -128
+05-17 11:09:09.969  1732  2085 V HwWifiServiceFactory: get AllImpl object = com.android.server.wifi.HwWifiServiceFactoryImpl@f1bb540
+05-17 11:09:09.996  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:10.046  2667  2889 I OllieMsgCenter: publishEvt=2135097353
+05-17 11:09:10.116  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:10.146  1732  2186 I WifiNl80211Manager: Noise: -87, Snr: 37, Chload: 25, rssi: -60, txBitrate: 1729, rxBitrate: 1921, frequency: 5220, UlDelay: 1, currentTxBytes: 38568296, currentTxPackets: 387641, currentTxFailed: 0, currentRxBytes: 198861553, currentRxPackets: 3254957, chloadSelf: 0, c0RssiDbm: -128, c1RssiDbm: -128
+05-17 11:09:10.146  1732  2186 D HuaweiWifiWatchdogStateMachine: nothing to do
+05-17 11:09:10.147  1732  2184 I WiFi_PRO: MSG_RETURN_AP_CURRY_RSSI rssi = -60
+05-17 11:09:10.147  1732  2184 I QosMonitor: queryRtt: rttType = 3
+05-17 11:09:10.147  1732  2184 I QosMonitor: call ctrlHwWifiNetwork
+05-17 11:09:10.147  1732  2186 I HuaweiWifiWatchdogStateMachine: high data flow: protection_counter = 0,  not_detect_counter = 169
+05-17 11:09:10.147  1732  2186 I HuaweiWifiWatchdogStateMachine: high data flow scenario: 0 --> 0 rx rate =0KB/s
+05-17 11:09:10.147  1732  2186 I HuaweiWifiWatchdogStateMachine: POta txb txg rxg:0, 14, 0. Lr =0% Totpkt=14
+05-17 11:09:10.147  1732  2182 I HwDualBandManager: handle2gApStrongWifiRssiChange
+05-17 11:09:10.148  1732  2182 V HwWifiServiceFactory: get AllImpl object = com.android.server.wifi.HwWifiServiceFactoryImpl@f1bb540
+05-17 11:09:10.148  1732  2184 I QosMonitor: postEventFromNative: msg=100,arg1=4,arg2=10
+05-17 11:09:10.149  1732  2184 I QosMonitor: call ctrlHwWifiNetwork
+05-17 11:09:10.149  1732  2184 I QosMonitor: postEventFromNative: msg=100,arg1=0,arg2=10
+05-17 11:09:10.150  1732  2184 I MQoS    : rtt=300,tcpTxPkts=368915,tcpRxPkts=564119
+05-17 11:09:10.150  1732  2186 I HuaweiWifiWatchdogStateMachine: PTcp RTT:300, rtt pkt=7, tcp_rx=12, tcp_tx=8, tcp_reTran=0, rtRate=0
+05-17 11:09:10.150  1732  2186 I HwWifiProServiceProxy: ctrlHwWifiNetwork pkgName: WIFIPRO_SERVICE interfaceId: 101
+05-17 11:09:10.150  1732  7839 I HwConnectivityServiceEx: set 1000, metered: false, value: false
+05-17 11:09:10.150  1732  2186 I HuaweiWifiWatchdogStateMachine: start computeQosLevel tcpRtt = 300 ,rssi = -60 ,mBestSpeedInPeriod = 1020
+05-17 11:09:10.151  1732  2186 I HuaweiWifiWatchdogStateMachine: smoothConsecutiveQosResults, currentQosLevel = 3
+05-17 11:09:10.151  1732  2184 I QosMonitor: resetRtt: rttType = 3
+05-17 11:09:10.152  1732  2184 I QosMonitor: call ctrlHwWifiNetwork
+05-17 11:09:10.236  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:10.356  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:10.476  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:10.579 16171 16171 I HwMSDPMovementManager: getCurrentMovement type 0
+05-17 11:09:10.581   824   849 I ArHal   : (ArDataGetState:1477):id[2]
+05-17 11:09:10.586 16171 16171 I L_HmsMsdpClient: [LocKit LogLocation.java:1] arId = 4
+05-17 11:09:10.596  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:10.689  2667  8098 I fast_decay: HandleBeaconRssiInfo, fastDecayResult is : 1, wifiFastDecayTotalResult is : 1
+05-17 11:09:10.690  2667  8098 I asymmetric_link: getPer, getPer: 0.000000, filterTxRate: 17366.523438, filterRxRate: 18737.121094
+05-17 11:09:10.690  2667  8098 I asymmetric_link: IsAsymmetricLinkSuccess, return false. filterFlow is : 1.287135
+05-17 11:09:10.690  2667  8098 I asymmetric_link: HandleAsymmetricLinkInfo, the txRssi: -78.516998, the activeNodeCnt: -1, the wifiAsymmetricLinkResult : 0
+05-17 11:09:10.698  1300  1522 E RUNTIME : ContextSetCurrentRef:54 ctx is nullptr!
+05-17 11:09:10.698  1300  1522 E hiaiserver: DEVDRV : DevdrvOpenDeviceManager:61 open device manager fail, errno = 2
+05-17 11:09:10.698  1300  1522 E hiaiserver: DEVDRV : reportStat:44 get file stat fail, errno = 2
+05-17 11:09:10.698  1300  1522 E hiaiserver: DEVDRV : DrvDeviceGetCount:131 open device error
+05-17 11:09:10.699  1300  1522 E RUNTIME : GetDeviceCount:72 Get device count fail, errorcode = 2
+05-17 11:09:10.699  1300  1522 E RUNTIME : rtSetDevice:81 Get device count failed
+05-17 11:09:10.699  1300  1522 E AI_NPUCL: npu_resilience.cc SetDevice(27)::"rtSetDevice fail"
+05-17 11:09:10.716  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:10.728  2667  4075 D HwCommBoosterService: reportBoosterPara enter
+05-17 11:09:10.729  2667  4075 D HwCommBoosterManager: reportBoosterPara enter
+05-17 11:09:10.729  2667  4075 D HwCommBoosterManager: pluginId: 2dataType:801
+05-17 11:09:10.729  2667  2889 D HwCommBoosterManager: handleBoosterMessageSendModuleDataToPlugin enter
+05-17 11:09:10.751  1732  2085 I TrafficMonitor: update:rxPkts:3,txPkts:0,rxBytes:455,txBytes:0
+05-17 11:09:10.752  1732  2085 I TrafficMonitor: gettimer:interval=2000
+05-17 11:09:10.804  2667  8098 I Booster_Qoe: Ada,index:8,NisPsSlow:0,NProba:285,rsrp(rssi):-60,rsrq(noise):-87,rtt(chload):25,BFH(uldelay):1,BFC(rtt):0 Real:0,0,0,0,0, dlBler:0, ulBler:0
+05-17 11:09:10.804  2667  8098 I Booster_Qoe: Ada,index:2,NisPsSlow:0,NProba:285,rsrp(rssi):-60,rsrq(noise):-87,rtt(chload):25,BFH(uldelay):1,BFC(rtt):1 Real:0,0,1,0,0, dlBler:0, ulBler:0
+05-17 11:09:10.804  2667  2889 E NetworkQoeProxy: invalid channelId = 0
+05-17 11:09:10.805  2667  2889 E NetworkQoeProxy: invalid channelId = 1
+05-17 11:09:10.805  2667  2889 D BoosterUtil: convertSubIdToSlotId, subId invalid: -1
+05-17 11:09:10.805  2667  2889 D BoosterUtil: getDefaultDataSlotId failed, invalid slotId:-1, subId:-1
+05-17 11:09:10.805  2667  2889 D BoosterUtil: convertSubIdToSlotId, subId invalid: -1
+05-17 11:09:10.805  2667  2889 D BoosterUtil: getDefaultDataSlotId failed, invalid slotId:-1, subId:-1
+05-17 11:09:10.807  2667  2889 E Booster_BroadcastProxy: [isDebugModemEnabled]get package info fail.
+05-17 11:09:10.807  2667  2889 E Booster_NetworkQoeChr: [chrBlerMonitorAndReport]modemQoeData is not present
+05-17 11:09:10.809  2667  3512 D Hicom_XEngineProc: isSupportLocalSocketKit packageNam: com.huawei.appmarket isSupported: false
+05-17 11:09:10.809  1732  2182 I WiFi_PRO_WifiProStateMachine: APP_SERVICE_QOE_NOTIFY Qoe info 10024,4,0,285,1,2,4,0,285,1729400,1921500,11,10,0,0,3,0 CID 2 mMasterWifiRssi -60 mMasterCardAmbr 1048576 mSlaveCardAmbr 1048576
+05-17 11:09:10.810  1732  2182 V HwWifiServiceFactory: get AllImpl object = com.android.server.wifi.HwWifiServiceFactoryImpl@f1bb540
+05-17 11:09:10.810  1732  2182 I HwWifiProServiceProxy: ctrlHwWifiNetwork pkgName: WIFIPRO_SERVICE interfaceId: 9
+05-17 11:09:10.811  1732  2182 I WiFi_PRO_WifiProStateMachine: isWifi2WifiProcess = false, mIsNeedIgnoreQoeUpdate = false, mIsAppInBlacklistFullScreen = false, mIsWiFiNoInternet false, screen on = true, full screen = false, isLandscapeMode = false, mNotifyWifiLinkPoorReason = -1, mIsAppInBlacklistQoe false, mIsAppInBlackListAll true
+05-17 11:09:10.811  1732  2182 I WiFi_PRO_WifiProStateMachine: ignore app qoe info update
+05-17 11:09:10.811  1732  2182 I WiFi_PRO_WifiProStateMachine: resetWifiQoeBad
+05-17 11:09:10.811  1732  2182 I WiFi_PRO_WifiProStateMachine: the fast decay result in WifiProStateMachine : 1
+05-17 11:09:10.811  1732  2182 I WiFi_PRO_WifiProStateMachine: Non-corporate && open network, the fast decay result is : 1
+05-17 11:09:10.811  1732  2182 I WiFi_PRO_WifiProStateMachine: ignore fastdecay and asymmetricLink
+05-17 11:09:10.836  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:10.956  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:11.067  2729  3110 I CpugovFpsLink: low power start
+05-17 11:09:11.068   883   883 I PF_CFG_MGR: [PerfRequest:751] PerfRequest long term pid:878, handle:32966
+05-17 11:09:11.068   883   911 I PF_GROUP: [AddLongTermCommand:492] [GOVERNOR_LOAD_CPU_L] add to long term cmd, optType:1, value:100 with handle:32966
+05-17 11:09:11.068   883   911 I PF_GROUP: [AddLongTermCommand:492] [GOVERNOR_LOAD_CPU_M] add to long term cmd, optType:1, value:100 with handle:32966
+05-17 11:09:11.068   883   911 I PF_GROUP: [AddLongTermCommand:492] [GOVERNOR_LOAD_CPU_B] add to long term cmd, optType:1, value:100 with handle:32966
+05-17 11:09:11.068   883   911 I PF_GROUP: [AddLongTermCommand:492] [GOVERNOR_DELAY_UP_CPU_L] add to long term cmd, optType:1, value:100 with handle:32966
+05-17 11:09:11.068   883   911 I PF_GROUP: [AddLongTermCommand:492] [GOVERNOR_DELAY_UP_CPU_M] add to long term cmd, optType:1, value:100 with handle:32966
+05-17 11:09:11.069   883   911 I PF_GROUP: [AddLongTermCommand:492] [GOVERNOR_DELAY_UP_CPU_B] add to long term cmd, optType:1, value:100 with handle:32966
+05-17 11:09:11.069   883   911 I PF_GROUP: [AddLongTermCommand:492] [GOVERNOR_DELAY_DOWN_CPU_L] add to long term cmd, optType:1, value:90 with handle:32966
+05-17 11:09:11.069   883   911 I PF_GROUP: [AddLongTermCommand:492] [GOVERNOR_TOP_TASK_STATS_POLICY_CPU_L] add to long term cmd, optType:1, value:110 with handle:32966
+05-17 11:09:11.069   883   911 I PF_GROUP: [AddLongTermCommand:492] [GOVERNOR_TOP_TASK_STATS_POLICY_CPU_M] add to long term cmd, optType:1, value:110 with handle:32966
+05-17 11:09:11.069   883   911 I PF_GROUP: [AddLongTermCommand:492] [GOVERNOR_TOP_TASK_STATS_POLICY_CPU_B] add to long term cmd, optType:1, value:110 with handle:32966
+05-17 11:09:11.076  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:11.196  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:11.282  1280  4125 I CPU_STATS: iawared: query next cpu load with 2!
+05-17 11:09:11.282  1280  4125 I CPU_STATS: total cost time 2008444531 ns
+05-17 11:09:11.283  1280  4125 I CPU_STATS: iawared: current total load is 0.003554, capacity : 5166, pre load:  91453443601821, current load : 91453479609318
+05-17 11:09:11.286  1280  4125 I CPU_STATS: read once cost time 3740 us
+05-17 11:09:11.316  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:11.436  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:11.515   878   901 I uniperf server: UniPerfEvent Open NoOperation Action
+05-17 11:09:11.515   878   901 D uniperf server: EnterActionProc DoParse failed, cmdId=5002
+05-17 11:09:11.515   878   901 D uniperf server: EnterActionProc DoParse failed, cmdId=5003
+05-17 11:09:11.556  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:11.578 16171 16171 I HwMSDPMovementManager: getCurrentMovement type 0
+05-17 11:09:11.581   824   849 I ArHal   : (ArDataGetState:1477):id[2]
+05-17 11:09:11.585 16171 16171 I L_HmsMsdpClient: [LocKit LogLocation.java:1] arId = 4
+05-17 11:09:11.676  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:11.702  1300  1522 E RUNTIME : ContextSetCurrentRef:54 ctx is nullptr!
+05-17 11:09:11.702  1300  1522 E hiaiserver: DEVDRV : DevdrvOpenDeviceManager:61 open device manager fail, errno = 2
+05-17 11:09:11.703  1300  1522 E hiaiserver: DEVDRV : reportStat:44 get file stat fail, errno = 2
+05-17 11:09:11.703  1300  1522 E hiaiserver: DEVDRV : DrvDeviceGetCount:131 open device error
+05-17 11:09:11.703  1300  1522 E RUNTIME : GetDeviceCount:72 Get device count fail, errorcode = 2
+05-17 11:09:11.703  1300  1522 E RUNTIME : rtSetDevice:81 Get device count failed
+05-17 11:09:11.703  1300  1522 E AI_NPUCL: npu_resilience.cc SetDevice(27)::"rtSetDevice fail"
+05-17 11:09:11.713  2667  8098 I fast_decay: HandleBeaconRssiInfo, fastDecayResult is : 1, wifiFastDecayTotalResult is : 1
+05-17 11:09:11.713  2667  8098 I asymmetric_link: getPer, getPer: 0.000000, filterTxRate: 17357.457031, filterRxRate: 18796.855469
+05-17 11:09:11.713  2667  8098 I asymmetric_link: IsAsymmetricLinkSuccess, return false. filterFlow is : 1.298101
+05-17 11:09:11.714  2667  8098 I asymmetric_link: HandleAsymmetricLinkInfo, the txRssi: -78.844406, the activeNodeCnt: -1, the wifiAsymmetricLinkResult : 0
+05-17 11:09:11.731  2667  4075 D HwCommBoosterService: reportBoosterPara enter
+05-17 11:09:11.731  2667  4075 D HwCommBoosterManager: reportBoosterPara enter
+05-17 11:09:11.732  2667  4075 D HwCommBoosterManager: pluginId: 2dataType:801
+05-17 11:09:11.732  2667  2889 D HwCommBoosterManager: handleBoosterMessageSendModuleDataToPlugin enter
+05-17 11:09:11.796  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:11.821  1256  2071 I dubaid  : [TemperatureData.cpp] ReportTemp# ThermalDaemon:[shell_front] tempNew: 28, tempOld:29.
+05-17 11:09:11.822  1256  2071 W dubaid  : [SocTempRainflow.cpp] FormatTempData# Matrix index: 1, Point 1: 29.000000, Point 2: 30.000000, Value: 1.000000, range:1.000000, means:29.500000
+05-17 11:09:11.825  2729  3818 I ThermalTraceService: code:1, appInfo:com.huawei.appmarket#100061, levelInfo:29,warm_fps,1#0,warm_shell_normal,1
+05-17 11:09:11.826  2729  3818 W AwareLog: UniScheduleDMEPlugin: add load record in temp
+05-17 11:09:11.826  2729  3818 W AwareLog: UniScheduleDMEPlugin: downgradeSwitch is not open.
+05-17 11:09:11.827  2667  8098 I Booster_Qoe: Ada,index:8,NisPsSlow:0,NProba:285,rsrp(rssi):-60,rsrq(noise):-87,rtt(chload):25,BFH(uldelay):1,BFC(rtt):0 Real:0,0,0,0,0, dlBler:0, ulBler:0
+05-17 11:09:11.827  2667  8098 I Booster_Qoe: Ada,index:2,NisPsSlow:0,NProba:285,rsrp(rssi):-60,rsrq(noise):-87,rtt(chload):25,BFH(uldelay):1,BFC(rtt):0 Real:0,0,0,0,0, dlBler:0, ulBler:0
+05-17 11:09:11.827  2667  2889 E NetworkQoeProxy: invalid channelId = 0
+05-17 11:09:11.827  2667  2889 E NetworkQoeProxy: invalid channelId = 1
+05-17 11:09:11.828  2667  2889 D BoosterUtil: convertSubIdToSlotId, subId invalid: -1
+05-17 11:09:11.828  2667  2889 D BoosterUtil: getDefaultDataSlotId failed, invalid slotId:-1, subId:-1
+05-17 11:09:11.828  2667  2889 D BoosterUtil: convertSubIdToSlotId, subId invalid: -1
+05-17 11:09:11.828  2667  2889 D BoosterUtil: getDefaultDataSlotId failed, invalid slotId:-1, subId:-1
+05-17 11:09:11.829  2667  2889 E Booster_BroadcastProxy: [isDebugModemEnabled]get package info fail.
+05-17 11:09:11.830  2667  2889 E Booster_NetworkQoeChr: [chrBlerMonitorAndReport]modemQoeData is not present
+05-17 11:09:11.831  2667  3512 D Hicom_XEngineProc: isSupportLocalSocketKit packageNam: com.huawei.appmarket isSupported: false
+05-17 11:09:11.832  1732  2182 I WiFi_PRO_WifiProStateMachine: APP_SERVICE_QOE_NOTIFY Qoe info 10024,4,0,285,1,2,4,0,285,1729400,1921500,11,10,0,0,10,0 CID 2 mMasterWifiRssi -60 mMasterCardAmbr 1048576 mSlaveCardAmbr 1048576
+05-17 11:09:11.833  1732  2182 V HwWifiServiceFactory: get AllImpl object = com.android.server.wifi.HwWifiServiceFactoryImpl@f1bb540
+05-17 11:09:11.833  1732  2182 I HwWifiProServiceProxy: ctrlHwWifiNetwork pkgName: WIFIPRO_SERVICE interfaceId: 9
+05-17 11:09:11.834  1732  2182 I WiFi_PRO_WifiProStateMachine: isWifi2WifiProcess = false, mIsNeedIgnoreQoeUpdate = false, mIsAppInBlacklistFullScreen = false, mIsWiFiNoInternet false, screen on = true, full screen = false, isLandscapeMode = false, mNotifyWifiLinkPoorReason = -1, mIsAppInBlacklistQoe false, mIsAppInBlackListAll true
+05-17 11:09:11.834  1732  2182 I WiFi_PRO_WifiProStateMachine: ignore app qoe info update
+05-17 11:09:11.834  1732  2182 I WiFi_PRO_WifiProStateMachine: resetWifiQoeBad
+05-17 11:09:11.834  1732  2182 I WiFi_PRO_WifiProStateMachine: the fast decay result in WifiProStateMachine : 1
+05-17 11:09:11.834  1732  2182 I WiFi_PRO_WifiProStateMachine: Non-corporate && open network, the fast decay result is : 1
+05-17 11:09:11.834  1732  2182 I WiFi_PRO_WifiProStateMachine: ignore fastdecay and asymmetricLink
+05-17 11:09:11.865 13863 13864 I bms_behavior: [WaitConditionStatus]: runState = 1, cvStatus = 1 
+05-17 11:09:11.866 13863 13864 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.867 13863 13864 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.868 13863 13864 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.868 13863 13864 D bms_behavior: [GetChargeMaxPower]: mode:0, max_power:0
+05-17 11:09:11.870 13863 13864 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.871 13863 13864 D bms_behavior: [GetCableType]: cable type:0
+05-17 11:09:11.880 13863 13864 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.893 13863 13864 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.898 13863 13865 I bms_behavior: [WaitConditionStatus]: runState = 1, cvStatus = 1 
+05-17 11:09:11.898 13863 13865 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.899 13863 13865 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.900 13863 13865 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.900 13863 13865 D bms_behavior: [GetChargeMaxPower]: mode:0, max_power:0
+05-17 11:09:11.902 13863 13865 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.902 13863 13865 D bms_behavior: [GetCableType]: cable type:0
+05-17 11:09:11.908 13863 13864 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/coul/coul_data/rbatt is invalid
+05-17 11:09:11.909 13863 13864 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/bat_heating/heat_up is invalid
+05-17 11:09:11.911 13863 13865 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.916  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:11.924 13863 13865 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.936 13863 13865 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/coul/coul_data/rbatt is invalid
+05-17 11:09:11.937 13863 13865 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/bat_heating/heat_up is invalid
+05-17 11:09:11.942 13863 13864 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.955  2729  3563 I AppAct  : pkg: com.makd.afinity.debug oldBucket: 10 newBucket: 20
+05-17 11:09:11.957 13863 13864 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.957  2729  3563 I AppAct  : setAppStandbyBucket executed, userId=0
+05-17 11:09:11.958 13863 13864 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.962 13863 13864 I bms_behavior: [Monitor]: monitor interval count 2230, name: battery_gauge
+05-17 11:09:11.973 13863 13865 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.985 13863 13865 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.986 13863 13865 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:11.988 13863 13865 I bms_behavior: [Monitor]: monitor interval count 2230, name: battery_gauge_aux
+05-17 11:09:12.036  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:12.046  2667  2889 I SpeedTestNotifier: is low speed scene
+05-17 11:09:12.046  2667  2889 I OllieMsgCenter: publishEvt=2135097353
+05-17 11:09:12.156  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:12.276  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:12.395  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:12.515  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:12.566  6179  6179 D HiTraceC: entered HiTraceInit, Log Registered: 1
+05-17 11:09:12.575 16171 16171 I HwMSDPMovementManager: getCurrentMovement type 0
+05-17 11:09:12.578   824   849 I ArHal   : (ArDataGetState:1477):id[2]
+05-17 11:09:12.583 16171 16171 I L_HmsMsdpClient: [LocKit LogLocation.java:1] arId = 4
+05-17 11:09:12.585  6179  6179 D appproc : Runtime type: ark runtime = 0
+05-17 11:09:12.585  6179  6179 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+05-17 11:09:12.586  6179  6179 D JniInvocation: ARK_RUNTIME (null)
+05-17 11:09:12.591  6179  6179 D HiTraceC: entered HiTraceInit, Log Registered: 1
+05-17 11:09:12.592  6179  6179 I app_process: HwDexFileLoaderInit mt_dexfile_loader_fn_ hw_mc.art.mt_dex_loader=1
+05-17 11:09:12.592  6179  6179 I app_process: HwDexFileLoaderInit mt_dexfile_loader_fn_ g_numThreads=4
+05-17 11:09:12.592  6179  6179 W app_process: [MemLeak.JavaTrack]: failed to dlopen libmemleak_tracker.so
+05-17 11:09:12.593  6179  6179 I AndroidRuntime: Using default boot image
+05-17 11:09:12.593  6179  6179 I AndroidRuntime: Leaving lock profiling enabled
+05-17 11:09:12.593  6179  6179 W libc    : Access denied finding property "odsign.verification.success"
+05-17 11:09:12.587  6179  6179 W app_process: type=1400 audit(0.0:144062): avc: denied { read } for name="u:object_r:odsign_prop:s0" dev="tmpfs" ino=465 scontext=u:r:shell:s0 tcontext=u:object_r:odsign_prop:s0 tclass=file permissive=0
+05-17 11:09:12.595  6179  6179 I app_process: HwCustType is 0
+05-17 11:09:12.595  6179  6179 E app_process: open file error
+05-17 11:09:12.595  6179  6179 I app_process: no cota live update cust policy found
+05-17 11:09:12.595  6179  6179 I app_process: GetCfgDirRealPolicyValue: custPolicyDirs: /system/emui/base:/system/emui/oversea:/system/emui/pad:/vendor/etc:/odm/etc:/hw_product/etc:/hw_product/region_comm/oversea:/preas/oversea:/hw_product/hw_oem/MRDI-W09:/preload/MRDI-W09/hw/ru:/cust/global:/cust/hw/ru:/hw_product/special_cust/MRDI-W09/hw/ru:/cust/cotalite:/cust/ecota
+05-17 11:09:12.596  6179  6179 W app_process: ART APEX data files are untrusted.
+05-17 11:09:12.596  6179  6179 I app_process: Opt gc perf enable = 1
+05-17 11:09:12.596  6179  6179 I app_process: ScopedPromotePriority logging = 0
+05-17 11:09:12.639  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:12.706  1300  1522 E RUNTIME : ContextSetCurrentRef:54 ctx is nullptr!
+05-17 11:09:12.706  1300  1522 E hiaiserver: DEVDRV : DevdrvOpenDeviceManager:61 open device manager fail, errno = 2
+05-17 11:09:12.706  1300  1522 E hiaiserver: DEVDRV : reportStat:44 get file stat fail, errno = 2
+05-17 11:09:12.706  1300  1522 E hiaiserver: DEVDRV : DrvDeviceGetCount:131 open device error
+05-17 11:09:12.706  1300  1522 E RUNTIME : GetDeviceCount:72 Get device count fail, errorcode = 2
+05-17 11:09:12.706  1300  1522 E RUNTIME : rtSetDevice:81 Get device count failed
+05-17 11:09:12.706  1300  1522 E AI_NPUCL: npu_resilience.cc SetDevice(27)::"rtSetDevice fail"
+05-17 11:09:12.714  6179  6179 W app_process: DexFile /system/emui/base/jar/Mdm/hw_mdm_framework.jar is in boot class path but is not in a known location
+05-17 11:09:12.716  6179  6179 E app_process: GcSupervisor: libimonitor.so not found!!
+05-17 11:09:12.730  1732  2182 I WifiNl80211Manager: Noise: -87, Snr: 36, Chload: 25, rssi: -60, txBitrate: 1729, rxBitrate: 1921, frequency: 5220, UlDelay: 1, currentTxBytes: 38568338, currentTxPackets: 387642, currentTxFailed: 0, currentRxBytes: 198863330, currentRxPackets: 3254968, chloadSelf: 0, c0RssiDbm: -128, c1RssiDbm: -128
+05-17 11:09:12.731  1732  2182 I HwDualBandLearningAlg: update5gBetaAttribute, m24gConnectionRateList is empty or not full, ignore
+05-17 11:09:12.735  2667  4075 D HwCommBoosterService: reportBoosterPara enter
+05-17 11:09:12.735  2667  4075 D HwCommBoosterManager: reportBoosterPara enter
+05-17 11:09:12.735  2667  4075 D HwCommBoosterManager: pluginId: 2dataType:801
+05-17 11:09:12.740  2667  2889 D HwCommBoosterManager: handleBoosterMessageSendModuleDataToPlugin enter
+05-17 11:09:12.745  2667  8098 I fast_decay: HandleBeaconRssiInfo, fastDecayResult is : 1, wifiFastDecayTotalResult is : 1
+05-17 11:09:12.745  2667  8098 I asymmetric_link: getPer, getPer: 0.000000, filterTxRate: 17349.525391, filterRxRate: 18849.123047
+05-17 11:09:12.746  2667  8098 I asymmetric_link: IsAsymmetricLinkSuccess, return false. filterFlow is : 1.069826
+05-17 11:09:12.746  2667  8098 I asymmetric_link: HandleAsymmetricLinkInfo, the txRssi: -79.130890, the activeNodeCnt: -1, the wifiAsymmetricLinkResult : 0
+05-17 11:09:12.753  6179  6179 D app_process: Time zone APEX ICU file found: /apex/com.android.tzdata/etc/icu/icu_tzdata.dat
+05-17 11:09:12.753  6179  6179 D app_process: I18n APEX ICU file found: /system/usr/icu/icudt68l.dat
+05-17 11:09:12.754  1732  2085 I TrafficMonitor: update:rxPkts:8,txPkts:0,rxBytes:1358,txBytes:0
+05-17 11:09:12.754  1732  2085 I TrafficMonitor: gettimer:interval=2000
+05-17 11:09:12.757  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:12.764  6179  6179 W app_process: ClassLoaderContext classpath size mismatch. expected=0, found=1 (PCL[] | PCL[/system/framework/android.test.runner.jar*1585996318])
+05-17 11:09:12.765  6179  6179 I app_process: Reinit property: dalvik.vm.checkjni= false
+05-17 11:09:12.765  6179  6179 I app_process: ReInitProperties: persist.vm.debug.dumpapi= false
+05-17 11:09:12.772  6179  6179 I HwPartBasicPlatformFactory: add android.common.HwPartBasicPlatformFactoryImpl to memory.
+05-17 11:09:12.774  6179  6179 W libc    : Access denied finding property "ro.config.hw_curved_side_disp"
+05-17 11:09:12.771  6179  6179 W main    : type=1400 audit(0.0:144063): avc: denied { read } for name="u:object_r:curved_side_prop:s0" dev="tmpfs" ino=279 scontext=u:r:shell:s0 tcontext=u:object_r:curved_side_prop:s0 tclass=file permissive=0
+05-17 11:09:12.776  6179  6179 I HWSERVICES: hwnative_get_component_register:libdrmbitmap,JNI
+05-17 11:09:12.784  6179  6179 V HwFrameworkFactory: successes to get AllImpl object and return....
+05-17 11:09:12.784  6179  6179 E Zygote  : register_com_android_internal_os_Zygote result = 0
+05-17 11:09:12.785  6179  6179 I app_process: power log dlsym ok
+05-17 11:09:12.786  6179  6179 W libc    : Access denied finding property "ro.config.vol_steps"
+05-17 11:09:12.783  6179  6179 W main    : type=1400 audit(0.0:144064): avc: denied { read } for name="u:object_r:huawei_audio_public_read_prop:s0" dev="tmpfs" ino=371 scontext=u:r:shell:s0 tcontext=u:object_r:huawei_audio_public_read_prop:s0 tclass=file permissive=0
+05-17 11:09:12.788  6179  6179 D AndroidRuntime: Entered preForkInit.
+05-17 11:09:12.788  6179  6179 D AndroidRuntime: RuntimeInit: Starting tool
+05-17 11:09:12.788  6179  6179 D AndroidRuntime: Entered RuntimeInit!
+05-17 11:09:12.791  6179  6179 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+05-17 11:09:12.798  1732 15093 I WindowManager: addWindowToken: displayid:0 binder:android.os.Binder@a5ab686 token:WindowToken{de0bb47 android.os.Binder@a5ab686}
+05-17 11:09:12.799   909  1796 I Layer   : WindowToken{de0bb47 android.os.Binder@a5ab686}#11058: created
+05-17 11:09:12.802  1732 15093 I [SPMN]  : insert SECURE -- name = accessibility_enabled, package = android, user = 0, value = 1
+05-17 11:09:12.803  1732 15093 I AccessibilityManagerService: AMS updateAccessibilityButtonTargetsLocked 
+05-17 11:09:12.816  1732 12564 I [SPMN]  : insert SECURE -- name = accessibility_enabled, package = android, user = 0, value = 1
+05-17 11:09:12.817  1732 12564 I AccessibilityManagerService: AMS updateAccessibilityButtonTargetsLocked 
+05-17 11:09:12.826  1732  1732 D BatterySaverPolicy: accessibility changed to true, updating policy.
+05-17 11:09:12.828  1732  1732 I AS.AudioService: Accessibility volume enabled = false
+05-17 11:09:12.855  2667  8098 I Booster_Qoe: Ada,index:8,NisPsSlow:0,NProba:285,rsrp(rssi):-60,rsrq(noise):-87,rtt(chload):25,BFH(uldelay):1,BFC(rtt):0 Real:0,0,0,0,0, dlBler:0, ulBler:0
+05-17 11:09:12.855  2667  8098 I Booster_Qoe: Ada,index:2,NisPsSlow:0,NProba:285,rsrp(rssi):-60,rsrq(noise):-87,rtt(chload):25,BFH(uldelay):1,BFC(rtt):0 Real:0,0,0,0,0, dlBler:0, ulBler:0
+05-17 11:09:12.855  2667  2889 E NetworkQoeProxy: invalid channelId = 0
+05-17 11:09:12.855  2667  2889 E NetworkQoeProxy: invalid channelId = 1
+05-17 11:09:12.856  2667  2889 D BoosterUtil: convertSubIdToSlotId, subId invalid: -1
+05-17 11:09:12.856  2667  2889 D BoosterUtil: getDefaultDataSlotId failed, invalid slotId:-1, subId:-1
+05-17 11:09:12.856  2667  2889 D BoosterUtil: convertSubIdToSlotId, subId invalid: -1
+05-17 11:09:12.856  2667  2889 D BoosterUtil: getDefaultDataSlotId failed, invalid slotId:-1, subId:-1
+05-17 11:09:12.857  2667  2889 E Booster_BroadcastProxy: [isDebugModemEnabled]get package info fail.
+05-17 11:09:12.857  2667  2889 E Booster_NetworkQoeChr: [chrBlerMonitorAndReport]modemQoeData is not present
+05-17 11:09:12.858  1732  2182 I WiFi_PRO_WifiProStateMachine: APP_SERVICE_QOE_NOTIFY Qoe info 10024,4,0,285,1,2,4,0,285,1729400,1921500,11,10,0,0,3,0 CID 2 mMasterWifiRssi -60 mMasterCardAmbr 1048576 mSlaveCardAmbr 1048576
+05-17 11:09:12.859  1732  2182 V HwWifiServiceFactory: get AllImpl object = com.android.server.wifi.HwWifiServiceFactoryImpl@f1bb540
+05-17 11:09:12.860  1732  2182 I HwWifiProServiceProxy: ctrlHwWifiNetwork pkgName: WIFIPRO_SERVICE interfaceId: 9
+05-17 11:09:12.860  1732  2182 I WiFi_PRO_WifiProStateMachine: isWifi2WifiProcess = false, mIsNeedIgnoreQoeUpdate = false, mIsAppInBlacklistFullScreen = false, mIsWiFiNoInternet false, screen on = true, full screen = false, isLandscapeMode = false, mNotifyWifiLinkPoorReason = -1, mIsAppInBlacklistQoe false, mIsAppInBlackListAll true
+05-17 11:09:12.860  1732  2182 I WiFi_PRO_WifiProStateMachine: ignore app qoe info update
+05-17 11:09:12.860  1732  2182 I WiFi_PRO_WifiProStateMachine: resetWifiQoeBad
+05-17 11:09:12.860  2667  3512 D Hicom_XEngineProc: isSupportLocalSocketKit packageNam: com.huawei.appmarket isSupported: false
+05-17 11:09:12.860  1732  2182 I WiFi_PRO_WifiProStateMachine: the fast decay result in WifiProStateMachine : 1
+05-17 11:09:12.860  1732  2182 I WiFi_PRO_WifiProStateMachine: Non-corporate && open network, the fast decay result is : 1
+05-17 11:09:12.860  1732  2182 I WiFi_PRO_WifiProStateMachine: ignore fastdecay and asymmetricLink
+05-17 11:09:12.875  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:12.947  7142  7157 W gle.android.gm: Reducing the number of considered missed Gc histogram windows from 385 to 100
+05-17 11:09:12.976  1732  2085 I WifiNl80211Manager: Noise: -87, Snr: 36, Chload: 25, rssi: -60, txBitrate: 1729, rxBitrate: 1921, frequency: 5220, UlDelay: 1, currentTxBytes: 38568338, currentTxPackets: 387642, currentTxFailed: 0, currentRxBytes: 198863715, currentRxPackets: 3254972, chloadSelf: 0, c0RssiDbm: -128, c1RssiDbm: -128
+05-17 11:09:12.978  1732  2085 V HwWifiServiceFactory: get AllImpl object = com.android.server.wifi.HwWifiServiceFactoryImpl@f1bb540
+05-17 11:09:12.997  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:13.116  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:13.236  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:13.290  1280  4125 I CPU_STATS: iawared: query next cpu load with 2!
+05-17 11:09:13.290  1280  4125 I CPU_STATS: total cost time 2007952187 ns
+05-17 11:09:13.291  1280  4125 I CPU_STATS: iawared: current total load is 0.033529, capacity : 5166, pre load:  91453479609318, current load : 91453819257965
+05-17 11:09:13.294  1280  4125 I CPU_STATS: read once cost time 3917 us
+05-17 11:09:13.356  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:13.476  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:13.574 16171 16171 I HwMSDPMovementManager: getCurrentMovement type 0
+05-17 11:09:13.577   824   849 I ArHal   : (ArDataGetState:1477):id[2]
+05-17 11:09:13.581 16171 16171 I L_HmsMsdpClient: [LocKit LogLocation.java:1] arId = 4
+05-17 11:09:13.597  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:13.703 13863 13866 I bms_behavior: [WaitConditionStatus]: runState = 1, cvStatus = 1 
+05-17 11:09:13.704 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:13.704 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:13.705 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:13.706 13863 13866 D bms_behavior: [GetChargeMaxPower]: mode:0, max_power:0
+05-17 11:09:13.707  1300  1522 E RUNTIME : ContextSetCurrentRef:54 ctx is nullptr!
+05-17 11:09:13.708  1300  1522 E hiaiserver: DEVDRV : DevdrvOpenDeviceManager:61 open device manager fail, errno = 2
+05-17 11:09:13.708  1300  1522 E hiaiserver: DEVDRV : reportStat:44 get file stat fail, errno = 2
+05-17 11:09:13.708  1300  1522 E hiaiserver: DEVDRV : DrvDeviceGetCount:131 open device error
+05-17 11:09:13.708  1300  1522 E RUNTIME : GetDeviceCount:72 Get device count fail, errorcode = 2
+05-17 11:09:13.708  1300  1522 E RUNTIME : rtSetDevice:81 Get device count failed
+05-17 11:09:13.708  1300  1522 E AI_NPUCL: npu_resilience.cc SetDevice(27)::"rtSetDevice fail"
+05-17 11:09:13.709 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:13.709 13863 13866 D bms_behavior: [GetCableType]: cable type:0
+05-17 11:09:13.716  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:13.717 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:13.729 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:13.739  2667  4075 D HwCommBoosterService: reportBoosterPara enter
+05-17 11:09:13.740  2667  4075 D HwCommBoosterManager: reportBoosterPara enter
+05-17 11:09:13.740  2667  4075 D HwCommBoosterManager: pluginId: 2dataType:801
+05-17 11:09:13.740 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/coul/coul_data/rbatt is invalid
+05-17 11:09:13.740  2667  2889 D HwCommBoosterManager: handleBoosterMessageSendModuleDataToPlugin enter
+05-17 11:09:13.741 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/bat_heating/heat_up is invalid
+05-17 11:09:13.749 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:13.760  2667  8098 I fast_decay: HandleBeaconRssiInfo, fastDecayResult is : 1, wifiFastDecayTotalResult is : 1
+05-17 11:09:13.761  2667  8098 I asymmetric_link: getPer, getPer: 0.000000, filterTxRate: 17342.585938, filterRxRate: 18894.857422
+05-17 11:09:13.761  2667  8098 I asymmetric_link: IsAsymmetricLinkSuccess, return false. filterFlow is : 0.924369
+05-17 11:09:13.761  2667  8098 I asymmetric_link: HandleAsymmetricLinkInfo, the txRssi: -79.381561, the activeNodeCnt: -1, the wifiAsymmetricLinkResult : 0
+05-17 11:09:13.761 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:13.762 13863 13866 E bms_file: [BmsFileReadBuffer]: file /sys/class/hw_power/charger/direct_charger_sc4/direct_charge_succ is invalid
+05-17 11:09:13.765 13863 13866 I bms_behavior: [Monitor]: monitor interval count 2248, name: Battery
+05-17 11:09:13.834  6179  6179 I HwPartIawareFactory: add android.common.HwPartIawareFactoryImpl to memory.
+05-17 11:09:13.835  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:13.838  6179  6179 W libc    : Access denied finding property "ro.config.hw_curved_side_disp"
+05-17 11:09:13.831  6179  6179 W uiautomator: type=1400 audit(0.0:144065): avc: denied { read } for name="u:object_r:curved_side_prop:s0" dev="tmpfs" ino=279 scontext=u:r:shell:s0 tcontext=u:object_r:curved_side_prop:s0 tclass=file permissive=0
+05-17 11:09:13.838  6179  6179 W libc    : Access denied finding property "ro.config.hw_curved_side_disp"
+05-17 11:09:13.835  6179  6179 W uiautomator: type=1400 audit(0.0:144066): avc: denied { read } for name="u:object_r:curved_side_prop:s0" dev="tmpfs" ino=279 scontext=u:r:shell:s0 tcontext=u:object_r:curved_side_prop:s0 tclass=file permissive=0
+05-17 11:09:13.844  6179  6179 W libc    : Access denied finding property "runtime.mmitest.isrunning"
+05-17 11:09:13.839  6179  6179 W uiautomator: type=1400 audit(0.0:144067): avc: denied { read } for name="u:object_r:mmi_prop:s0" dev="tmpfs" ino=442 scontext=u:r:shell:s0 tcontext=u:object_r:mmi_prop:s0 tclass=file permissive=0
+05-17 11:09:13.850  5877  3244 V MediaProvider: just add log operation createfile
+05-17 11:09:13.851  5877  3244 V MediaProvider: no control flag
+05-17 11:09:13.875  2667  8098 I Booster_Qoe: Ada,index:8,NisPsSlow:0,NProba:285,rsrp(rssi):-60,rsrq(noise):-87,rtt(chload):25,BFH(uldelay):1,BFC(rtt):0 Real:0,0,0,0,0, dlBler:0, ulBler:0
+05-17 11:09:13.875  2667  8098 I Booster_Qoe: Ada,index:2,NisPsSlow:0,NProba:285,rsrp(rssi):-60,rsrq(noise):-87,rtt(chload):25,BFH(uldelay):1,BFC(rtt):0 Real:0,0,0,0,0, dlBler:0, ulBler:0
+05-17 11:09:13.876  2667  2889 E NetworkQoeProxy: invalid channelId = 0
+05-17 11:09:13.876  2667  2889 E NetworkQoeProxy: invalid channelId = 1
+05-17 11:09:13.876  2667  2889 D BoosterUtil: convertSubIdToSlotId, subId invalid: -1
+05-17 11:09:13.876  2667  2889 D BoosterUtil: getDefaultDataSlotId failed, invalid slotId:-1, subId:-1
+05-17 11:09:13.876  2667  2889 D BoosterUtil: convertSubIdToSlotId, subId invalid: -1
+05-17 11:09:13.877  2667  2889 D BoosterUtil: getDefaultDataSlotId failed, invalid slotId:-1, subId:-1
+05-17 11:09:13.878  2667  2889 E Booster_BroadcastProxy: [isDebugModemEnabled]get package info fail.
+05-17 11:09:13.878  2667  2889 E Booster_NetworkQoeChr: [chrBlerMonitorAndReport]modemQoeData is not present
+05-17 11:09:13.880  2667  3512 D Hicom_XEngineProc: isSupportLocalSocketKit packageNam: com.huawei.appmarket isSupported: false
+05-17 11:09:13.881  1732  2182 I WiFi_PRO_WifiProStateMachine: APP_SERVICE_QOE_NOTIFY Qoe info 10024,4,0,285,1,2,4,0,285,1729400,1921500,11,10,0,0,3,0 CID 2 mMasterWifiRssi -60 mMasterCardAmbr 1048576 mSlaveCardAmbr 1048576
+05-17 11:09:13.881  1732  2182 V HwWifiServiceFactory: get AllImpl object = com.android.server.wifi.HwWifiServiceFactoryImpl@f1bb540
+05-17 11:09:13.881  1732  2182 I HwWifiProServiceProxy: ctrlHwWifiNetwork pkgName: WIFIPRO_SERVICE interfaceId: 9
+05-17 11:09:13.881  1732  2182 I WiFi_PRO_WifiProStateMachine: isWifi2WifiProcess = false, mIsNeedIgnoreQoeUpdate = false, mIsAppInBlacklistFullScreen = false, mIsWiFiNoInternet false, screen on = true, full screen = false, isLandscapeMode = false, mNotifyWifiLinkPoorReason = -1, mIsAppInBlacklistQoe false, mIsAppInBlackListAll true
+05-17 11:09:13.881  1732  2182 I WiFi_PRO_WifiProStateMachine: ignore app qoe info update
+05-17 11:09:13.881  1732  2182 I WiFi_PRO_WifiProStateMachine: resetWifiQoeBad
+05-17 11:09:13.882  1732  2182 I WiFi_PRO_WifiProStateMachine: the fast decay result in WifiProStateMachine : 1
+05-17 11:09:13.882  1732  2182 I WiFi_PRO_WifiProStateMachine: Non-corporate && open network, the fast decay result is : 1
+05-17 11:09:13.882  1732  2182 I WiFi_PRO_WifiProStateMachine: ignore fastdecay and asymmetricLink
+05-17 11:09:13.917  6179  6179 I AccessibilityNodeInfoDumper: Skipping invisible child: android.view.accessibility.AccessibilityNodeInfo@a09a7; boundsInParent: Rect(0, 0 - 1286, 0); boundsInScreen: Rect(277, 542 - 1563, 542); xlayoutbounds: Rect(0, 0 - 0, 0); measured width: 1286; measured height: 0; packageName: com.huawei.appmarket; className: android.widget.LinearLayout; text: null; error: null; maxTextLength: -1; stateDescription: null; contentDescription: null; tooltipText: null; viewIdResName: com.huawei.appmarket:id/install_capsule_group; checkable: false; checked: false; focusable: false; focused: false; selected: false; clickable: false; longClickable: false; contextClickable: false; enabled: true; password: false; scrollable: false; importantForAccessibility: false; visible: false; actions: [AccessibilityAction: ACTION_SELECT - null, AccessibilityAction: ACTION_CLEAR_SELECTION - null, AccessibilityAction: ACTION_ACCESSIBILITY_FOCUS - null, AccessibilityAction: ACTION_SHOW_ON_SCREEN - null]
+05-17 11:09:13.919  6179  6179 I AccessibilityNodeInfoDumper: Skipping invisible child: android.view.accessibility.AccessibilityNodeInfo@a4d39; boundsInParent: Rect(0, 0 - 0, 37); boundsInScreen: Rect(920, 659 - 920, 696); xlayoutbounds: Rect(0, 0 - 0, 0); measured width: 0; measured height: 37; packageName: com.huawei.appmarket; className: android.widget.TextView; text: null; error: null; maxTextLength: -1; stateDescription: null; contentDescription: null; tooltipText: null; viewIdResName: com.huawei.appmarket:id/install_success_tip_txt; checkable: false; checked: false; focusable: false; focused: false; selected: false; clickable: false; longClickable: false; contextClickable: false; enabled: true; password: false; scrollable: false; importantForAccessibility: true; visible: false; actions: [AccessibilityAction: ACTION_SELECT - null, AccessibilityAction: ACTION_CLEAR_SELECTION - null, AccessibilityAction: ACTION_ACCESSIBILITY_FOCUS - null, AccessibilityAction: ACTION_SHOW_ON_SCREEN - null]
+05-17 11:09:13.919  6179  6179 I AccessibilityNodeInfoDumper: Skipping invisible child: android.view.accessibility.AccessibilityNodeInfo@a50fa; boundsInParent: Rect(0, 0 - 1286, 0); boundsInScreen: Rect(277, 732 - 1563, 732); xlayoutbounds: Rect(0, 0 - 0, 0); measured width: 1286; measured height: 0; packageName: com.huawei.appmarket; className: android.widget.LinearLayout; text: null; error: null; maxTextLength: -1; stateDescription: null; contentDescription: null; tooltipText: null; viewIdResName: null; checkable: false; checked: false; focusable: false; focused: false; selected: false; clickable: false; longClickable: false; contextClickable: false; enabled: true; password: false; scrollable: false; importantForAccessibility: false; visible: false; actions: [AccessibilityAction: ACTION_SELECT - null, AccessibilityAction: ACTION_CLEAR_SELECTION - null, AccessibilityAction: ACTION_ACCESSIBILITY_FOCUS - null, AccessibilityAction: ACTION_SHOW_ON_SCREEN - null]
+05-17 11:09:13.920  6179  6179 I AccessibilityNodeInfoDumper: Skipping invisible child: android.view.accessibility.AccessibilityNodeInfo@98644; boundsInParent: Rect(0, 0 - 1286, 0); boundsInScreen: Rect(277, 2656 - 1563, 2656); xlayoutbounds: Rect(0, 0 - 0, 0); measured width: 1286; measured height: 0; packageName: com.huawei.appmarket; className: android.widget.LinearLayout; text: null; error: null; maxTextLength: -1; stateDescription: null; contentDescription: null; tooltipText: null; viewIdResName: null; checkable: false; checked: false; focusable: false; focused: false; selected: false; clickable: false; longClickable: false; contextClickable: false; enabled: true; password: false; scrollable: false; importantForAccessibility: false; visible: false; actions: [AccessibilityAction: ACTION_SELECT - null, AccessibilityAction: ACTION_CLEAR_SELECTION - null, AccessibilityAction: ACTION_ACCESSIBILITY_FOCUS - null, AccessibilityAction: ACTION_SHOW_ON_SCREEN - null]
+05-17 11:09:13.921  6179  6179 W AccessibilityNodeInfoDumper: Fetch time: 76ms
+05-17 11:09:13.923  1732  2394 I WindowManager: removeWindowToken: displayid:0 binder:android.os.Binder@a5ab686 token:WindowToken{de0bb47 android.os.Binder@a5ab686}
+05-17 11:09:13.923  1732  2394 I WindowManager: removeWindowToken: displayid:0 binder:android.os.Binder@a5ab686 token:null
+05-17 11:09:13.923  1732  2394 W WindowManager: removeWindowToken: Attempted to remove non-existing token: android.os.Binder@a5ab686
+05-17 11:09:13.924  1732  2394 I [SPMN]  : insert SECURE -- name = accessibility_enabled, package = android, user = 0, value = 0
+05-17 11:09:13.924  1732  2394 I AccessibilityManagerService: AMS updateAccessibilityButtonTargetsLocked 
+05-17 11:09:13.925  1732  2394 I [SPMN]  : insert SYSTEM -- name = accelerometer_rotation, package = android, user = 0, value = 1
+05-17 11:09:13.925  1732  2394 I WindowManager: Deferring rotation, rotation not changed, rotation=0
+05-17 11:09:13.926  1732  2394 E ParseBarrageHideWhitelistXml: isWhitelistActivity  useNotchNeverMode
+05-17 11:09:13.926  1732  2394 E ParseBarrageHideWhitelistXml: isWhitelistActivity  useNotchNeverMode
+05-17 11:09:13.927  1732  2394 E ParseBarrageHideWhitelistXml: isWhitelistActivity  useNotchNeverMode
+05-17 11:09:13.927  1732  2394 E ParseBarrageHideWhitelistXml: isWhitelistActivity  useNotchNeverMode
+05-17 11:09:13.929  6179  6179 D AndroidRuntime: Leaving RuntimeInit!
+05-17 11:09:13.929  6179  6179 D AndroidRuntime: Shutting down VM
+05-17 11:09:13.937  1732  1732 D BatterySaverPolicy: accessibility changed to false, updating policy.
+05-17 11:09:13.943   909   909 I Layer   : [*#11058] reparent null
+05-17 11:09:13.944   909   909 I AnimateManager: DelAnimationInfo: layer WindowToken{de0bb47 android.os.Binder@a5ab686}#11058, mEnable 0
+05-17 11:09:13.944   909   909 I Layer   : WindowToken{de0bb47 android.os.Binder@a5ab686}#11058: destroyed
+05-17 11:09:13.954  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:14.048  2667  2889 I OllieMsgCenter: publishEvt=2135097353
+05-17 11:09:14.076  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:14.160  1732  2186 I WifiNl80211Manager: Noise: -87, Snr: 35, Chload: 25, rssi: -60, txBitrate: 1729, rxBitrate: 1921, frequency: 5220, UlDelay: 1, currentTxBytes: 38568338, currentTxPackets: 387642, currentTxFailed: 0, currentRxBytes: 198864203, currentRxPackets: 3254975, chloadSelf: 0, c0RssiDbm: -128, c1RssiDbm: -128
+05-17 11:09:14.160  1732  2186 D HuaweiWifiWatchdogStateMachine: nothing to do
+05-17 11:09:14.161  1732  2186 I HuaweiWifiWatchdogStateMachine: POta txb txg rxg:0, 1, 0. Lr =0% Totpkt=1
+05-17 11:09:14.161  1732  2184 I WiFi_PRO: MSG_RETURN_AP_CURRY_RSSI rssi = -60
+05-17 11:09:14.161  1732  2184 I QosMonitor: queryRtt: rttType = 3
+05-17 11:09:14.161  1732  2184 I QosMonitor: call ctrlHwWifiNetwork
+05-17 11:09:14.161  1732  2182 I HwDualBandManager: handle2gApStrongWifiRssiChange
+05-17 11:09:14.162  1732  2182 V HwWifiServiceFactory: get AllImpl object = com.android.server.wifi.HwWifiServiceFactoryImpl@f1bb540
+05-17 11:09:14.162  1732  2184 I QosMonitor: postEventFromNative: msg=100,arg1=4,arg2=10
+05-17 11:09:14.162  1732  2184 I QosMonitor: call ctrlHwWifiNetwork
+05-17 11:09:14.163  1732  2184 I QosMonitor: postEventFromNative: msg=100,arg1=0,arg2=10
+05-17 11:09:14.163  1732  2184 I MQoS    : rtt=300,tcpTxPkts=368915,tcpRxPkts=564119
+05-17 11:09:14.163  1732  2186 I HuaweiWifiWatchdogStateMachine: PTcp RTT:300, rtt pkt=7, tcp_rx=0, tcp_tx=0, tcp_reTran=0, rtRate=0
+05-17 11:09:14.164  1732  7839 I HwConnectivityServiceEx: set 1000, metered: false, value: false
+05-17 11:09:14.164  1732  2186 I HwWifiProServiceProxy: ctrlHwWifiNetwork pkgName: WIFIPRO_SERVICE interfaceId: 101
+05-17 11:09:14.165  1732  2186 I HuaweiWifiWatchdogStateMachine: start computeQosLevel tcpRtt = 300 ,rssi = -60 ,mBestSpeedInPeriod = 0
+05-17 11:09:14.165  1732  2186 I HuaweiWifiWatchdogStateMachine: smoothConsecutiveQosResults, currentQosLevel = 3
+05-17 11:09:14.165  1732  2184 I QosMonitor: resetRtt: rttType = 3
+05-17 11:09:14.165  1732  2184 I QosMonitor: call ctrlHwWifiNetwork
+05-17 11:09:14.196  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:14.316  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:14.325   588   588 E SELinux : avc:  denied  { find } for pid=3924 uid=5531 name=huawei.android.security.IAppBehaviorDataAnalyzer scontext=u:r:sle:s0:c155,c277,c512,c768 tcontext=u:object_r:hsm_aiprotection_analyzer_service:s0 tclass=service_manager permissive=0
+05-17 11:09:14.326   588   588 E servicemanager: 'huawei.android.security.IAppBehaviorDataAnalyzer' is not accessible by 3924 (SELinux restricted)
+05-17 11:09:14.436  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:14.556  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:14.571 16171 16171 I HwMSDPMovementManager: getCurrentMovement type 0
+05-17 11:09:14.574   824   849 I ArHal   : (ArDataGetState:1477):id[2]
+05-17 11:09:14.578 16171 16171 I L_HmsMsdpClient: [LocKit LogLocation.java:1] arId = 4
+05-17 11:09:14.676  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:14.710  1300  1522 E RUNTIME : ContextSetCurrentRef:54 ctx is nullptr!
+05-17 11:09:14.711  1300  1522 E hiaiserver: DEVDRV : DevdrvOpenDeviceManager:61 open device manager fail, errno = 2
+05-17 11:09:14.711  1300  1522 E hiaiserver: DEVDRV : reportStat:44 get file stat fail, errno = 2
+05-17 11:09:14.711  1300  1522 E hiaiserver: DEVDRV : DrvDeviceGetCount:131 open device error
+05-17 11:09:14.711  1300  1522 E RUNTIME : GetDeviceCount:72 Get device count fail, errorcode = 2
+05-17 11:09:14.711  1300  1522 E RUNTIME : rtSetDevice:81 Get device count failed
+05-17 11:09:14.711  1300  1522 E AI_NPUCL: npu_resilience.cc SetDevice(27)::"rtSetDevice fail"
+05-17 11:09:14.744  2667  4075 D HwCommBoosterService: reportBoosterPara enter
+05-17 11:09:14.745  2667  4075 D HwCommBoosterManager: reportBoosterPara enter
+05-17 11:09:14.745  2667  4075 D HwCommBoosterManager: pluginId: 2dataType:801
+05-17 11:09:14.745  2667  2889 D HwCommBoosterManager: handleBoosterMessageSendModuleDataToPlugin enter
+05-17 11:09:14.760  1732  2085 I TrafficMonitor: update:rxPkts:3,txPkts:0,rxBytes:455,txBytes:0
+05-17 11:09:14.760  1732  2085 I TrafficMonitor: gettimer:interval=2000
+05-17 11:09:14.786  2667  8098 I fast_decay: HandleBeaconRssiInfo, fastDecayResult is : 1, wifiFastDecayTotalResult is : 1
+05-17 11:09:14.786  2667  8098 I asymmetric_link: getPer, getPer: 0.000000, filterTxRate: 17336.511719, filterRxRate: 18934.875000
+05-17 11:09:14.786  2667  8098 I asymmetric_link: IsAsymmetricLinkSuccess, return false. filterFlow is : 0.725527
+05-17 11:09:14.786  2667  8098 I asymmetric_link: HandleAsymmetricLinkInfo, the txRssi: -79.600906, the activeNodeCnt: -1, the wifiAsymmetricLinkResult : 0
+05-17 11:09:14.797  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:14.899  2667  8098 I Booster_Qoe: Ada,index:8,NisPsSlow:0,NProba:285,rsrp(rssi):-60,rsrq(noise):-87,rtt(chload):25,BFH(uldelay):1,BFC(rtt):0 Real:0,0,0,0,0, dlBler:0, ulBler:0
+05-17 11:09:14.899  2667  8098 I Booster_Qoe: Ada,index:2,NisPsSlow:0,NProba:285,rsrp(rssi):-60,rsrq(noise):-87,rtt(chload):25,BFH(uldelay):1,BFC(rtt):0 Real:0,0,0,0,0, dlBler:0, ulBler:0
+05-17 11:09:14.899  2667  2889 E NetworkQoeProxy: invalid channelId = 0
+05-17 11:09:14.899  2667  2889 E NetworkQoeProxy: invalid channelId = 1
+05-17 11:09:14.899  2667  2889 D BoosterUtil: convertSubIdToSlotId, subId invalid: -1
+05-17 11:09:14.900  2667  2889 D BoosterUtil: getDefaultDataSlotId failed, invalid slotId:-1, subId:-1
+05-17 11:09:14.900  2667  2889 D BoosterUtil: convertSubIdToSlotId, subId invalid: -1
+05-17 11:09:14.900  2667  2889 D BoosterUtil: getDefaultDataSlotId failed, invalid slotId:-1, subId:-1
+05-17 11:09:14.901  2667  2889 E Booster_BroadcastProxy: [isDebugModemEnabled]get package info fail.
+05-17 11:09:14.901  2667  2889 E Booster_NetworkQoeChr: [chrBlerMonitorAndReport]modemQoeData is not present
+05-17 11:09:14.903  1732  2182 I WiFi_PRO_WifiProStateMachine: APP_SERVICE_QOE_NOTIFY Qoe info 10024,4,0,285,1,2,4,0,285,1729400,1921500,11,10,0,0,1,0 CID 2 mMasterWifiRssi -60 mMasterCardAmbr 1048576 mSlaveCardAmbr 1048576
+05-17 11:09:14.903  2667  3512 D Hicom_XEngineProc: isSupportLocalSocketKit packageNam: com.huawei.appmarket isSupported: false
+05-17 11:09:14.903  1732  2182 V HwWifiServiceFactory: get AllImpl object = com.android.server.wifi.HwWifiServiceFactoryImpl@f1bb540
+05-17 11:09:14.904  1732  2182 I HwWifiProServiceProxy: ctrlHwWifiNetwork pkgName: WIFIPRO_SERVICE interfaceId: 9
+05-17 11:09:14.904  1732  2182 I WiFi_PRO_WifiProStateMachine: isWifi2WifiProcess = false, mIsNeedIgnoreQoeUpdate = false, mIsAppInBlacklistFullScreen = false, mIsWiFiNoInternet false, screen on = true, full screen = false, isLandscapeMode = false, mNotifyWifiLinkPoorReason = -1, mIsAppInBlacklistQoe false, mIsAppInBlackListAll true
+05-17 11:09:14.905  1732  2182 I WiFi_PRO_WifiProStateMachine: ignore app qoe info update
+05-17 11:09:14.905  1732  2182 I WiFi_PRO_WifiProStateMachine: resetWifiQoeBad
+05-17 11:09:14.905  1732  2182 I WiFi_PRO_WifiProStateMachine: the fast decay result in WifiProStateMachine : 1
+05-17 11:09:14.905  1732  2182 I WiFi_PRO_WifiProStateMachine: Non-corporate && open network, the fast decay result is : 1
+05-17 11:09:14.905  1732  2182 I WiFi_PRO_WifiProStateMachine: ignore fastdecay and asymmetricLink
+05-17 11:09:14.915  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:15.025  6199  6199 D HiTraceC: entered HiTraceInit, Log Registered: 1
+05-17 11:09:15.035  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:15.047   909  2226 I SurfaceFlinger: hasCaptureBlackoutContentPermission: pid 6199, uid 2000, checkPermissionResult is false
+05-17 11:09:15.047   909  2226 I SurfaceFlinger: captureDisplay: end, status 0
+05-17 11:09:15.050   589   589 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@4.0::IMapper/default in either framework or device VINTF manifest.
+05-17 11:09:15.051  6199  6200 I Gralloc4: mapper 4.x is not supported
+05-17 11:09:15.051   589   589 I hwservicemanager: getTransport: Cannot find entry android.hardware.graphics.mapper@3.0::IMapper/default in either framework or device VINTF manifest.
+05-17 11:09:15.052  6199  6200 W Gralloc3: mapper 3.x is not supported
+05-17 11:09:15.155  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:15.275  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168
+05-17 11:09:15.298  1280  4125 I CPU_STATS: iawared: query next cpu load with 2!
+05-17 11:09:15.298  1280  4125 I CPU_STATS: total cost time 2008052969 ns
+05-17 11:09:15.299  1280  4125 I CPU_STATS: iawared: current total load is 0.028833, capacity : 5166, pre load:  91453819257965, current load : 91454111347055
+05-17 11:09:15.301  1280  4125 I CPU_STATS: read once cost time 3383 us
+05-17 11:09:15.395  1732  1791 I HwAmbientLuxFilterAlgo: SceneBufferAmbientLux input error,end=139,start=-32,bufferSize=168

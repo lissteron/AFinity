@@ -33,7 +33,8 @@ import javax.inject.Singleton
 @Singleton
 class PreferencesRepositoryImpl
 @Inject
-constructor(@AppPreferences private val dataStore: DataStore<Preferences>) : PreferencesRepository {
+constructor(@param:AppPreferences private val dataStore: DataStore<Preferences>) :
+    PreferencesRepository {
 
     private object Keys {
         val CURRENT_SERVER_ID = stringPreferencesKey("current_server_id")
@@ -78,7 +79,6 @@ constructor(@AppPreferences private val dataStore: DataStore<Preferences>) : Pre
 
         val OFFLINE_MODE = booleanPreferencesKey("offline_mode")
 
-        val UPDATE_CHECK_FREQUENCY = intPreferencesKey("update_check_frequency")
         val LAST_UPDATE_CHECK = longPreferencesKey("last_update_check")
 
         val VIDEO_ZOOM_MODE = intPreferencesKey("video_zoom_mode")
@@ -597,18 +597,6 @@ constructor(@AppPreferences private val dataStore: DataStore<Preferences>) : Pre
 
     override fun getPipBackgroundPlayFlow(): Flow<Boolean> {
         return dataStore.data.map { preferences -> preferences[Keys.PIP_BACKGROUND_PLAY] ?: true }
-    }
-
-    override suspend fun setUpdateCheckFrequency(hours: Int) {
-        dataStore.edit { preferences -> preferences[Keys.UPDATE_CHECK_FREQUENCY] = hours }
-    }
-
-    override suspend fun getUpdateCheckFrequency(): Int {
-        return dataStore.data.first()[Keys.UPDATE_CHECK_FREQUENCY] ?: 0
-    }
-
-    override fun getUpdateCheckFrequencyFlow(): Flow<Int> {
-        return dataStore.data.map { preferences -> preferences[Keys.UPDATE_CHECK_FREQUENCY] ?: 0 }
     }
 
     override suspend fun setLastUpdateCheck(timestamp: Long) {

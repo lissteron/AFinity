@@ -3,13 +3,10 @@ package com.makd.afinity.ui.settings.update
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.makd.afinity.BuildConfig
 import com.makd.afinity.R
 import com.makd.afinity.data.repository.PreferencesRepository
 import com.makd.afinity.data.updater.UpdateManager
-import com.makd.afinity.data.updater.UpdateScheduler
 import com.makd.afinity.data.updater.models.GitHubRelease
-import com.makd.afinity.data.updater.models.UpdateCheckFrequency
 import com.makd.afinity.data.updater.models.UpdateState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -29,7 +26,6 @@ class UpdateViewModel
 constructor(
     @param:ApplicationContext private val context: Context,
     private val updateManager: UpdateManager,
-    private val updateScheduler: UpdateScheduler,
     private val preferencesRepository: PreferencesRepository,
 ) : ViewModel() {
 
@@ -43,13 +39,6 @@ constructor(
     }
 
     private fun loadUpdatePreferences() {
-        viewModelScope.launch {
-            preferencesRepository.getUpdateCheckFrequencyFlow().collect { hours ->
-                _uiState.value =
-                    _uiState.value.copy(checkFrequency = UpdateCheckFrequency.fromHours(hours))
-            }
-        }
-
         viewModelScope.launch {
             val lastCheck = preferencesRepository.getLastUpdateCheck()
             _uiState.value =
@@ -73,15 +62,6 @@ constructor(
         }
     }
 
-    fun setCheckFrequency(frequency: UpdateCheckFrequency) {
-        viewModelScope.launch {
-            preferencesRepository.setUpdateCheckFrequency(frequency.hours)
-            updateScheduler.scheduleUpdateChecks(frequency)
-            _uiState.value = _uiState.value.copy(checkFrequency = frequency)
-            Timber.d("Update check frequency set to: ${frequency.displayName}")
-        }
-    }
-
     fun downloadUpdate(release: GitHubRelease) {
         updateManager.downloadUpdate(release)
     }
@@ -101,7 +81,5 @@ constructor(
 }
 
 data class UpdateUiState(
-    val currentVersion: String = BuildConfig.VERSION_NAME,
-    val checkFrequency: UpdateCheckFrequency = UpdateCheckFrequency.ON_APP_OPEN,
     val lastCheckTime: String = "",
 )

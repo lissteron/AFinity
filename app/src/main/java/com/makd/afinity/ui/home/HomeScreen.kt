@@ -53,7 +53,6 @@ import androidx.navigation.NavController
 import com.makd.afinity.R
 import com.makd.afinity.R.drawable.ic_launcher_monochrome
 import com.makd.afinity.data.models.GenreType
-import com.makd.afinity.data.models.media.AfinityEpisode
 import com.makd.afinity.data.models.media.AfinityItem
 import com.makd.afinity.navigation.Destination
 import com.makd.afinity.navigation.LocalPlayerOffset
@@ -237,15 +236,7 @@ fun HomeScreen(
                                         Spacer(modifier = Modifier.height(24.dp))
                                         OptimizedContinueWatchingSection(
                                             items = continueWatchingItems,
-                                            onItemClick = { item ->
-                                                if (item is AfinityEpisode && shouldDirectPlayInKidMode) {
-                                                    onPlayClick(item)
-                                                } else if (item is AfinityEpisode) {
-                                                    viewModel.selectEpisode(item)
-                                                } else {
-                                                    onItemClick(item)
-                                                }
-                                            },
+                                            onItemClick = onPlayClick,
                                             widthSizeClass = widthSizeClass,
                                             scrollState = continueWatchingScrollState,
                                         )
@@ -338,13 +329,7 @@ fun HomeScreen(
                                         Spacer(modifier = Modifier.height(24.dp))
                                         NextUpSection(
                                             episodes = uiState.nextUp,
-                                            onEpisodeClick = { episode ->
-                                                if (shouldDirectPlayInKidMode) {
-                                                    onPlayClick(episode)
-                                                } else {
-                                                    viewModel.selectEpisode(episode)
-                                                }
-                                            },
+                                            onEpisodeClick = onPlayClick,
                                             widthSizeClass = widthSizeClass,
                                         )
                                     }

@@ -197,15 +197,23 @@ fun MainNavigation(
 
                 val source = playableItem.sources.preferredPlaybackSource()
                 if (source == null) {
-                    Timber.w("Playable item has no source: ${playableItem.name}")
-                    if (fallbackToDetail) navigateToItemDetail(item)
-                    return@launch
+                    if (!playableItem.canPlay) {
+                        Timber.w(
+                            "Playable item has no source and cannot play: ${playableItem.name}"
+                        )
+                        if (fallbackToDetail) navigateToItemDetail(item)
+                        return@launch
+                    }
+
+                    Timber.w(
+                        "Playable item has no preloaded source, launching player to resolve details: ${playableItem.name}"
+                    )
                 }
 
                 PlayerLauncher.launch(
                     context = navController.context,
                     itemId = playableItem.id,
-                    mediaSourceId = source.id,
+                    mediaSourceId = source?.id.orEmpty(),
                     audioStreamIndex = null,
                     subtitleStreamIndex = null,
                     startPositionMs = playableItem.playbackPositionTicks / 10_000,

@@ -18,7 +18,6 @@ import coil3.svg.SvgDecoder
 import com.makd.afinity.cast.CastManager
 import com.makd.afinity.data.repository.PreferencesRepository
 import com.makd.afinity.data.updater.UpdateScheduler
-import com.makd.afinity.data.updater.models.UpdateCheckFrequency
 import com.makd.afinity.di.ImageClient
 import com.makd.afinity.util.logging.CrashFileExporter
 import com.makd.afinity.util.logging.RingBufferTree
@@ -76,10 +75,8 @@ class AfinityApplication : Application(), Configuration.Provider, SingletonImage
         castManager.initialize(this)
 
         applicationScope.launch {
-            val frequency = preferencesRepository.getUpdateCheckFrequency()
-            val checkFrequency = UpdateCheckFrequency.fromHours(frequency)
-            updateScheduler.scheduleUpdateChecks(checkFrequency)
-            Timber.d("Update scheduler initialized with frequency: ${checkFrequency.displayName}")
+            updateScheduler.cancelUpdateChecks()
+            Timber.d("Automatic update checks disabled")
         }
     }
 
