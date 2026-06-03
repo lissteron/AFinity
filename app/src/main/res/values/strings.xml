@@ -700,6 +700,7 @@
     <string name="pref_group_general">General</string>
     <string name="pref_offline_mode">Offline Mode</string>
     <string name="offline_mode_no_connection">Offline (No connection)</string>
+    <string name="offline_mode_server_unavailable">Offline (Server unavailable)</string>
     <string name="offline_mode_manual">Manually enabled</string>
     <string name="offline_mode_force">Force offline mode</string>
 

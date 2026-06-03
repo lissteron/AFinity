@@ -73,6 +73,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import com.makd.afinity.R
 import com.makd.afinity.core.AppConstants
+import com.makd.afinity.data.manager.OfflineModeReason
 import com.makd.afinity.navigation.Destination
 import com.makd.afinity.navigation.LocalPlayerOffset
 import com.makd.afinity.ui.components.AsyncImage
@@ -110,8 +111,8 @@ fun SettingsScreen(
                 else -> ConnectionType.REMOTE
             }
         }
-    val manualOfflineMode by viewModel.manualOfflineMode.collectAsStateWithLifecycle()
     val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsStateWithLifecycle()
+    val offlineReason by viewModel.offlineReason.collectAsStateWithLifecycle()
     val isJellyseerrAuthenticated by
         viewModel.isJellyseerrAuthenticated.collectAsStateWithLifecycle()
     val isAudiobookshelfAuthenticated by
@@ -332,14 +333,21 @@ fun SettingsScreen(
                             icon = painterResource(id = R.drawable.ic_cloud_off),
                             title = stringResource(R.string.pref_offline_mode),
                             subtitle =
-                                if (!isNetworkAvailable)
-                                    stringResource(R.string.offline_mode_no_connection)
-                                else if (manualOfflineMode)
-                                    stringResource(R.string.offline_mode_manual)
-                                else stringResource(R.string.offline_mode_force),
+                                when (offlineReason) {
+                                    OfflineModeReason.NO_NETWORK ->
+                                        stringResource(R.string.offline_mode_no_connection)
+                                    OfflineModeReason.SERVER_UNREACHABLE ->
+                                        stringResource(R.string.offline_mode_server_unavailable)
+                                    OfflineModeReason.MANUAL ->
+                                        stringResource(R.string.offline_mode_manual)
+                                    OfflineModeReason.ONLINE ->
+                                        stringResource(R.string.offline_mode_force)
+                                },
                             checked = effectiveOfflineMode,
                             onCheckedChange = viewModel::toggleOfflineMode,
-                            enabled = isNetworkAvailable,
+                            enabled =
+                                isNetworkAvailable &&
+                                    offlineReason != OfflineModeReason.SERVER_UNREACHABLE,
                         )
                         SettingsDivider()
                         SettingsSwitchItem(

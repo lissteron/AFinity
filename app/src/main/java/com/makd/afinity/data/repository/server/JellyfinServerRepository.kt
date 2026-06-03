@@ -100,6 +100,8 @@ constructor(
                             setBaseUrl(result.address)
                             sessionManager.updateSessionUrl(result.address)
                         }
+                    } else {
+                        Timber.d("Address re-resolution failed on network change")
                     }
                 } catch (e: Exception) {
                     Timber.e(e, "Failed to re-resolve address on network change")

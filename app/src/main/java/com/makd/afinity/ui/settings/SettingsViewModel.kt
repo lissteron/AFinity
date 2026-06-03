@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.makd.afinity.R
 import com.makd.afinity.data.manager.OfflineModeManager
+import com.makd.afinity.data.manager.OfflineModeReason
 import com.makd.afinity.data.models.common.EpisodeLayout
 import com.makd.afinity.data.models.player.MpvAudioOutput
 import com.makd.afinity.data.models.player.MpvHwDec
@@ -75,17 +76,18 @@ constructor(
                 initialValue = EpisodeLayout.HORIZONTAL,
             )
 
-    private val _manualOfflineMode = MutableStateFlow(false)
-    val manualOfflineMode: StateFlow<Boolean> = _manualOfflineMode.asStateFlow()
-
     private val _isNetworkAvailable = MutableStateFlow(true)
     val isNetworkAvailable: StateFlow<Boolean> = _isNetworkAvailable.asStateFlow()
 
     val effectiveOfflineMode: StateFlow<Boolean> =
-        combine(_manualOfflineMode, _isNetworkAvailable) { manual, networkAvailable ->
-                manual || !networkAvailable
-            }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+        offlineModeManager.isOffline.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val offlineReason: StateFlow<OfflineModeReason> =
+        offlineModeManager.offlineReason.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            OfflineModeReason.ONLINE,
+        )
 
     val isJellyseerrAuthenticated: StateFlow<Boolean> =
         jellyseerrRepository.isAuthenticated.stateIn(
@@ -227,10 +229,6 @@ constructor(
             preferencesRepository.getPipBackgroundPlayFlow().collect {
                 _uiState.value = _uiState.value.copy(pipBackgroundPlay = it)
             }
-        }
-
-        viewModelScope.launch {
-            preferencesRepository.getOfflineModeFlow().collect { _manualOfflineMode.value = it }
         }
 
         viewModelScope.launch {
