@@ -344,88 +344,57 @@ fun BaseItemDto.toAfinityPersonDetail(baseUrl: String): AfinityPersonDetail {
 
 fun BaseItemDto.toAfinityImages(baseUrl: String): AfinityImages {
     val baseUri = baseUrl.toUri()
+    fun imageUri(itemId: String, imageType: String, tag: String): android.net.Uri =
+        baseUri
+            .buildUpon()
+            .appendEncodedPath("Items/$itemId/Images/$imageType")
+            .appendQueryParameter("tag", tag)
+            .build()
+
+    val primaryTag = imageTags?.get(ImageType.PRIMARY)
+    val thumbTag = imageTags?.get(ImageType.THUMB)
+    val backdropTag = backdropImageTags?.firstOrNull()
+    val logoTag = imageTags?.get(ImageType.LOGO)
+    val showPrimaryTag = parentPrimaryImageTag ?: seriesPrimaryImageTag
+    val showPrimaryItemId = parentPrimaryImageItemId ?: seriesId?.toString()
+    val showBackdropTag = parentBackdropImageTags?.firstOrNull()
+    val showBackdropItemId = (parentBackdropItemId ?: seriesId)?.toString()
+    val showThumbTag = parentThumbImageTag ?: seriesThumbImageTag
+    val showThumbItemId = (parentThumbItemId ?: seriesId)?.toString()
+    val showLogoTag = parentLogoImageTag
+    val showLogoItemId = (parentLogoItemId ?: seriesId)?.toString()
+    fun blurHash(type: ImageType, tag: String?): String? =
+        tag?.let { imageBlurHashes?.get(type)?.get(it) }
 
     return AfinityImages(
-        primary =
-            imageTags?.get(ImageType.PRIMARY)?.let { tag ->
-                baseUri
-                    .buildUpon()
-                    .appendEncodedPath("Items/$id/Images/Primary")
-                    .appendQueryParameter("tag", tag)
-                    .build()
-            },
-        thumb =
-            imageTags?.get(ImageType.THUMB)?.let { tag ->
-                baseUri
-                    .buildUpon()
-                    .appendEncodedPath("Items/$id/Images/Thumb")
-                    .appendQueryParameter("tag", tag)
-                    .build()
-            },
-        backdrop =
-            backdropImageTags?.firstOrNull()?.let { tag ->
-                baseUri
-                    .buildUpon()
-                    .appendEncodedPath("Items/$id/Images/Backdrop/0")
-                    .appendQueryParameter("tag", tag)
-                    .build()
-            },
-        logo =
-            imageTags?.get(ImageType.LOGO)?.let { tag ->
-                baseUri
-                    .buildUpon()
-                    .appendEncodedPath("Items/$id/Images/Logo")
-                    .appendQueryParameter("tag", tag)
-                    .build()
-            },
+        primary = primaryTag?.let { imageUri(id.toString(), "Primary", it) },
+        thumb = thumbTag?.let { imageUri(id.toString(), "Thumb", it) },
+        backdrop = backdropTag?.let { imageUri(id.toString(), "Backdrop/0", it) },
+        logo = logoTag?.let { imageUri(id.toString(), "Logo", it) },
         showPrimary =
-            seriesPrimaryImageTag?.let { tag ->
-                baseUri
-                    .buildUpon()
-                    .appendEncodedPath("Items/$seriesId/Images/Primary")
-                    .appendQueryParameter("tag", tag)
-                    .build()
-            },
+            if (showPrimaryTag != null && showPrimaryItemId != null)
+                imageUri(showPrimaryItemId, "Primary", showPrimaryTag)
+            else null,
         showBackdrop =
-            seriesPrimaryImageTag?.let { tag ->
-                baseUri
-                    .buildUpon()
-                    .appendEncodedPath("Items/$seriesId/Images/Backdrop/0")
-                    .appendQueryParameter("tag", tag)
-                    .build()
-            },
+            if (showBackdropTag != null && showBackdropItemId != null)
+                imageUri(showBackdropItemId, "Backdrop/0", showBackdropTag)
+            else null,
         showThumb =
-            (seriesThumbImageTag ?: seriesPrimaryImageTag)?.let { tag ->
-                baseUri
-                    .buildUpon()
-                    .appendEncodedPath("Items/$seriesId/Images/Thumb")
-                    .appendQueryParameter("tag", tag)
-                    .build()
-            },
-        showLogo = run {
-                val logoTag = parentLogoImageTag
-                val itemId = if (logoTag != null) (parentLogoItemId ?: seriesId) else seriesId
-                val fallbackTag = seriesPrimaryImageTag
-                when {
-                    logoTag != null && itemId != null ->
-                        baseUri
-                            .buildUpon()
-                            .appendEncodedPath("Items/$itemId/Images/Logo")
-                            .appendQueryParameter("tag", logoTag)
-                            .build()
-                    fallbackTag != null && seriesId != null ->
-                        baseUri
-                            .buildUpon()
-                            .appendEncodedPath("Items/$seriesId/Images/Logo")
-                            .appendQueryParameter("tag", fallbackTag)
-                            .build()
-                    else -> null
-                }
-            },
-        primaryImageBlurHash = imageBlurHashes?.get(ImageType.PRIMARY)?.values?.firstOrNull(),
-        backdropImageBlurHash = imageBlurHashes?.get(ImageType.BACKDROP)?.values?.firstOrNull(),
-        thumbImageBlurHash = imageBlurHashes?.get(ImageType.THUMB)?.values?.firstOrNull(),
-        logoImageBlurHash = imageBlurHashes?.get(ImageType.LOGO)?.values?.firstOrNull(),
+            if (showThumbTag != null && showThumbItemId != null)
+                imageUri(showThumbItemId, "Thumb", showThumbTag)
+            else null,
+        showLogo =
+            if (showLogoTag != null && showLogoItemId != null)
+                imageUri(showLogoItemId, "Logo", showLogoTag)
+            else null,
+        primaryImageBlurHash = blurHash(ImageType.PRIMARY, primaryTag),
+        backdropImageBlurHash = blurHash(ImageType.BACKDROP, backdropTag),
+        thumbImageBlurHash = blurHash(ImageType.THUMB, thumbTag),
+        logoImageBlurHash = blurHash(ImageType.LOGO, logoTag),
+        showPrimaryImageBlurHash = blurHash(ImageType.PRIMARY, showPrimaryTag),
+        showBackdropImageBlurHash = blurHash(ImageType.BACKDROP, showBackdropTag),
+        showThumbImageBlurHash = blurHash(ImageType.THUMB, showThumbTag),
+        showLogoImageBlurHash = blurHash(ImageType.LOGO, showLogoTag),
     )
 }
 
