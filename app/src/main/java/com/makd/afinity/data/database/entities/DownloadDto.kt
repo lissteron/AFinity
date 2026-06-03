@@ -33,6 +33,11 @@ data class DownloadDto(
     val runtimeTicks: Long?,
     val folderPath: String? = null,
     val seriesId: String? = null,
+    val activeClaimId: UUID? = null,
+    val activeBackendRunId: UUID? = null,
+    val activeBackendKind: String? = null,
+    val claimStartedAt: Long? = null,
+    val claimHeartbeatAt: Long? = null,
 )
 
 fun DownloadDto.toDownloadInfo(): DownloadInfo {

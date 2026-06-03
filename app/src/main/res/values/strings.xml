@@ -464,6 +464,10 @@
     <string name="download_status_downloading">Downloading</string>
     <string name="download_status_paused">Paused</string>
     <string name="download_status_failed_fmt">Failed: %1$s</string>
+    <string name="download_queue_active_fmt">Downloading %1$d%%, %2$d queued</string>
+    <string name="download_queue_queued_fmt">%1$d queued</string>
+    <string name="download_queue_enable_notifications">Enable notifications</string>
+    <string name="download_queue_blocked">Downloads blocked</string>
     <string name="empty_downloads_title">No downloads</string>
     <string name="empty_downloads_message">Downloaded content will appear here</string>
     <string name="storage_free_on_device_fmt">%1$s free on device</string>

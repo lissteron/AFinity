@@ -16,6 +16,9 @@ import coil3.request.CachePolicy
 import coil3.request.crossfade
 import coil3.svg.SvgDecoder
 import com.makd.afinity.cast.CastManager
+import com.makd.afinity.data.repository.download.DownloadQueuePolicyCoordinator
+import com.makd.afinity.data.repository.download.DownloadQueueMigration
+import com.makd.afinity.data.repository.download.SchedulerLivenessCoordinator
 import com.makd.afinity.data.repository.PreferencesRepository
 import com.makd.afinity.data.updater.UpdateScheduler
 import com.makd.afinity.di.ImageClient
@@ -43,6 +46,12 @@ class AfinityApplication : Application(), Configuration.Provider, SingletonImage
     @Inject lateinit var castManager: CastManager
 
     @Inject @ImageClient lateinit var imageOkHttpClient: OkHttpClient
+
+    @Inject lateinit var downloadQueueMigration: DownloadQueueMigration
+
+    @Inject lateinit var downloadQueuePolicyCoordinator: DownloadQueuePolicyCoordinator
+
+    @Inject lateinit var schedulerLivenessCoordinator: SchedulerLivenessCoordinator
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     var ringBufferTree: RingBufferTree? = null
@@ -77,6 +86,12 @@ class AfinityApplication : Application(), Configuration.Provider, SingletonImage
         applicationScope.launch {
             updateScheduler.cancelUpdateChecks()
             Timber.d("Automatic update checks disabled")
+        }
+
+        applicationScope.launch(Dispatchers.IO) {
+            downloadQueueMigration.run()
+            downloadQueuePolicyCoordinator.start()
+            schedulerLivenessCoordinator.start()
         }
     }
 

@@ -1048,6 +1048,17 @@ object DatabaseMigrations {
             }
         }
 
+    val MIGRATION_42_43 =
+        object : Migration(42, 43) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE downloads ADD COLUMN activeClaimId TEXT")
+                db.execSQL("ALTER TABLE downloads ADD COLUMN activeBackendRunId TEXT")
+                db.execSQL("ALTER TABLE downloads ADD COLUMN activeBackendKind TEXT")
+                db.execSQL("ALTER TABLE downloads ADD COLUMN claimStartedAt INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE downloads ADD COLUMN claimHeartbeatAt INTEGER DEFAULT NULL")
+            }
+        }
+
     val ALL_MIGRATIONS =
         arrayOf(
             MIGRATION_1_2,
@@ -1091,5 +1102,6 @@ object DatabaseMigrations {
             MIGRATION_39_40,
             MIGRATION_40_41,
             MIGRATION_41_42,
+            MIGRATION_42_43,
         )
 }

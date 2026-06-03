@@ -111,6 +111,9 @@ abstract class ServerDatabaseDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun insertDownload(download: DownloadDto)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun insertDownloads(downloads: List<DownloadDto>)
+
     @Query("SELECT * FROM downloads WHERE id = :downloadId")
     abstract suspend fun getDownload(downloadId: UUID): DownloadDto?
 
@@ -125,6 +128,363 @@ abstract class ServerDatabaseDao {
 
     @Query("SELECT * FROM downloads WHERE status = :status ORDER BY createdAt DESC")
     abstract suspend fun getDownloadsByStatus(status: DownloadStatus): List<DownloadDto>
+
+    @Query("SELECT * FROM downloads WHERE status = 'QUEUED' ORDER BY createdAt ASC LIMIT 1")
+    protected abstract suspend fun getOldestQueuedDownload(): DownloadDto?
+
+    @Query("SELECT * FROM downloads WHERE status = 'DOWNLOADING' ORDER BY updatedAt ASC")
+    abstract suspend fun getActiveDownloadingDownloads(): List<DownloadDto>
+
+    @Query(
+        "SELECT * FROM downloads WHERE status IN ('QUEUED', 'PAUSED') ORDER BY createdAt ASC"
+    )
+    abstract suspend fun getPendingQueueDownloads(): List<DownloadDto>
+
+    @Query("SELECT * FROM downloads WHERE status != 'COMPLETED' ORDER BY createdAt ASC")
+    abstract suspend fun getNonCompletedDownloads(): List<DownloadDto>
+
+    @Query("SELECT COUNT(*) FROM downloads WHERE status = 'QUEUED'")
+    abstract suspend fun countQueuedDownloads(): Int
+
+    @Query("SELECT COUNT(*) FROM downloads WHERE status = 'QUEUED'")
+    abstract fun countQueuedDownloadsFlow(): Flow<Int>
+
+    @Query("SELECT * FROM downloads WHERE status = 'DOWNLOADING' ORDER BY updatedAt ASC LIMIT 1")
+    abstract fun getActiveDownloadFlow(): Flow<DownloadDto?>
+
+    @Query(
+        """
+        UPDATE downloads
+        SET status = 'DOWNLOADING',
+            activeClaimId = :activeClaimId,
+            activeBackendRunId = :activeBackendRunId,
+            activeBackendKind = :activeBackendKind,
+            claimStartedAt = :updatedAt,
+            claimHeartbeatAt = :updatedAt,
+            error = NULL,
+            updatedAt = :updatedAt
+        WHERE id = :downloadId
+            AND status = 'QUEUED'
+            AND NOT EXISTS (SELECT 1 FROM downloads WHERE status = 'DOWNLOADING')
+        """
+    )
+    protected abstract suspend fun markDownloadDownloadingIfQueued(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        activeBackendKind: String,
+        updatedAt: Long,
+    ): Int
+
+    @Transaction
+    open suspend fun claimOldestQueuedDownload(
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        activeBackendKind: String,
+        updatedAt: Long,
+    ): DownloadDto? {
+        val queued = getOldestQueuedDownload() ?: return null
+        if (
+            markDownloadDownloadingIfQueued(
+                queued.id,
+                activeClaimId,
+                activeBackendRunId,
+                activeBackendKind,
+                updatedAt,
+            ) != 1
+        ) {
+            return null
+        }
+        return getDownload(queued.id)
+    }
+
+    @Query(
+        """
+        UPDATE downloads
+        SET progress = :progress,
+            bytesDownloaded = :bytesDownloaded,
+            totalBytes = :totalBytes,
+            claimHeartbeatAt = :updatedAt,
+            updatedAt = :updatedAt
+        WHERE id = :downloadId
+            AND activeClaimId = :activeClaimId
+            AND activeBackendRunId = :activeBackendRunId
+            AND status = 'DOWNLOADING'
+        """
+    )
+    abstract suspend fun updateActiveDownloadProgress(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        progress: Float,
+        bytesDownloaded: Long,
+        totalBytes: Long,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE downloads
+        SET status = :status,
+            progress = :progress,
+            bytesDownloaded = :bytesDownloaded,
+            totalBytes = :totalBytes,
+            filePath = :filePath,
+            error = :error,
+            activeClaimId = NULL,
+            activeBackendRunId = NULL,
+            activeBackendKind = NULL,
+            claimStartedAt = NULL,
+            claimHeartbeatAt = NULL,
+            updatedAt = :updatedAt
+        WHERE id = :downloadId
+            AND activeClaimId = :activeClaimId
+            AND activeBackendRunId = :activeBackendRunId
+            AND status = 'DOWNLOADING'
+        """
+    )
+    abstract suspend fun finalizeActiveDownload(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        status: DownloadStatus,
+        progress: Float,
+        bytesDownloaded: Long,
+        totalBytes: Long,
+        filePath: String?,
+        error: String?,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE downloads
+        SET status = 'PAUSED',
+            activeClaimId = NULL,
+            activeBackendRunId = NULL,
+            activeBackendKind = NULL,
+            claimStartedAt = NULL,
+            claimHeartbeatAt = NULL,
+            error = :error,
+            updatedAt = :updatedAt
+        WHERE id = :downloadId AND status = 'DOWNLOADING'
+        """
+    )
+    abstract suspend fun pauseActiveDownload(
+        downloadId: UUID,
+        error: String?,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE downloads
+        SET status = 'PAUSED',
+            activeClaimId = NULL,
+            activeBackendRunId = NULL,
+            activeBackendKind = NULL,
+            claimStartedAt = NULL,
+            claimHeartbeatAt = NULL,
+            error = :error,
+            updatedAt = :updatedAt
+        WHERE id = :downloadId
+            AND activeClaimId = :activeClaimId
+            AND activeBackendRunId = :activeBackendRunId
+            AND status = 'DOWNLOADING'
+        """
+    )
+    abstract suspend fun pauseClaimedActiveDownload(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        error: String?,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE downloads
+        SET status = 'PAUSED',
+            activeClaimId = NULL,
+            activeBackendRunId = NULL,
+            activeBackendKind = NULL,
+            claimStartedAt = NULL,
+            claimHeartbeatAt = NULL,
+            error = :error,
+            updatedAt = :updatedAt
+        WHERE id = :downloadId AND status = 'QUEUED'
+        """
+    )
+    abstract suspend fun pauseQueuedDownload(
+        downloadId: UUID,
+        error: String?,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE downloads
+        SET status = 'QUEUED',
+            activeClaimId = NULL,
+            activeBackendRunId = NULL,
+            activeBackendKind = NULL,
+            claimStartedAt = NULL,
+            claimHeartbeatAt = NULL,
+            error = :error,
+            updatedAt = :updatedAt
+        WHERE id = :downloadId
+            AND activeClaimId = :activeClaimId
+            AND activeBackendRunId = :activeBackendRunId
+            AND status = 'DOWNLOADING'
+        """
+    )
+    abstract suspend fun requeueActiveDownload(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        error: String?,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE downloads
+        SET status = 'PAUSED',
+            activeClaimId = NULL,
+            activeBackendRunId = NULL,
+            activeBackendKind = NULL,
+            claimStartedAt = NULL,
+            claimHeartbeatAt = NULL,
+            error = :error,
+            updatedAt = :updatedAt
+        WHERE status = 'DOWNLOADING' AND updatedAt < :staleBefore
+        """
+    )
+    abstract suspend fun markStaleDownloadingPaused(
+        error: String?,
+        updatedAt: Long,
+        staleBefore: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE downloads
+        SET status = 'PAUSED',
+            activeClaimId = NULL,
+            activeBackendRunId = NULL,
+            activeBackendKind = NULL,
+            claimStartedAt = NULL,
+            claimHeartbeatAt = NULL,
+            error = :error,
+            updatedAt = :updatedAt
+        WHERE status = 'DOWNLOADING'
+            AND (activeBackendRunId IS NULL OR activeBackendRunId != :activeBackendRunId)
+        """
+    )
+    abstract suspend fun pauseOrphanedActiveDownloads(
+        activeBackendRunId: UUID,
+        error: String?,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE downloads
+        SET status = 'PAUSED',
+            activeClaimId = NULL,
+            activeBackendRunId = NULL,
+            activeBackendKind = NULL,
+            claimStartedAt = NULL,
+            claimHeartbeatAt = NULL,
+            error = :error,
+            updatedAt = :updatedAt
+        WHERE status = 'DOWNLOADING'
+        """
+    )
+    abstract suspend fun pauseAllActiveDownloads(
+        error: String?,
+        updatedAt: Long,
+    ): Int
+
+    @Transaction
+    open suspend fun insertMovieIfDownloadCompleted(
+        downloadId: UUID,
+        movie: AfinityMovieDto,
+    ): Boolean {
+        if (getDownload(downloadId)?.status != DownloadStatus.COMPLETED) return false
+        insertMovie(movie)
+        return true
+    }
+
+    @Transaction
+    open suspend fun insertShowIfDownloadCompleted(
+        downloadId: UUID,
+        show: AfinityShowDto,
+    ): Boolean {
+        if (getDownload(downloadId)?.status != DownloadStatus.COMPLETED) return false
+        insertShow(show)
+        return true
+    }
+
+    @Transaction
+    open suspend fun insertSeasonIfDownloadCompleted(
+        downloadId: UUID,
+        season: AfinitySeasonDto,
+    ): Boolean {
+        if (getDownload(downloadId)?.status != DownloadStatus.COMPLETED) return false
+        insertSeason(season)
+        return true
+    }
+
+    @Transaction
+    open suspend fun insertEpisodeIfDownloadCompleted(
+        downloadId: UUID,
+        episode: AfinityEpisodeDto,
+    ): Boolean {
+        if (getDownload(downloadId)?.status != DownloadStatus.COMPLETED) return false
+        insertEpisode(episode)
+        return true
+    }
+
+    @Transaction
+    open suspend fun insertSourceIfDownloadCompleted(
+        downloadId: UUID,
+        source: AfinitySourceDto,
+    ): Boolean {
+        if (getDownload(downloadId)?.status != DownloadStatus.COMPLETED) return false
+        insertSource(source)
+        return true
+    }
+
+    @Transaction
+    open suspend fun insertMediaStreamIfDownloadCompleted(
+        downloadId: UUID,
+        stream: AfinityMediaStreamDto,
+    ): Boolean {
+        if (getDownload(downloadId)?.status != DownloadStatus.COMPLETED) return false
+        insertMediaStream(stream)
+        return true
+    }
+
+    @Transaction
+    open suspend fun insertTrickplayInfoIfDownloadCompleted(
+        downloadId: UUID,
+        trickplayInfo: AfinityTrickplayInfoDto,
+    ): Boolean {
+        if (getDownload(downloadId)?.status != DownloadStatus.COMPLETED) return false
+        insertTrickplayInfo(trickplayInfo)
+        return true
+    }
+
+    @Transaction
+    open suspend fun insertSegmentIfDownloadCompleted(
+        downloadId: UUID,
+        segment: AfinitySegmentDto,
+    ): Boolean {
+        if (getDownload(downloadId)?.status != DownloadStatus.COMPLETED) return false
+        insertSegment(segment)
+        return true
+    }
 
     @Query("DELETE FROM downloads WHERE id = :downloadId")
     abstract suspend fun deleteDownload(downloadId: UUID)

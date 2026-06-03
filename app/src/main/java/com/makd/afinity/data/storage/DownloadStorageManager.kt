@@ -386,6 +386,7 @@ constructor(
         abstract val uriString: String
         abstract val existsAndNonEmpty: Boolean
         abstract fun openOutputStream(): OutputStream
+        abstract fun deleteIfExists(): Boolean
 
         data class FileTarget(val file: File) : SidecarFileTarget() {
             override val displayPath: String
@@ -396,6 +397,8 @@ constructor(
                 get() = file.exists() && file.length() > 0
 
             override fun openOutputStream(): OutputStream = java.io.FileOutputStream(file)
+
+            override fun deleteIfExists(): Boolean = !file.exists() || file.delete()
         }
 
         class UriTarget(private val context: Context, private val uri: Uri) : SidecarFileTarget() {
@@ -409,6 +412,13 @@ constructor(
             override fun openOutputStream(): OutputStream =
                 context.contentResolver.openOutputStream(uri, "w")
                     ?: error("Failed to open $uri for writing")
+
+            override fun deleteIfExists(): Boolean =
+                try {
+                    DocumentsContract.deleteDocument(context.contentResolver, uri)
+                } catch (_: Exception) {
+                    false
+                }
 
             private fun getSize(): Long =
                 context.contentResolver

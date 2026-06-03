@@ -1,11 +1,5 @@
 package com.makd.afinity.data.repository.download
 
-import androidx.work.Constraints
-import androidx.work.Data
-import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
 import com.makd.afinity.data.database.entities.DownloadDto
 import com.makd.afinity.data.database.entities.toDownloadInfo
 import com.makd.afinity.data.manager.OfflineModeManager
@@ -16,16 +10,13 @@ import com.makd.afinity.data.models.download.DownloadStatus
 import com.makd.afinity.data.models.extensions.toAfinityEpisode
 import com.makd.afinity.data.models.extensions.toAfinityMovie
 import com.makd.afinity.data.models.media.AfinityEpisode
+import com.makd.afinity.data.models.media.AfinityItem
 import com.makd.afinity.data.models.media.AfinityMovie
 import com.makd.afinity.data.models.media.AfinitySourceType
 import com.makd.afinity.data.repository.DatabaseRepository
 import com.makd.afinity.data.repository.PreferencesRepository
 import com.makd.afinity.data.repository.media.MediaRepository
 import com.makd.afinity.data.storage.DownloadStorageManager
-import com.makd.afinity.data.workers.ImageDownloadWorker
-import com.makd.afinity.data.workers.MediaDownloadWorker
-import com.makd.afinity.data.workers.SubtitleDownloadWorker
-import com.makd.afinity.data.workers.TrickplayDownloadWorker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -50,7 +41,8 @@ constructor(
     private val mediaRepository: MediaRepository,
     private val databaseRepository: DatabaseRepository,
     private val preferencesRepository: PreferencesRepository,
-    private val workManager: WorkManager,
+    private val downloadQueueScheduler: DownloadQueueScheduler,
+    private val stateStore: DownloadQueueStateStore,
     private val downloadStorageManager: DownloadStorageManager,
     private val offlineModeManager: OfflineModeManager,
 ) : DownloadRepository {
@@ -62,7 +54,6 @@ constructor(
         const val KEY_ITEM_NAME = "item_name"
         const val KEY_ITEM_TYPE = "item_type"
         const val KEY_DOWNLOAD_QUALITY_MODE = "download_quality_mode"
-        const val MAX_CONCURRENT_DOWNLOADS = 2
     }
 
     override suspend fun startDownload(itemId: UUID, sourceId: String): Result<UUID> =
@@ -133,165 +124,122 @@ constructor(
                             ?: return@withContext Result.failure(Exception("Source not found"))
                     }
 
-                val downloadId = UUID.randomUUID()
                 val qualityMode =
                     DownloadQualityMode.fromPreference(preferencesRepository.getDownloadQuality())
 
-                val imageUrl =
-                    when (item) {
-                        is AfinityMovie -> item.images.primary?.toString()
-                        is AfinityEpisode -> item.images.primary?.toString()
-                        else -> null
-                    }
-
-                val seriesImageUrl = (item as? AfinityEpisode)?.images?.showPrimary?.toString()
-                val seriesName = (item as? AfinityEpisode)?.seriesName
-                val seasonNumber = (item as? AfinityEpisode)?.parentIndexNumber
-                val episodeNumber = (item as? AfinityEpisode)?.indexNumber
-                val releaseYear = (item as? AfinityMovie)?.productionYear?.toString()
-                val runtimeTicks =
-                    when (item) {
-                        is AfinityMovie -> item.runtimeTicks
-                        is AfinityEpisode -> item.runtimeTicks
-                        else -> 0L
-                    }
-
-                val folderPath =
-                    when (item) {
-                        is AfinityMovie -> "$serverId/movies/$itemId"
-                        is AfinityEpisode ->
-                            "$serverId/shows/${item.seriesId}/seasons/${item.parentIndexNumber}/$itemId"
-                        else -> "$serverId/$itemId"
-                    }
-
                 val download =
-                    DownloadDto(
-                        id = downloadId,
-                        itemId = itemId,
-                        itemName = item.name,
-                        itemType =
-                            when (item) {
-                                is AfinityMovie -> "Movie"
-                                is AfinityEpisode -> "Episode"
-                                else -> "Unknown"
-                            },
+                    buildQueuedDownload(
+                        existingDownload = existingDownload,
+                        item = item,
                         sourceId = source.id,
-                        sourceName =
-                            if (qualityMode.requiresTranscode) {
-                                "${source.name} - ${qualityMode.displayName}"
-                            } else {
-                                source.name
-                            },
-                        status = DownloadStatus.QUEUED,
-                        progress = 0f,
-                        bytesDownloaded = 0L,
-                        totalBytes = if (qualityMode.requiresTranscode) 0L else source.size,
-                        filePath = null,
-                        error = null,
-                        createdAt = System.currentTimeMillis(),
-                        updatedAt = System.currentTimeMillis(),
                         serverId = serverId,
                         userId = userId,
-                        imageUrl = imageUrl,
-                        seriesImageUrl = seriesImageUrl,
-                        seriesName = seriesName,
-                        seasonNumber = seasonNumber,
-                        episodeNumber = episodeNumber,
-                        releaseYear = releaseYear,
-                        runtimeTicks = runtimeTicks,
-                        folderPath = folderPath,
-                        seriesId = (item as? AfinityEpisode)?.seriesId?.toString(),
+                        qualityMode = qualityMode,
                     )
 
                 databaseRepository.insertDownload(download)
 
-                queueDownloadWork(download)
+                scheduleQueue(DownloadQueueScheduleTrigger.USER_ACTION)
 
-                Result.success(downloadId)
+                Result.success(download.id)
             } catch (e: Exception) {
                 Timber.e(e, "Failed to start download")
                 Result.failure(e)
             }
         }
 
-    private suspend fun queueDownloadWork(
-        download: DownloadDto,
-        policy: ExistingWorkPolicy = ExistingWorkPolicy.KEEP,
-    ) {
+    private suspend fun scheduleQueue(trigger: DownloadQueueScheduleTrigger) {
         if (offlineModeManager.isCurrentlyOffline()) {
-            Timber.d("Skipping download work enqueue in offline mode for ${download.itemId}")
+            Timber.d("Skipping download queue schedule in offline mode")
             return
         }
+        when (val result = downloadQueueScheduler.scheduleQueue(trigger)) {
+            is DownloadQueueScheduler.ScheduleResult.Failed ->
+                Timber.w("Download queue scheduling failed: ${result.reason}")
+            is DownloadQueueScheduler.ScheduleResult.Deferred ->
+                Timber.i("Download queue scheduling deferred: ${result.reason}")
+            else -> Unit
+        }
+    }
 
-        val wifiOnly = preferencesRepository.getDownloadOverWifiOnly()
-
-        val constraints =
-            Constraints.Builder()
-                .setRequiredNetworkType(
-                    if (wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED
-                )
-                .setRequiresStorageNotLow(true)
-                .build()
-
-        val inputData =
-            Data.Builder()
-                .putString(KEY_DOWNLOAD_ID, download.id.toString())
-                .putString(KEY_ITEM_ID, download.itemId.toString())
-                .putString(KEY_SOURCE_ID, download.sourceId)
-                .putString(KEY_ITEM_NAME, download.itemName)
-                .putString(KEY_ITEM_TYPE, download.itemType)
-                .putString(KEY_DOWNLOAD_QUALITY_MODE, preferencesRepository.getDownloadQuality())
-                .build()
-
-        val mediaDownloadRequest =
-            OneTimeWorkRequestBuilder<MediaDownloadWorker>()
-                .setConstraints(constraints)
-                .setInputData(inputData)
-                .addTag("download_${download.id}")
-                .addTag("download_active")
-                .build()
-
-        val trickplayDownloadRequest =
-            OneTimeWorkRequestBuilder<TrickplayDownloadWorker>()
-                .setConstraints(constraints)
-                .setInputData(inputData)
-                .addTag("download_${download.id}")
-                .build()
-
-        val imageDownloadRequest =
-            OneTimeWorkRequestBuilder<ImageDownloadWorker>()
-                .setConstraints(constraints)
-                .setInputData(inputData)
-                .addTag("download_${download.id}")
-                .build()
-
-        val subtitleDownloadRequest =
-            OneTimeWorkRequestBuilder<SubtitleDownloadWorker>()
-                .setConstraints(constraints)
-                .setInputData(inputData)
-                .addTag("download_${download.id}")
-                .build()
-
-        workManager
-            .beginUniqueWork("download_${download.id}", policy, mediaDownloadRequest)
-            .then(listOf(trickplayDownloadRequest, imageDownloadRequest, subtitleDownloadRequest))
-            .enqueue()
+    private fun buildQueuedDownload(
+        existingDownload: DownloadDto?,
+        item: AfinityItem,
+        sourceId: String,
+        serverId: String,
+        userId: UUID,
+        qualityMode: DownloadQualityMode,
+    ): DownloadDto {
+        val source = item.sources.first { it.id == sourceId }
+        val now = System.currentTimeMillis()
+        val itemType =
+            when (item) {
+                is AfinityMovie -> "Movie"
+                is AfinityEpisode -> "Episode"
+                else -> "Unknown"
+            }
+        val folderPath =
+            when (item) {
+                is AfinityMovie -> "$serverId/movies/${item.id}"
+                is AfinityEpisode ->
+                    "$serverId/shows/${item.seriesId}/seasons/${item.parentIndexNumber}/${item.id}"
+                else -> "$serverId/${item.id}"
+            }
+        val sourceName =
+            if (qualityMode.requiresTranscode) {
+                "${source.name} - ${qualityMode.displayName}"
+            } else {
+                source.name
+            }
+        return DownloadDto(
+            id = existingDownload?.id ?: UUID.randomUUID(),
+            itemId = item.id,
+            itemName = item.name,
+            itemType = itemType,
+            sourceId = source.id,
+            sourceName = sourceName,
+            status = DownloadStatus.QUEUED,
+            progress = 0f,
+            bytesDownloaded = 0L,
+            totalBytes = if (qualityMode.requiresTranscode) 0L else source.size,
+            filePath = null,
+            error = null,
+            createdAt = existingDownload?.createdAt ?: now,
+            updatedAt = now,
+            serverId = serverId,
+            userId = userId,
+            imageUrl = item.images.primary?.toString(),
+            seriesImageUrl = (item as? AfinityEpisode)?.images?.showPrimary?.toString(),
+            seriesName = (item as? AfinityEpisode)?.seriesName,
+            seasonNumber = (item as? AfinityEpisode)?.parentIndexNumber,
+            episodeNumber = (item as? AfinityEpisode)?.indexNumber,
+            releaseYear = (item as? AfinityMovie)?.productionYear?.toString(),
+            runtimeTicks = item.runtimeTicks,
+            folderPath = folderPath,
+            seriesId = (item as? AfinityEpisode)?.seriesId?.toString(),
+        )
     }
 
     override suspend fun pauseDownload(downloadId: UUID): Result<Unit> =
         withContext(Dispatchers.IO) {
             return@withContext try {
-                workManager.cancelUniqueWork("download_$downloadId")
-
                 val download = databaseRepository.getDownload(downloadId)
                 if (download != null) {
-                    databaseRepository.insertDownload(
-                        download.copy(
-                            status = DownloadStatus.PAUSED,
-                            updatedAt = System.currentTimeMillis(),
-                        )
-                    )
+                    when (download.status) {
+                        DownloadStatus.DOWNLOADING -> {
+                            downloadQueueScheduler.cancelQueue()
+                            stateStore.pauseActiveDownload(downloadId, "Paused by user")
+                        }
+                        DownloadStatus.QUEUED -> databaseRepository.pauseQueuedDownload(downloadId, null)
+                        DownloadStatus.PAUSED -> Unit
+                        DownloadStatus.COMPLETED,
+                        DownloadStatus.FAILED,
+                        DownloadStatus.CANCELLED -> {
+                            Timber.d("Ignoring pause for terminal/non-active download $downloadId")
+                        }
+                    }
                 }
+                scheduleQueue(DownloadQueueScheduleTrigger.USER_ACTION)
 
                 Result.success(Unit)
             } catch (e: Exception) {
@@ -322,11 +270,16 @@ constructor(
                     download.copy(
                         status = DownloadStatus.QUEUED,
                         error = null,
+                        activeClaimId = null,
+                        activeBackendRunId = null,
+                        activeBackendKind = null,
+                        claimStartedAt = null,
+                        claimHeartbeatAt = null,
                         updatedAt = System.currentTimeMillis(),
                     )
                 databaseRepository.insertDownload(updatedDownload)
 
-                queueDownloadWork(updatedDownload, ExistingWorkPolicy.REPLACE)
+                scheduleQueue(DownloadQueueScheduleTrigger.USER_ACTION)
 
                 Result.success(Unit)
             } catch (e: Exception) {
@@ -338,10 +291,13 @@ constructor(
     override suspend fun cancelDownload(downloadId: UUID): Result<Unit> =
         withContext(Dispatchers.IO) {
             return@withContext try {
-                workManager.cancelUniqueWork("download_$downloadId")
-
                 val download = databaseRepository.getDownload(downloadId)
                 if (download != null) {
+                    if (download.status == DownloadStatus.DOWNLOADING) {
+                        downloadQueueScheduler.cancelQueue()
+                    }
+                    databaseRepository.deleteDownload(downloadId)
+
                     download.filePath?.takeIf(downloadStorageManager::isContentUri)?.let {
                         downloadStorageManager.deleteDocumentUri(it)
                     }
@@ -366,8 +322,8 @@ constructor(
                     ) {
                         itemDir.deleteRecursively()
                     }
-                    databaseRepository.deleteDownload(downloadId)
                 }
+                scheduleQueue(DownloadQueueScheduleTrigger.USER_ACTION)
 
                 Result.success(Unit)
             } catch (e: Exception) {
@@ -383,8 +339,14 @@ constructor(
                     databaseRepository.getDownload(downloadId)
                         ?: return@withContext Result.failure(Exception("Download not found"))
 
+                if (download.status == DownloadStatus.DOWNLOADING) {
+                    downloadQueueScheduler.cancelQueue()
+                }
+
                 val itemFolder =
                     downloadStorageManager.getItemDownloadDirectory(download, download.itemId)
+
+                databaseRepository.deleteDownload(downloadId)
 
                 download.filePath?.takeIf(downloadStorageManager::isContentUri)?.let {
                     downloadStorageManager.deleteDocumentUri(it)
@@ -398,8 +360,7 @@ constructor(
                 sources
                     .filter { it.type == AfinitySourceType.LOCAL }
                     .forEach { databaseRepository.deleteSource(it.id) }
-
-                databaseRepository.deleteDownload(downloadId)
+                scheduleQueue(DownloadQueueScheduleTrigger.USER_ACTION)
 
                 Result.success(Unit)
             } catch (e: Exception) {
@@ -556,15 +517,34 @@ constructor(
     override suspend fun startSeasonDownload(seasonId: UUID, seriesId: UUID?): Result<Int> =
         withContext(Dispatchers.IO) {
             return@withContext try {
-                val episodes = mediaRepository.getEpisodes(seasonId, seriesId)
-                var started = 0
-                for (episode in episodes) {
-                    startDownload(episode.id, "")
-                        .onSuccess { started++ }
-                        .onFailure {
-                            Timber.w(it, "Skipping episode ${episode.name}: ${it.message}")
-                        }
+                val session =
+                    sessionManager.currentSession.value
+                        ?: return@withContext Result.failure(Exception("No active session"))
+                val qualityMode =
+                    DownloadQualityMode.fromPreference(preferencesRepository.getDownloadQuality())
+                val episodes =
+                    mediaRepository.getEpisodes(
+                        seasonId = seasonId,
+                        seriesId = seriesId,
+                        fields =
+                            listOf(
+                                ItemFields.MEDIA_SOURCES,
+                                ItemFields.MEDIA_STREAMS,
+                                ItemFields.OVERVIEW,
+                            ),
+                    )
+                val downloads =
+                    buildEpisodeQueueRows(
+                        episodes = episodes,
+                        serverId = session.serverId,
+                        userId = session.userId,
+                        qualityMode = qualityMode,
+                    )
+                if (downloads.isNotEmpty()) {
+                    databaseRepository.insertDownloads(downloads)
+                    scheduleQueue(DownloadQueueScheduleTrigger.USER_ACTION)
                 }
+                val started = downloads.size
                 Timber.i("Season download queued $started/${episodes.size} episodes")
                 Result.success(started)
             } catch (e: Exception) {
@@ -576,13 +556,38 @@ constructor(
     override suspend fun startSeriesDownload(showId: UUID): Result<Int> =
         withContext(Dispatchers.IO) {
             return@withContext try {
+                val session =
+                    sessionManager.currentSession.value
+                        ?: return@withContext Result.failure(Exception("No active session"))
+                val qualityMode =
+                    DownloadQualityMode.fromPreference(preferencesRepository.getDownloadQuality())
                 val seasons = mediaRepository.getSeasons(showId)
-                var totalStarted = 0
+                val allDownloads = mutableListOf<DownloadDto>()
                 for (season in seasons) {
-                    startSeasonDownload(season.id, showId)
-                        .onSuccess { count -> totalStarted += count }
-                        .onFailure { Timber.w(it, "Skipping season ${season.name}: ${it.message}") }
+                    val episodes =
+                        mediaRepository.getEpisodes(
+                            seasonId = season.id,
+                            seriesId = showId,
+                            fields =
+                                listOf(
+                                    ItemFields.MEDIA_SOURCES,
+                                    ItemFields.MEDIA_STREAMS,
+                                    ItemFields.OVERVIEW,
+                                ),
+                        )
+                    allDownloads +=
+                        buildEpisodeQueueRows(
+                            episodes = episodes,
+                            serverId = session.serverId,
+                            userId = session.userId,
+                            qualityMode = qualityMode,
+                        )
                 }
+                if (allDownloads.isNotEmpty()) {
+                    databaseRepository.insertDownloads(allDownloads)
+                    scheduleQueue(DownloadQueueScheduleTrigger.USER_ACTION)
+                }
+                val totalStarted = allDownloads.size
                 Timber.i(
                     "Series download queued $totalStarted episodes across ${seasons.size} seasons"
                 )
@@ -592,6 +597,42 @@ constructor(
                 Result.failure(e)
             }
         }
+
+    private suspend fun buildEpisodeQueueRows(
+        episodes: List<AfinityEpisode>,
+        serverId: String,
+        userId: UUID,
+        qualityMode: DownloadQualityMode,
+    ): List<DownloadDto> {
+        return episodes.mapNotNull { episode ->
+            val existing = databaseRepository.getDownloadByItemIdScoped(episode.id, serverId, userId)
+            if (existing?.status == DownloadStatus.COMPLETED) {
+                Timber.w("Skipping episode ${episode.name}: already downloaded")
+                return@mapNotNull null
+            }
+            if (
+                existing?.status == DownloadStatus.DOWNLOADING ||
+                    existing?.status == DownloadStatus.QUEUED
+            ) {
+                Timber.w("Skipping episode ${episode.name}: already queued/downloading")
+                return@mapNotNull null
+            }
+            val source =
+                episode.sources.firstOrNull { it.type == AfinitySourceType.REMOTE }
+                    ?: run {
+                        Timber.w("Skipping episode ${episode.name}: no remote source")
+                        return@mapNotNull null
+                    }
+            buildQueuedDownload(
+                existingDownload = existing,
+                item = episode,
+                sourceId = source.id,
+                serverId = serverId,
+                userId = userId,
+                qualityMode = qualityMode,
+            )
+        }
+    }
 
     override suspend fun cancelAllSeriesDownloads(showId: UUID): Result<Unit> =
         withContext(Dispatchers.IO) {

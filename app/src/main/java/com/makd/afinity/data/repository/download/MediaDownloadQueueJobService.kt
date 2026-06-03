@@ -1,0 +1,210 @@
+package com.makd.afinity.data.repository.download
+
+import android.app.NotificationManager
+import android.app.job.JobParameters
+import android.app.job.JobService
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import androidx.annotation.RequiresApi
+import androidx.core.app.NotificationManagerCompat
+import dagger.hilt.android.AndroidEntryPoint
+import java.util.UUID
+import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import timber.log.Timber
+
+@AndroidEntryPoint
+@RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+class MediaDownloadQueueJobService : JobService() {
+    @Inject lateinit var queueRunner: DownloadQueueRunner
+    @Inject lateinit var stateStore: DownloadQueueStateStore
+    @Inject lateinit var backendStartFailureHandler: DownloadQueueBackendStartFailureHandler
+    @Inject lateinit var notificationFactory: DownloadQueueNotificationFactory
+    @Inject lateinit var uidtNetworkSession: UidtNetworkSession
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var serviceScope: CoroutineScope? = null
+    @Volatile private var runningJob: Job? = null
+    private val lifecycle = UidtJobLifecycle()
+
+    override fun onStartJob(params: JobParameters): Boolean {
+        val runId = lifecycle.start()
+        val notification =
+            try {
+                notificationFactory.buildQueueNotification()
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to build UIDT notification")
+                return startBackendStartFailureCleanup(
+                    runId = runId,
+                    params = params,
+                    reason = e.message ?: "UIDT notification could not be built",
+                )
+            }
+        try {
+            setNotification(
+                params,
+                DownloadQueueNotificationFactory.NOTIFICATION_ID,
+                notification,
+                JOB_END_NOTIFICATION_POLICY_REMOVE,
+            )
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to set required UIDT notification")
+            return startBackendStartFailureCleanup(
+                runId = runId,
+                params = params,
+                reason = e.message ?: "UIDT required notification could not be shown",
+            )
+        }
+
+        val network = params.network
+        if (network == null) {
+            return startPauseAllActiveCleanup(
+                runId = runId,
+                params = params,
+                reason = "UIDT required network is unavailable",
+            )
+        }
+
+        uidtNetworkSession.startJob(network)
+        serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        lifecycle.markRunnerWork()
+        runningJob =
+            serviceScope?.launch {
+                try {
+                    val backendRunId = UUID.randomUUID()
+                    val result =
+                        queueRunner.run(
+                            requiredNetwork = network,
+                            backendRunId = backendRunId,
+                            backendKind = DownloadQueueBackends.UIDT,
+                        ) { progress ->
+                            try {
+                                updateTransferredNetworkBytes(params, progress.downloadedBytes, 0L)
+                                NotificationManagerCompat.from(this@MediaDownloadQueueJobService)
+                                    .notify(
+                                        DownloadQueueNotificationFactory.NOTIFICATION_ID,
+                                        notificationFactory.buildQueueNotification(progress = progress),
+                                    )
+                            } catch (e: Exception) {
+                                Timber.w(e, "UIDT download notification update failed")
+                                queueRunner.stopActive(
+                                    e.message ?: "Download notification update failed"
+                                )
+                            }
+                        }
+                    Timber.i(
+                        "UIDT download queue finished: completed=${result.completed}, " +
+                            "failed=${result.failed}, paused=${result.paused}, stopped=${result.stopped}"
+                    )
+                    finishIfCurrent(runId, params, wantsReschedule = false)
+                } catch (e: CancellationException) {
+                    Timber.i("UIDT download queue coroutine cancelled")
+                    queueRunner.stopActive("UIDT job stopped")
+                } catch (e: Exception) {
+                    Timber.e(e, "UIDT download queue failed")
+                    queueRunner.stopActive(e.message ?: "UIDT queue interrupted")
+                    finishIfCurrent(runId, params, wantsReschedule = false)
+                }
+            }
+        return true
+    }
+
+    override fun onStopJob(params: JobParameters): Boolean {
+        val userStopped = params.stopReason == JobParameters.STOP_REASON_USER
+        val reason = "UIDT job stopped: ${params.stopReason}"
+        val stopDecision = lifecycle.stop()
+        if (stopDecision.shouldStopRunner) {
+            queueRunner.requestPauseActive(
+                reason = reason,
+                force = userStopped,
+            )
+            serviceScope?.launch(start = CoroutineStart.UNDISPATCHED) {
+                queueRunner.stopActive(reason)
+            }
+            runningJob?.cancel()
+        }
+        uidtNetworkSession.clearJob()
+        return !userStopped
+    }
+
+    override fun onNetworkChanged(params: JobParameters) {
+        if (!lifecycle.hasActiveRun()) return
+        serviceScope?.launch {
+            queueRunner.onUidtNetworkChanged(params.network)
+        }
+    }
+
+    private fun finishIfCurrent(
+        runId: Long,
+        params: JobParameters,
+        wantsReschedule: Boolean,
+    ) {
+        mainHandler.post {
+            lifecycle.finishIfCurrent(runId) {
+                uidtNetworkSession.clearJob()
+                jobFinished(params, wantsReschedule)
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        lifecycle.destroy()
+        runningJob?.cancel()
+        serviceScope?.cancel()
+        uidtNetworkSession.clearJob()
+        getSystemService(NotificationManager::class.java)
+            .cancel(DownloadQueueNotificationFactory.NOTIFICATION_ID)
+        super.onDestroy()
+    }
+
+    private fun startBackendStartFailureCleanup(
+        runId: Long,
+        params: JobParameters,
+        reason: String,
+    ): Boolean {
+        serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        lifecycle.markCleanupWork()
+        runningJob =
+            serviceScope?.launch(start = CoroutineStart.UNDISPATCHED) {
+                val cleanupResult =
+                    UidtJobCleanup.run {
+                        backendStartFailureHandler.record(reason)
+                    }
+                if (cleanupResult is UidtJobCleanupResult.Failed) {
+                    Timber.e(cleanupResult.error, "Failed to persist UIDT backend start failure")
+                }
+                finishIfCurrent(runId, params, cleanupResult.wantsReschedule)
+            }
+        return true
+    }
+
+    private fun startPauseAllActiveCleanup(
+        runId: Long,
+        params: JobParameters,
+        reason: String,
+    ): Boolean {
+        serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        lifecycle.markCleanupWork()
+        runningJob =
+            serviceScope?.launch(start = CoroutineStart.UNDISPATCHED) {
+                val cleanupResult =
+                    UidtJobCleanup.run {
+                        stateStore.pauseAllActiveForSchedulerFailure(reason = reason)
+                    }
+                if (cleanupResult is UidtJobCleanupResult.Failed) {
+                    Timber.e(cleanupResult.error, "Failed to pause active rows for UIDT cleanup")
+                }
+                finishIfCurrent(runId, params, cleanupResult.wantsReschedule)
+            }
+        return true
+    }
+
+}

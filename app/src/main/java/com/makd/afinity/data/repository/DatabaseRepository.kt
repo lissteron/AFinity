@@ -203,6 +203,8 @@ interface DatabaseRepository {
 
     suspend fun insertDownload(download: DownloadDto)
 
+    suspend fun insertDownloads(downloads: List<DownloadDto>)
+
     suspend fun getDownload(downloadId: UUID): DownloadDto?
 
     suspend fun getDownloadByItemId(itemId: UUID): DownloadDto?
@@ -224,6 +226,141 @@ interface DatabaseRepository {
         serverId: String,
         userId: UUID,
     ): Flow<List<DownloadDto>>
+
+    suspend fun getActiveDownloadingDownloads(): List<DownloadDto>
+
+    suspend fun getPendingQueueDownloads(): List<DownloadDto>
+
+    suspend fun getNonCompletedDownloads(): List<DownloadDto>
+
+    suspend fun countQueuedDownloads(): Int
+
+    fun countQueuedDownloadsFlow(): Flow<Int>
+
+    fun getActiveDownloadFlow(): Flow<DownloadDto?>
+
+    suspend fun claimOldestQueuedDownload(
+        activeBackendKind: String,
+        activeBackendRunId: UUID,
+        activeClaimId: UUID = UUID.randomUUID(),
+        updatedAt: Long = System.currentTimeMillis(),
+    ): DownloadDto?
+
+    suspend fun updateActiveDownloadProgress(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        progress: Float,
+        bytesDownloaded: Long,
+        totalBytes: Long,
+        updatedAt: Long = System.currentTimeMillis(),
+    ): Boolean
+
+    suspend fun finalizeActiveDownload(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        status: DownloadStatus,
+        progress: Float,
+        bytesDownloaded: Long,
+        totalBytes: Long,
+        filePath: String?,
+        error: String?,
+        updatedAt: Long = System.currentTimeMillis(),
+    ): Boolean
+
+    suspend fun pauseActiveDownload(
+        downloadId: UUID,
+        error: String?,
+        updatedAt: Long = System.currentTimeMillis(),
+    ): Boolean
+
+    suspend fun pauseClaimedActiveDownload(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        error: String?,
+        updatedAt: Long = System.currentTimeMillis(),
+    ): Boolean
+
+    suspend fun pauseQueuedDownload(
+        downloadId: UUID,
+        error: String?,
+        updatedAt: Long = System.currentTimeMillis(),
+    ): Boolean
+
+    suspend fun requeueActiveDownload(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        error: String?,
+        updatedAt: Long = System.currentTimeMillis(),
+    ): Boolean
+
+    suspend fun markStaleDownloadingPaused(
+        error: String?,
+        updatedAt: Long = System.currentTimeMillis(),
+        staleBefore: Long = Long.MAX_VALUE,
+    ): Int
+
+    suspend fun pauseOrphanedActiveDownloads(
+        activeBackendRunId: UUID,
+        error: String?,
+        updatedAt: Long = System.currentTimeMillis(),
+    ): Int
+
+    suspend fun pauseAllActiveDownloads(
+        error: String?,
+        updatedAt: Long = System.currentTimeMillis(),
+    ): Int
+
+    suspend fun insertMovieIfDownloadCompleted(
+        downloadId: UUID,
+        movie: AfinityMovie,
+        serverId: String,
+    ): Boolean
+
+    suspend fun insertShowIfDownloadCompleted(
+        downloadId: UUID,
+        show: AfinityShow,
+        serverId: String,
+    ): Boolean
+
+    suspend fun insertSeasonIfDownloadCompleted(
+        downloadId: UUID,
+        season: AfinitySeason,
+        serverId: String,
+    ): Boolean
+
+    suspend fun insertEpisodeIfDownloadCompleted(
+        downloadId: UUID,
+        episode: AfinityEpisode,
+        serverId: String,
+    ): Boolean
+
+    suspend fun insertSourceIfDownloadCompleted(
+        downloadId: UUID,
+        source: AfinitySource,
+        itemId: UUID,
+    ): Boolean
+
+    suspend fun insertMediaStreamIfDownloadCompleted(
+        downloadId: UUID,
+        stream: AfinityMediaStream,
+        sourceId: String,
+    ): Boolean
+
+    suspend fun insertTrickplayInfoIfDownloadCompleted(
+        downloadId: UUID,
+        trickplayInfo: AfinityTrickplayInfo,
+        sourceId: String,
+    ): Boolean
+
+    suspend fun insertSegmentIfDownloadCompleted(
+        downloadId: UUID,
+        segment: AfinitySegment,
+        itemId: UUID,
+    ): Boolean
 
     suspend fun getTotalBytesForServer(serverId: String): Long
 

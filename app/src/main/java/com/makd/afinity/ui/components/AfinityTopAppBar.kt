@@ -47,7 +47,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.makd.afinity.R
 import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
+import com.makd.afinity.data.models.download.DownloadQueueStatus
+import com.makd.afinity.data.models.download.DownloadQueueStatusLabelKind
+import com.makd.afinity.data.models.download.DownloadQueueStatusPresentation
 import com.makd.afinity.data.repository.KidModeRepository
+import com.makd.afinity.data.repository.download.DownloadQueueStatusRepository
 import com.makd.afinity.util.isLocalAddress
 import com.makd.afinity.util.isTailscaleAddress
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -69,6 +73,7 @@ constructor(
     offlineModeManager: OfflineModeManager,
     sessionManager: SessionManager,
     kidModeRepository: KidModeRepository,
+    downloadQueueStatusRepository: DownloadQueueStatusRepository,
 ) : ViewModel() {
     val canUseSearch =
         combine(kidModeRepository.policy, offlineModeManager.isOffline) { policy, offline ->
@@ -87,6 +92,8 @@ constructor(
                 else -> ConnectionType.REMOTE
             }
         }
+
+    val downloadQueueStatus = downloadQueueStatusRepository.status
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -105,6 +112,10 @@ fun AfinityTopAppBar(
     val connectionType by
         viewModel.connectionType.collectAsStateWithLifecycle(initialValue = ConnectionType.REMOTE)
     val canUseSearch by viewModel.canUseSearch.collectAsStateWithLifecycle(initialValue = true)
+    val downloadQueueStatus by
+        viewModel.downloadQueueStatus.collectAsStateWithLifecycle(
+            initialValue = DownloadQueueStatus.Empty
+        )
 
     TopAppBar(
         title = title,
@@ -141,6 +152,11 @@ fun AfinityTopAppBar(
                         )
                     }
                 }
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+
+            if (downloadQueueStatus.hasVisibleActivity) {
+                DownloadQueueStatusChip(downloadQueueStatus)
                 Spacer(modifier = Modifier.width(8.dp))
             }
 
@@ -238,4 +254,48 @@ fun AfinityTopAppBar(
             ),
         modifier = modifier,
     )
+}
+
+@Composable
+private fun DownloadQueueStatusChip(status: DownloadQueueStatus) {
+    val label =
+        when (DownloadQueueStatusPresentation.labelKind(status)) {
+            DownloadQueueStatusLabelKind.ENABLE_NOTIFICATIONS ->
+                stringResource(R.string.download_queue_enable_notifications)
+            DownloadQueueStatusLabelKind.SCHEDULER_BLOCKED ->
+                stringResource(R.string.download_queue_blocked)
+            DownloadQueueStatusLabelKind.ACTIVE ->
+                stringResource(
+                    R.string.download_queue_active_fmt,
+                    (status.progress * 100f).toInt().coerceIn(0, 100),
+                    status.queuedCount,
+                )
+            DownloadQueueStatusLabelKind.QUEUED ->
+                stringResource(R.string.download_queue_queued_fmt, status.queuedCount)
+        }
+
+    Row(
+        modifier =
+            Modifier.height(42.dp)
+                .widthIn(max = 190.dp)
+                .background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(24.dp))
+                .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(
+            painter = painterResource(id = R.drawable.ic_download_arrow),
+            contentDescription = label,
+            tint = Color.White,
+            modifier = Modifier.size(18.dp),
+        )
+        Text(
+            text = label,
+            color = Color.White,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }

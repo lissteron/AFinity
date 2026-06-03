@@ -716,6 +716,10 @@ constructor(
         serverDatabaseDao.insertDownload(download)
     }
 
+    override suspend fun insertDownloads(downloads: List<DownloadDto>) {
+        serverDatabaseDao.insertDownloads(downloads)
+    }
+
     override suspend fun getDownload(downloadId: UUID): DownloadDto? {
         return serverDatabaseDao.getDownload(downloadId)
     }
@@ -753,6 +757,249 @@ constructor(
         userId: UUID,
     ): Flow<List<DownloadDto>> {
         return serverDatabaseDao.getDownloadsByStatusFlowScoped(statuses, serverId, userId)
+    }
+
+    override suspend fun getActiveDownloadingDownloads(): List<DownloadDto> {
+        return serverDatabaseDao.getActiveDownloadingDownloads()
+    }
+
+    override suspend fun getPendingQueueDownloads(): List<DownloadDto> {
+        return serverDatabaseDao.getPendingQueueDownloads()
+    }
+
+    override suspend fun getNonCompletedDownloads(): List<DownloadDto> {
+        return serverDatabaseDao.getNonCompletedDownloads()
+    }
+
+    override suspend fun countQueuedDownloads(): Int {
+        return serverDatabaseDao.countQueuedDownloads()
+    }
+
+    override fun countQueuedDownloadsFlow(): Flow<Int> {
+        return serverDatabaseDao.countQueuedDownloadsFlow()
+    }
+
+    override fun getActiveDownloadFlow(): Flow<DownloadDto?> {
+        return serverDatabaseDao.getActiveDownloadFlow()
+    }
+
+    override suspend fun claimOldestQueuedDownload(
+        activeBackendKind: String,
+        activeBackendRunId: UUID,
+        activeClaimId: UUID,
+        updatedAt: Long,
+    ): DownloadDto? {
+        return serverDatabaseDao.claimOldestQueuedDownload(
+            activeClaimId,
+            activeBackendRunId,
+            activeBackendKind,
+            updatedAt,
+        )
+    }
+
+    override suspend fun updateActiveDownloadProgress(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        progress: Float,
+        bytesDownloaded: Long,
+        totalBytes: Long,
+        updatedAt: Long,
+    ): Boolean {
+        return serverDatabaseDao.updateActiveDownloadProgress(
+            downloadId = downloadId,
+            activeClaimId = activeClaimId,
+            activeBackendRunId = activeBackendRunId,
+            progress = progress,
+            bytesDownloaded = bytesDownloaded,
+            totalBytes = totalBytes,
+            updatedAt = updatedAt,
+        ) == 1
+    }
+
+    override suspend fun finalizeActiveDownload(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        status: DownloadStatus,
+        progress: Float,
+        bytesDownloaded: Long,
+        totalBytes: Long,
+        filePath: String?,
+        error: String?,
+        updatedAt: Long,
+    ): Boolean {
+        return serverDatabaseDao.finalizeActiveDownload(
+            downloadId = downloadId,
+            activeClaimId = activeClaimId,
+            activeBackendRunId = activeBackendRunId,
+            status = status,
+            progress = progress,
+            bytesDownloaded = bytesDownloaded,
+            totalBytes = totalBytes,
+            filePath = filePath,
+            error = error,
+            updatedAt = updatedAt,
+        ) == 1
+    }
+
+    override suspend fun pauseActiveDownload(
+        downloadId: UUID,
+        error: String?,
+        updatedAt: Long,
+    ): Boolean {
+        return serverDatabaseDao.pauseActiveDownload(downloadId, error, updatedAt) == 1
+    }
+
+    override suspend fun pauseClaimedActiveDownload(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        error: String?,
+        updatedAt: Long,
+    ): Boolean {
+        return serverDatabaseDao.pauseClaimedActiveDownload(
+            downloadId,
+            activeClaimId,
+            activeBackendRunId,
+            error,
+            updatedAt,
+        ) == 1
+    }
+
+    override suspend fun pauseQueuedDownload(
+        downloadId: UUID,
+        error: String?,
+        updatedAt: Long,
+    ): Boolean {
+        return serverDatabaseDao.pauseQueuedDownload(downloadId, error, updatedAt) == 1
+    }
+
+    override suspend fun requeueActiveDownload(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        error: String?,
+        updatedAt: Long,
+    ): Boolean {
+        return serverDatabaseDao.requeueActiveDownload(
+            downloadId,
+            activeClaimId,
+            activeBackendRunId,
+            error,
+            updatedAt,
+        ) == 1
+    }
+
+    override suspend fun markStaleDownloadingPaused(
+        error: String?,
+        updatedAt: Long,
+        staleBefore: Long,
+    ): Int {
+        return serverDatabaseDao.markStaleDownloadingPaused(error, updatedAt, staleBefore)
+    }
+
+    override suspend fun pauseOrphanedActiveDownloads(
+        activeBackendRunId: UUID,
+        error: String?,
+        updatedAt: Long,
+    ): Int {
+        return serverDatabaseDao.pauseOrphanedActiveDownloads(activeBackendRunId, error, updatedAt)
+    }
+
+    override suspend fun pauseAllActiveDownloads(
+        error: String?,
+        updatedAt: Long,
+    ): Int {
+        return serverDatabaseDao.pauseAllActiveDownloads(error, updatedAt)
+    }
+
+    override suspend fun insertMovieIfDownloadCompleted(
+        downloadId: UUID,
+        movie: AfinityMovie,
+        serverId: String,
+    ): Boolean {
+        return serverDatabaseDao.insertMovieIfDownloadCompleted(
+            downloadId = downloadId,
+            movie = movie.toAfinityMovieDto(serverId),
+        )
+    }
+
+    override suspend fun insertShowIfDownloadCompleted(
+        downloadId: UUID,
+        show: AfinityShow,
+        serverId: String,
+    ): Boolean {
+        return serverDatabaseDao.insertShowIfDownloadCompleted(
+            downloadId = downloadId,
+            show = show.toAfinityShowDto(serverId),
+        )
+    }
+
+    override suspend fun insertSeasonIfDownloadCompleted(
+        downloadId: UUID,
+        season: AfinitySeason,
+        serverId: String,
+    ): Boolean {
+        return serverDatabaseDao.insertSeasonIfDownloadCompleted(
+            downloadId = downloadId,
+            season = season.toAfinitySeasonDto(serverId),
+        )
+    }
+
+    override suspend fun insertEpisodeIfDownloadCompleted(
+        downloadId: UUID,
+        episode: AfinityEpisode,
+        serverId: String,
+    ): Boolean {
+        return serverDatabaseDao.insertEpisodeIfDownloadCompleted(
+            downloadId = downloadId,
+            episode = episode.toAfinityEpisodeDto(serverId),
+        )
+    }
+
+    override suspend fun insertSourceIfDownloadCompleted(
+        downloadId: UUID,
+        source: AfinitySource,
+        itemId: UUID,
+    ): Boolean {
+        return serverDatabaseDao.insertSourceIfDownloadCompleted(
+            downloadId = downloadId,
+            source = source.toAfinitySourceDto(itemId, source.path),
+        )
+    }
+
+    override suspend fun insertMediaStreamIfDownloadCompleted(
+        downloadId: UUID,
+        stream: AfinityMediaStream,
+        sourceId: String,
+    ): Boolean {
+        return serverDatabaseDao.insertMediaStreamIfDownloadCompleted(
+            downloadId = downloadId,
+            stream = stream.toAfinityMediaStreamDto(UUID.randomUUID(), sourceId, stream.path ?: ""),
+        )
+    }
+
+    override suspend fun insertTrickplayInfoIfDownloadCompleted(
+        downloadId: UUID,
+        trickplayInfo: AfinityTrickplayInfo,
+        sourceId: String,
+    ): Boolean {
+        return serverDatabaseDao.insertTrickplayInfoIfDownloadCompleted(
+            downloadId = downloadId,
+            trickplayInfo = trickplayInfo.toAfinityTrickplayInfoDto(sourceId),
+        )
+    }
+
+    override suspend fun insertSegmentIfDownloadCompleted(
+        downloadId: UUID,
+        segment: AfinitySegment,
+        itemId: UUID,
+    ): Boolean {
+        return serverDatabaseDao.insertSegmentIfDownloadCompleted(
+            downloadId = downloadId,
+            segment = segment.toAfinitySegmentsDto(itemId),
+        )
     }
 
     override suspend fun getTotalBytesForServer(serverId: String): Long {
