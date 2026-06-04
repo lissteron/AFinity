@@ -17,6 +17,7 @@ import com.makd.afinity.data.repository.DatabaseRepository
 import com.makd.afinity.data.repository.PreferencesRepository
 import com.makd.afinity.data.repository.media.MediaRepository
 import com.makd.afinity.data.storage.DownloadStorageManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -45,6 +46,7 @@ constructor(
     private val stateStore: DownloadQueueStateStore,
     private val downloadStorageManager: DownloadStorageManager,
     private val offlineModeManager: OfflineModeManager,
+    private val downloadedArtworkRefresher: DownloadedArtworkRefresher,
 ) : DownloadRepository {
 
     companion object {
@@ -420,6 +422,35 @@ constructor(
     override fun getCompletedDownloadsFlow(): Flow<List<DownloadInfo>> {
         return getDownloadsByStatusFlow(listOf(DownloadStatus.COMPLETED))
     }
+
+    override suspend fun refreshCompletedArtwork(
+        progress: suspend (DownloadedArtworkRefreshProgress) -> Unit
+    ): Result<DownloadedArtworkRefreshSummary> =
+        withContext(Dispatchers.IO) {
+            try {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    return@withContext Result.failure(Exception("Offline mode is enabled"))
+                }
+                val session =
+                    sessionManager.currentSession.value
+                        ?: return@withContext Result.failure(Exception("No active session"))
+                val downloads =
+                    databaseRepository
+                        .getDownloadsByStatusFlowScoped(
+                            listOf(DownloadStatus.COMPLETED),
+                            session.serverId,
+                            session.userId,
+                        )
+                        .first()
+                Result.success(
+                    downloadedArtworkRefresher.refreshCompletedDownloads(downloads, progress)
+                )
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Timber.e(e, "Failed to refresh completed download artwork")
+                Result.failure(e)
+            }
+        }
 
     override suspend fun isItemDownloaded(itemId: UUID): Boolean =
         withContext(Dispatchers.IO) {

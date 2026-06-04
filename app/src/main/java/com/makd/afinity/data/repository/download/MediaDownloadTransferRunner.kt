@@ -841,38 +841,44 @@ constructor(
                                 }
                             } else null
 
-                        seriesId?.let {
-                            seriesDeferred?.await()?.toAfinityShow(baseUrl)?.let { show ->
+                        seriesId?.let { showId ->
+                            val fetchedShow = seriesDeferred?.await()?.toAfinityShow(baseUrl)
+                            if (fetchedShow != null) {
                                 if (
                                     !databaseRepository.insertShowIfDownloadCompleted(
                                         downloadId,
-                                        show,
+                                        fetchedShow,
                                         serverId,
                                     )
                                 ) {
                                     return@coroutineScope
                                 }
+                            }
+                            if (fetchedShow != null || databaseRepository.getShow(showId, userId) != null) {
                                 downloadShowImages(
                                     apiClient,
                                     okHttpClient,
                                     downloadId,
                                     serverId,
-                                    it,
+                                    showId,
                                     userId,
                                     networkGeneration,
                                 )
                             }
                         }
-                        seasonDeferred?.await()?.toAfinitySeason(baseUrl)?.let { season ->
+                        val fetchedSeason = seasonDeferred?.await()?.toAfinitySeason(baseUrl)
+                        if (fetchedSeason != null) {
                             if (
                                 !databaseRepository.insertSeasonIfDownloadCompleted(
                                     downloadId,
-                                    season,
+                                    fetchedSeason,
                                     serverId,
                                 )
                             ) {
                                 return@coroutineScope
                             }
+                        }
+                        if (fetchedSeason != null || databaseRepository.getSeason(seasonId, userId) != null) {
                             downloadSeasonImages(
                                 apiClient,
                                 okHttpClient,
@@ -943,10 +949,14 @@ constructor(
             val itemDir = downloadStorageManager.getItemDownloadDirectory(download, itemId)
             val imagesDir = File(itemDir, "images").also { it.mkdirs() }
             val images = item.images
+            val sharedSeriesImages =
+                (item as? AfinityEpisode)?.seriesId?.let { seriesId ->
+                    databaseRepository.getShow(seriesId, userId)?.images
+                }
             val downloadedImages = mutableMapOf<String, Uri?>()
 
             suspend fun saveImage(uri: Uri?, key: String) {
-                if (uri == null || uri.toString().startsWith("file://")) return
+                if (!uri.isDownloadableRemoteUri()) return
                 if (!isStillCompleted(download.id)) return
                 val localPath =
                     downloadImage(
@@ -969,21 +979,16 @@ constructor(
             saveImage(images.thumb, "thumb")
             saveImage(images.logo, "logo")
 
-            if (itemType.uppercase() == "EPISODE") {
-                saveImage(images.showPrimary, "showPrimary")
-                saveImage(images.showBackdrop, "showBackdrop")
-                saveImage(images.showLogo, "showLogo")
-            }
-
             val updatedImages =
                 AfinityImages(
                     primary = downloadedImages["primary"] ?: images.primary,
                     backdrop = downloadedImages["backdrop"] ?: images.backdrop,
                     thumb = downloadedImages["thumb"] ?: images.thumb,
                     logo = downloadedImages["logo"] ?: images.logo,
-                    showPrimary = downloadedImages["showPrimary"] ?: images.showPrimary,
-                    showBackdrop = downloadedImages["showBackdrop"] ?: images.showBackdrop,
-                    showLogo = downloadedImages["showLogo"] ?: images.showLogo,
+                    showPrimary = sharedSeriesImages?.primary ?: images.showPrimary,
+                    showBackdrop = sharedSeriesImages?.backdrop ?: images.showBackdrop,
+                    showThumb = sharedSeriesImages?.thumb ?: images.showThumb,
+                    showLogo = sharedSeriesImages?.logo ?: images.showLogo,
                     primaryImageBlurHash = images.primaryImageBlurHash,
                     backdropImageBlurHash = images.backdropImageBlurHash,
                     thumbImageBlurHash = images.thumbImageBlurHash,
@@ -1013,11 +1018,13 @@ constructor(
                 }
                 is AfinityEpisode -> {
                     if (!isStillCompleted(download.id)) return
-                    databaseRepository.insertEpisodeIfDownloadCompleted(
-                        download.id,
-                        item.copy(images = updatedImages),
-                        download.serverId,
-                    )
+                    val updated =
+                        databaseRepository.insertEpisodeIfDownloadCompleted(
+                            download.id,
+                            item.copy(images = updatedImages),
+                            download.serverId,
+                        )
+                    if (updated) deleteRedundantEpisodeSeriesImages(imagesDir)
                 }
             }
         } catch (e: Exception) {
@@ -1041,7 +1048,7 @@ constructor(
             val images = show.images
             val downloadedImages = mutableMapOf<String, Uri?>()
             suspend fun saveImage(uri: Uri?, key: String) {
-                if (uri == null) return
+                if (!uri.isDownloadableRemoteUri()) return
                 if (!isStillCompleted(downloadId)) return
                 val localPath =
                     downloadImage(
@@ -1103,7 +1110,7 @@ constructor(
             val images = season.images
             val downloadedImages = mutableMapOf<String, Uri?>()
             suspend fun saveImage(uri: Uri?, key: String) {
-                if (uri == null) return
+                if (!uri.isDownloadableRemoteUri()) return
                 if (!isStillCompleted(downloadId)) return
                 val localPath =
                     downloadImage(
@@ -1161,6 +1168,7 @@ constructor(
             val updatedPeople =
                 movie.people.map { person ->
                     person.image.uri?.let { uri ->
+                        if (!uri.isDownloadableRemoteUri()) return@map person
                         if (!isStillCompleted(download.id)) return@map person
                         val localPath =
                             downloadImage(
@@ -1208,6 +1216,12 @@ constructor(
         var resultUri: Uri? = null
         var outputFile: File? = null
         try {
+            if (
+                !imageUrl.startsWith("http://", ignoreCase = true) &&
+                    !imageUrl.startsWith("https://", ignoreCase = true)
+            ) {
+                return null
+            }
             val request =
                 Request.Builder()
                     .url(imageUrl)
@@ -1241,6 +1255,22 @@ constructor(
             Timber.w("Failed to download image $baseName: ${e.message}")
         }
         return resultUri
+    }
+
+    private fun Uri?.isDownloadableRemoteUri(): Boolean {
+        val scheme = this?.scheme ?: return false
+        return scheme == "http" || scheme == "https"
+    }
+
+    private fun deleteRedundantEpisodeSeriesImages(imagesDir: File) {
+        val redundantPrefixes = listOf("showPrimary.", "showBackdrop.", "showThumb.", "showLogo.")
+        imagesDir
+            .listFiles { _, name -> redundantPrefixes.any { prefix -> name.startsWith(prefix) } }
+            ?.forEach { file ->
+                if (file.delete()) {
+                    Timber.d("Deleted redundant episode series image: ${file.name}")
+                }
+            }
     }
 
     private fun Uri.deleteLocalFileUri() {

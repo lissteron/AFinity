@@ -74,6 +74,25 @@ class DownloadQueueContractSourceTest {
     }
 
     @Test
+    fun uidtProgressUpdatesKeepNotificationBoundToJob() {
+        val source =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/MediaDownloadQueueJobService.kt"
+            )
+        val progressObserverIndex = source.indexOf(") { progress ->")
+        assertTrue(progressObserverIndex >= 0)
+
+        val finishLogIndex = source.indexOf("Timber.i(", progressObserverIndex)
+        assertTrue(finishLogIndex > progressObserverIndex)
+
+        val progressObserverSource = source.substring(progressObserverIndex, finishLogIndex)
+        assertTrue(progressObserverSource.contains("setNotification("))
+        assertTrue(progressObserverSource.contains("JOB_END_NOTIFICATION_POLICY_REMOVE"))
+        assertTrue(!progressObserverSource.contains("NotificationManagerCompat.from"))
+        assertTrue(!source.contains("import androidx.core.app.NotificationManagerCompat"))
+    }
+
+    @Test
     fun legacyMediaAndSidecarWorkersAreNeutralized() {
         val workerPaths =
             listOf(

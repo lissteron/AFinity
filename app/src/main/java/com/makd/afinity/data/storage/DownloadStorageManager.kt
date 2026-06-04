@@ -52,6 +52,16 @@ constructor(
             buildLocations(preferencesRepository.getDownloadStorageLocationId())
         }
 
+    suspend fun getDownloadedImageStorageUsed(): Long {
+        val root = getSelectedDownloadsRoot()
+        return withContext(Dispatchers.IO) { DownloadedImageStorage.imageBytes(root) }
+    }
+
+    suspend fun getImageCacheStorageUsed(): Long =
+        withContext(Dispatchers.IO) {
+            DownloadedImageStorage.allBytes(context.cacheDir.resolve("image_cache"))
+        }
+
     suspend fun setCustomTreeLocation(uri: Uri) =
         withContext(Dispatchers.IO) {
             context.contentResolver.takePersistableUriPermission(

@@ -1,5 +1,15 @@
 package com.makd.afinity.ui.components
 
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,15 +45,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
 import com.makd.afinity.R
 import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
@@ -51,12 +64,17 @@ import com.makd.afinity.data.models.download.DownloadQueueStatus
 import com.makd.afinity.data.models.download.DownloadQueueStatusLabelKind
 import com.makd.afinity.data.models.download.DownloadQueueStatusPresentation
 import com.makd.afinity.data.repository.KidModeRepository
+import com.makd.afinity.data.repository.download.DownloadQueueNotificationFactory
+import com.makd.afinity.data.repository.download.DownloadQueueScheduleTrigger
+import com.makd.afinity.data.repository.download.DownloadQueueScheduler
 import com.makd.afinity.data.repository.download.DownloadQueueStatusRepository
 import com.makd.afinity.util.isLocalAddress
 import com.makd.afinity.util.isTailscaleAddress
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 enum class ConnectionType {
@@ -74,6 +92,7 @@ constructor(
     sessionManager: SessionManager,
     kidModeRepository: KidModeRepository,
     downloadQueueStatusRepository: DownloadQueueStatusRepository,
+    private val downloadQueueScheduler: DownloadQueueScheduler,
 ) : ViewModel() {
     val canUseSearch =
         combine(kidModeRepository.policy, offlineModeManager.isOffline) { policy, offline ->
@@ -94,6 +113,12 @@ constructor(
         }
 
     val downloadQueueStatus = downloadQueueStatusRepository.status
+
+    fun retryDownloadQueueSchedule() {
+        viewModelScope.launch(Dispatchers.IO) {
+            downloadQueueScheduler.scheduleQueue(DownloadQueueScheduleTrigger.USER_ACTION)
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -116,6 +141,13 @@ fun AfinityTopAppBar(
         viewModel.downloadQueueStatus.collectAsStateWithLifecycle(
             initialValue = DownloadQueueStatus.Empty
         )
+    val context = LocalContext.current
+    val notificationPermissionLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                viewModel.retryDownloadQueueSchedule()
+            }
+        }
 
     TopAppBar(
         title = title,
@@ -156,7 +188,33 @@ fun AfinityTopAppBar(
             }
 
             if (downloadQueueStatus.hasVisibleActivity) {
-                DownloadQueueStatusChip(downloadQueueStatus)
+                val queueLabelKind = DownloadQueueStatusPresentation.labelKind(downloadQueueStatus)
+                val queueChipClick: (() -> Unit)? =
+                    when (queueLabelKind) {
+                        DownloadQueueStatusLabelKind.ENABLE_NOTIFICATIONS ->
+                            fun() {
+                                if (
+                                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                        ContextCompat.checkSelfPermission(
+                                            context,
+                                            Manifest.permission.POST_NOTIFICATIONS,
+                                        ) != PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    notificationPermissionLauncher.launch(
+                                        Manifest.permission.POST_NOTIFICATIONS
+                                    )
+                                } else {
+                                    context.openDownloadNotificationSettings()
+                                }
+                            }
+                        DownloadQueueStatusLabelKind.SCHEDULER_BLOCKED,
+                        DownloadQueueStatusLabelKind.QUEUED -> viewModel::retryDownloadQueueSchedule
+                        DownloadQueueStatusLabelKind.ACTIVE -> null
+                    }
+                DownloadQueueStatusChip(
+                    status = downloadQueueStatus,
+                    onClick = queueChipClick,
+                )
                 Spacer(modifier = Modifier.width(8.dp))
             }
 
@@ -257,7 +315,7 @@ fun AfinityTopAppBar(
 }
 
 @Composable
-private fun DownloadQueueStatusChip(status: DownloadQueueStatus) {
+private fun DownloadQueueStatusChip(status: DownloadQueueStatus, onClick: (() -> Unit)? = null) {
     val label =
         when (DownloadQueueStatusPresentation.labelKind(status)) {
             DownloadQueueStatusLabelKind.ENABLE_NOTIFICATIONS ->
@@ -278,6 +336,7 @@ private fun DownloadQueueStatusChip(status: DownloadQueueStatus) {
         modifier =
             Modifier.height(42.dp)
                 .widthIn(max = 190.dp)
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
                 .background(Color.Black.copy(alpha = 0.3f), RoundedCornerShape(24.dp))
                 .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -297,5 +356,30 @@ private fun DownloadQueueStatusChip(status: DownloadQueueStatus) {
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+private fun Context.openDownloadNotificationSettings() {
+    val channelIntent =
+        Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            .putExtra(Settings.EXTRA_CHANNEL_ID, DownloadQueueNotificationFactory.CHANNEL_ID)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    val appIntent =
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    val detailsIntent =
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            .setData(Uri.parse("package:$packageName"))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    for (intent in listOf(channelIntent, appIntent, detailsIntent)) {
+        try {
+            startActivity(intent)
+            return
+        } catch (_: Exception) {
+            continue
+        }
     }
 }

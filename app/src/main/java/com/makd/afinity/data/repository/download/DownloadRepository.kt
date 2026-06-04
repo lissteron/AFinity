@@ -29,6 +29,10 @@ interface DownloadRepository {
 
     fun getCompletedDownloadsFlow(): Flow<List<DownloadInfo>>
 
+    suspend fun refreshCompletedArtwork(
+        progress: suspend (DownloadedArtworkRefreshProgress) -> Unit = {}
+    ): Result<DownloadedArtworkRefreshSummary>
+
     suspend fun isItemDownloaded(itemId: UUID): Boolean
 
     suspend fun isItemDownloading(itemId: UUID): Boolean

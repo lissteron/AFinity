@@ -15,6 +15,8 @@ import com.makd.afinity.data.repository.audiobookshelf.AbsDownloadRepository
 import com.makd.afinity.data.repository.download.DownloadRepository
 import com.makd.afinity.data.storage.DownloadStorageManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,6 +42,7 @@ constructor(
     private val _uiState = MutableStateFlow(DownloadsUiState())
     val uiState: StateFlow<DownloadsUiState> = _uiState.asStateFlow()
     val capabilityPolicy = kidModeRepository.policy
+    private var artworkRefreshJob: Job? = null
 
     init {
         observeDownloads()
@@ -235,12 +238,17 @@ constructor(
                 val allServersStorageUsed = downloadRepository.getTotalStorageUsedAllServers()
                 val deviceStats = getDeviceStorageStats()
                 val storageLocations = downloadStorageManager.getAvailableLocations()
+                val imageCacheStorageUsed = downloadStorageManager.getImageCacheStorageUsed()
+                val downloadedImageStorageUsed =
+                    downloadStorageManager.getDownloadedImageStorageUsed()
                 _uiState.value =
                     _uiState.value.copy(
                         totalStorageUsed = appStorageUsed,
                         totalStorageUsedAllServers = allServersStorageUsed,
                         deviceStorageStats = deviceStats,
                         storageLocations = storageLocations,
+                        imageCacheStorageUsed = imageCacheStorageUsed,
+                        downloadedImageStorageUsed = downloadedImageStorageUsed,
                     )
             } catch (e: Exception) {
                 Timber.e(e, "Failed to load storage info")
@@ -361,6 +369,73 @@ constructor(
         }
     }
 
+    fun refreshDownloadedArtwork() {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
+        if (artworkRefreshJob?.isActive == true) return
+        val completedVideoCount =
+            uiState.value.completedDownloads.count { download ->
+                download.itemType.uppercase() in setOf("MOVIE", "EPISODE")
+            }
+        if (completedVideoCount == 0) {
+            _uiState.value = _uiState.value.copy(error = "No downloaded videos to refresh")
+            return
+        }
+
+        artworkRefreshJob =
+            viewModelScope.launch {
+                _uiState.value =
+                    _uiState.value.copy(
+                        artworkRefresh =
+                            ArtworkRefreshUiState(
+                                isRunning = true,
+                                completed = 0,
+                                total = completedVideoCount,
+                            )
+                    )
+                try {
+                    val result =
+                        downloadRepository.refreshCompletedArtwork { progress ->
+                            _uiState.value =
+                                _uiState.value.copy(
+                                    artworkRefresh =
+                                        ArtworkRefreshUiState(
+                                            isRunning = true,
+                                            completed = progress.completed,
+                                            total = progress.total,
+                                            currentItemName = progress.currentItemName,
+                                        )
+                                )
+                        }
+                    result
+                        .onSuccess { summary ->
+                            _uiState.value =
+                                _uiState.value.copy(
+                                    error =
+                                        "Artwork refreshed: ${summary.refreshed}, failed: ${summary.failed}"
+                                )
+                        }
+                        .onFailure { error ->
+                            _uiState.value =
+                                _uiState.value.copy(
+                                    error = "Failed to refresh artwork: ${error.message}"
+                                )
+                        }
+                } catch (e: CancellationException) {
+                    _uiState.value = _uiState.value.copy(error = "Artwork refresh cancelled")
+                } finally {
+                    _uiState.value =
+                        _uiState.value.copy(
+                            artworkRefresh = _uiState.value.artworkRefresh.copy(isRunning = false)
+                        )
+                    loadStorageInfo()
+                }
+            }
+    }
+
+    fun cancelArtworkRefresh() {
+        artworkRefreshJob?.cancel()
+    }
+
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
     }
@@ -433,7 +508,20 @@ data class DownloadsUiState(
     val downloadQualityMode: DownloadQualityMode = DownloadQualityMode.HEVC_QUALITY,
     val isImageCacheEnabled: Boolean = true,
     val imageCacheSizeMb: Int = 512,
+    val imageCacheStorageUsed: Long = 0L,
+    val downloadedImageStorageUsed: Long = 0L,
     val storageLocations: List<DownloadStorageLocation> = emptyList(),
     val deviceStorageStats: DownloadsViewModel.DeviceStorageStats? = null,
+    val artworkRefresh: ArtworkRefreshUiState = ArtworkRefreshUiState(),
     val error: String? = null,
 )
+
+data class ArtworkRefreshUiState(
+    val isRunning: Boolean = false,
+    val completed: Int = 0,
+    val total: Int = 0,
+    val currentItemName: String? = null,
+) {
+    val progress: Float
+        get() = if (total <= 0) 0f else completed.toFloat() / total.toFloat()
+}

@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -50,7 +51,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -80,6 +83,7 @@ import com.makd.afinity.data.models.download.DownloadStorageLocation
 import com.makd.afinity.data.models.download.DownloadStatus
 import com.makd.afinity.navigation.LocalPlayerOffset
 import com.makd.afinity.ui.components.AsyncImage
+import com.makd.afinity.ui.downloads.ArtworkRefreshUiState
 import com.makd.afinity.ui.downloads.DownloadsViewModel
 import java.util.Locale
 import java.util.UUID
@@ -218,9 +222,19 @@ fun DownloadSettingsScreen(
                 ImageCacheSettingsCard(
                     isCacheEnabled = uiState.isImageCacheEnabled,
                     cacheSizeMb = uiState.imageCacheSizeMb.toFloat(),
+                    cacheStorageUsed = uiState.imageCacheStorageUsed,
+                    downloadedImageStorageUsed = uiState.downloadedImageStorageUsed,
+                    completedVideoCount =
+                        uiState.completedDownloads.count { download ->
+                            download.itemType.uppercase() in setOf("MOVIE", "EPISODE")
+                        },
+                    artworkRefresh = uiState.artworkRefresh,
                     onCacheEnabledChange = viewModel::setImageCacheEnabled,
                     onCacheSizeChange = { viewModel.setImageCacheSizeMb(it.toInt()) },
+                    onRefreshDownloadedArtwork = viewModel::refreshDownloadedArtwork,
+                    onCancelArtworkRefresh = viewModel::cancelArtworkRefresh,
                     canModify = capabilityPolicy.canManageDownloads,
+                    formatSize = viewModel::formatStorageSize,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
@@ -1287,11 +1301,48 @@ fun AbsPodcastGroupRow(
 fun ImageCacheSettingsCard(
     isCacheEnabled: Boolean,
     cacheSizeMb: Float,
+    cacheStorageUsed: Long,
+    downloadedImageStorageUsed: Long,
+    completedVideoCount: Int,
+    artworkRefresh: ArtworkRefreshUiState,
     onCacheEnabledChange: (Boolean) -> Unit,
     onCacheSizeChange: (Float) -> Unit,
+    onRefreshDownloadedArtwork: () -> Unit,
+    onCancelArtworkRefresh: () -> Unit,
+    formatSize: (Long) -> String,
     canModify: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
+    var showRefreshDialog by remember { mutableStateOf(false) }
+
+    if (showRefreshDialog) {
+        AlertDialog(
+            onDismissRequest = { showRefreshDialog = false },
+            title = { Text("Refresh downloaded artwork?") },
+            text = {
+                Text(
+                    "Refresh artwork for $completedVideoCount downloaded videos. " +
+                        "Existing downloaded artwork will be replaced."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showRefreshDialog = false
+                        onRefreshDownloadedArtwork()
+                    }
+                ) {
+                    Text("Refresh")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRefreshDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
@@ -1340,6 +1391,72 @@ fun ImageCacheSettingsCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier.padding(top = 8.dp),
             )
+
+            Spacer(modifier = Modifier.height(12.dp))
+            StorageUsageRow(
+                label = "Cache used",
+                value = formatSize(cacheStorageUsed),
+            )
+            StorageUsageRow(
+                label = "Downloaded images",
+                value = formatSize(downloadedImageStorageUsed),
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text(
+                text = "Downloaded artwork",
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = "$completedVideoCount downloaded videos",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                modifier = Modifier.padding(top = 2.dp),
+            )
+
+            if (artworkRefresh.isRunning) {
+                Spacer(modifier = Modifier.height(12.dp))
+                LinearProgressIndicator(
+                    progress = { artworkRefresh.progress },
+                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    strokeCap = StrokeCap.Round,
+                )
+                Text(
+                    text =
+                        buildString {
+                            append("${artworkRefresh.completed}/${artworkRefresh.total}")
+                            artworkRefresh.currentItemName?.takeIf { it.isNotBlank() }?.let {
+                                append(" - ")
+                                append(it)
+                            }
+                        },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                TextButton(
+                    onClick = onCancelArtworkRefresh,
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Text("Cancel")
+                }
+            } else {
+                TextButton(
+                    onClick = { showRefreshDialog = true },
+                    enabled = canModify && completedVideoCount > 0,
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Text("Refresh downloaded artwork")
+                }
+            }
 
             AnimatedVisibility(
                 visible = isCacheEnabled,
@@ -1418,6 +1535,42 @@ fun ImageCacheSettingsCard(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StorageUsageRow(
+    label: String,
+    value: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f).padding(end = 12.dp),
+        )
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        ) {
+            Text(
+                text = value,
+                style =
+                    MaterialTheme.typography.labelMedium.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.primary,
+            )
         }
     }
 }

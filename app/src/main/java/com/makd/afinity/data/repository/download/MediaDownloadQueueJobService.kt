@@ -7,7 +7,6 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.RequiresApi
-import androidx.core.app.NotificationManagerCompat
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.UUID
 import javax.inject.Inject
@@ -88,11 +87,12 @@ class MediaDownloadQueueJobService : JobService() {
                         ) { progress ->
                             try {
                                 updateTransferredNetworkBytes(params, progress.downloadedBytes, 0L)
-                                NotificationManagerCompat.from(this@MediaDownloadQueueJobService)
-                                    .notify(
-                                        DownloadQueueNotificationFactory.NOTIFICATION_ID,
-                                        notificationFactory.buildQueueNotification(progress = progress),
-                                    )
+                                setNotification(
+                                    params,
+                                    DownloadQueueNotificationFactory.NOTIFICATION_ID,
+                                    notificationFactory.buildQueueNotification(progress = progress),
+                                    JOB_END_NOTIFICATION_POLICY_REMOVE,
+                                )
                             } catch (e: Exception) {
                                 Timber.w(e, "UIDT download notification update failed")
                                 queueRunner.stopActive(
