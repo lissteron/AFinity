@@ -27,6 +27,7 @@ import com.makd.afinity.data.models.media.AfinityMovie
 import com.makd.afinity.data.models.media.AfinitySeason
 import com.makd.afinity.data.models.media.AfinityShow
 import com.makd.afinity.data.models.media.AfinityVideo
+import com.makd.afinity.data.models.media.offlinePlaybackEpisode
 import com.makd.afinity.data.models.media.toAfinityEpisode
 import com.makd.afinity.data.models.media.toAfinityMovie
 import com.makd.afinity.data.models.media.toAfinityShow
@@ -689,7 +690,7 @@ constructor(
                                 _uiState.value =
                                     _uiState.value.copy(
                                         seasons = item.seasons,
-                                        nextEpisode = getNextEpisodeOffline(item),
+                                        nextEpisode = item.offlinePlaybackEpisode(),
                                     )
                             }
                         }
@@ -703,7 +704,7 @@ constructor(
                                 _uiState.value =
                                     _uiState.value.copy(
                                         episodesPagingData = pagingData,
-                                        nextEpisode = getNextEpisodeForSeasonOffline(item),
+                                        nextEpisode = item.offlinePlaybackEpisode(),
                                     )
                             } else {
                                 val emptyPagingData =
@@ -1505,21 +1506,6 @@ constructor(
     }
 
     fun getBaseUrl(): String = mediaRepository.getBaseUrl()
-
-    private fun getNextEpisodeOffline(show: AfinityShow): AfinityEpisode? {
-        val allEpisodes =
-            show.seasons
-                .sortedBy { it.indexNumber }
-                .flatMap { season -> season.episodes.sortedBy { it.indexNumber } }
-        return allEpisodes.firstOrNull { it.playbackPositionTicks > 0 && !it.played }
-            ?: allEpisodes.firstOrNull { !it.played }
-    }
-
-    private fun getNextEpisodeForSeasonOffline(season: AfinitySeason): AfinityEpisode? {
-        val episodes = season.episodes.sortedBy { it.indexNumber }
-        return episodes.firstOrNull { it.playbackPositionTicks > 0 && !it.played }
-            ?: episodes.firstOrNull { !it.played }
-    }
 }
 
 data class ItemDetailUiState(

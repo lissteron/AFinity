@@ -7,6 +7,7 @@ import com.makd.afinity.data.manager.SessionManager
 import com.makd.afinity.data.models.media.AfinityItem
 import com.makd.afinity.data.models.media.AfinitySeason
 import com.makd.afinity.data.models.media.AfinityShow
+import com.makd.afinity.data.models.media.offlinePlaybackEpisode
 import com.makd.afinity.data.repository.AppDataRepository
 import com.makd.afinity.data.repository.AudiobookshelfRepository
 import com.makd.afinity.data.repository.JellyfinRepository
@@ -203,14 +204,7 @@ constructor(
         return try {
             if (item is AfinityShow) {
                 if (offlineModeManager.isCurrentlyOffline()) {
-                    val episodes =
-                        item.seasons
-                            .sortedBy { it.indexNumber }
-                            .flatMap { season -> season.episodes.sortedBy { it.indexNumber } }
-                    episodes
-                        .firstOrNull { it.playbackPositionTicks > 0 && !it.played }
-                        ?: episodes.firstOrNull { !it.played }
-                        ?: episodes.firstOrNull()
+                    item.offlinePlaybackEpisode()
                 } else {
                     val episode = mediaRepository.getEpisodeToPlay(item.id)
                     if (episode == null) {
@@ -220,11 +214,7 @@ constructor(
                 }
             } else if (item is AfinitySeason) {
                 if (offlineModeManager.isCurrentlyOffline()) {
-                    val episodes = item.episodes.sortedBy { it.indexNumber }
-                    episodes
-                        .firstOrNull { it.playbackPositionTicks > 0 && !it.played }
-                        ?: episodes.firstOrNull { !it.played }
-                        ?: episodes.firstOrNull()
+                    item.offlinePlaybackEpisode()
                 } else {
                     val episode = mediaRepository.getEpisodeToPlayForSeason(item.id, item.seriesId)
                     if (episode == null) {
