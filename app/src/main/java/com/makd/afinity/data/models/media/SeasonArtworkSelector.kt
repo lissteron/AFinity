@@ -15,10 +15,19 @@ fun AfinitySeason.seasonPrimaryArtworkKey(): String? {
     return imageArtworkKey(images.primary?.toString(), images.primaryImageBlurHash)
 }
 
-fun AfinitySeason.needsRepresentativeSeasonArtwork(sharedPrimaryArtworkKeys: Set<String>): Boolean {
-    return needsRepresentativeSeasonArtwork(
+fun AfinitySeason.prefersRepresentativeSeasonArtwork(
+    sharedPrimaryArtworkKeys: Set<String>
+): Boolean {
+    return prefersRepresentativeSeasonArtwork(
+        seasonName = name,
         primaryArtworkKey = seasonPrimaryArtworkKey(),
         sharedPrimaryArtworkKeys = sharedPrimaryArtworkKeys,
+    )
+}
+
+fun AfinitySeason.needsRepresentativeSeasonArtwork(sharedPrimaryArtworkKeys: Set<String>): Boolean {
+    return needsRepresentativeSeasonArtwork(
+        prefersRepresentativeArtwork = prefersRepresentativeSeasonArtwork(sharedPrimaryArtworkKeys),
         hasSeasonAlternateArtwork = images.thumb != null || images.backdrop != null,
         hasEpisodeArtwork = episodes.any { episode -> episode.images.hasSeasonCardArtwork() },
     )
@@ -27,10 +36,10 @@ fun AfinitySeason.needsRepresentativeSeasonArtwork(sharedPrimaryArtworkKeys: Set
 fun AfinityImages.hasSeasonCardArtwork(): Boolean =
     primary != null || thumb != null || backdrop != null
 
-fun AfinitySeason.seasonCardArtwork(primaryImageIsShared: Boolean): SeasonCardArtwork {
+fun AfinitySeason.seasonCardArtwork(preferRepresentativeArtwork: Boolean): SeasonCardArtwork {
     val episodeImages = episodes.firstOrNull { episode -> episode.images.hasSeasonCardArtwork() }?.images
     return selectSeasonCardArtwork(
-        primaryImageIsShared = primaryImageIsShared,
+        preferRepresentativeArtwork = preferRepresentativeArtwork,
         seasonPrimary = images.primary.toCandidate(images.primaryImageBlurHash),
         seasonThumb = images.thumb.toCandidate(images.thumbImageBlurHash),
         seasonBackdrop = images.backdrop.toCandidate(images.backdropImageBlurHash),
@@ -47,20 +56,27 @@ internal fun imageArtworkKey(imageUrl: String?, imageBlurHash: String?): String?
         ?: "url:$imageUrl"
 }
 
-internal fun needsRepresentativeSeasonArtwork(
+internal fun prefersRepresentativeSeasonArtwork(
+    seasonName: String,
     primaryArtworkKey: String?,
     sharedPrimaryArtworkKeys: Set<String>,
+): Boolean {
+    if (primaryArtworkKey != null && primaryArtworkKey in sharedPrimaryArtworkKeys) return true
+    return !seasonName.looksLikeGenericSeasonName()
+}
+
+internal fun needsRepresentativeSeasonArtwork(
+    prefersRepresentativeArtwork: Boolean,
     hasSeasonAlternateArtwork: Boolean,
     hasEpisodeArtwork: Boolean,
 ): Boolean {
-    if (primaryArtworkKey == null) return false
-    if (primaryArtworkKey !in sharedPrimaryArtworkKeys) return false
+    if (!prefersRepresentativeArtwork) return false
     if (hasSeasonAlternateArtwork) return false
     return !hasEpisodeArtwork
 }
 
 internal fun selectSeasonCardArtwork(
-    primaryImageIsShared: Boolean,
+    preferRepresentativeArtwork: Boolean,
     seasonPrimary: SeasonCardArtwork?,
     seasonThumb: SeasonCardArtwork?,
     seasonBackdrop: SeasonCardArtwork?,
@@ -69,8 +85,15 @@ internal fun selectSeasonCardArtwork(
     episodeBackdrop: SeasonCardArtwork?,
 ): SeasonCardArtwork {
     val candidates =
-        if (primaryImageIsShared) {
-            listOfNotNull(seasonThumb, seasonBackdrop, episodePrimary, episodeThumb, episodeBackdrop)
+        if (preferRepresentativeArtwork) {
+            listOfNotNull(
+                seasonThumb,
+                seasonBackdrop,
+                episodePrimary,
+                episodeThumb,
+                episodeBackdrop,
+                seasonPrimary,
+            )
         } else {
             listOfNotNull(
                 seasonPrimary,
@@ -99,3 +122,18 @@ private fun String.queryParameter(name: String): String? {
         value.takeIf { key == name }
     }
 }
+
+private fun String.looksLikeGenericSeasonName(): Boolean {
+    val normalized = trim()
+    if (normalized.isBlank()) return true
+    if (normalized.all { it.isDigit() }) return true
+
+    val lowerCaseName = normalized.lowercase()
+    return genericSeasonNamePatterns.any { pattern -> pattern.matches(lowerCaseName) }
+}
+
+private val genericSeasonNamePatterns =
+    listOf(
+        Regex("""^(season|saison|temporada|stagione|staffel|сезон)\s*\d+$"""),
+        Regex("""^(s|с)\s*\d+$"""),
+    )

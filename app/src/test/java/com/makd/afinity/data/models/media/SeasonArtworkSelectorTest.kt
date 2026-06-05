@@ -29,11 +29,43 @@ class SeasonArtworkSelectorTest {
     }
 
     @Test
-    fun sharedPrimaryArtworkNeedsRepresentativeWhenNoAlternateExists() {
+    fun sharedPrimaryArtworkPrefersRepresentative() {
         assertTrue(
-            needsRepresentativeSeasonArtwork(
+            prefersRepresentativeSeasonArtwork(
+                seasonName = "Season 1",
                 primaryArtworkKey = "tag:same-primary",
                 sharedPrimaryArtworkKeys = setOf("tag:same-primary"),
+            )
+        )
+    }
+
+    @Test
+    fun namedSeasonPrefersRepresentativeEvenWithUniquePrimaryTag() {
+        assertTrue(
+            prefersRepresentativeSeasonArtwork(
+                seasonName = "Трое из Простоквашино",
+                primaryArtworkKey = "tag:unique-primary",
+                sharedPrimaryArtworkKeys = emptySet(),
+            )
+        )
+    }
+
+    @Test
+    fun genericSeasonKeepsSeasonPrimaryWhenPrimaryTagIsUnique() {
+        assertFalse(
+            prefersRepresentativeSeasonArtwork(
+                seasonName = "Сезон 1",
+                primaryArtworkKey = "tag:unique-primary",
+                sharedPrimaryArtworkKeys = emptySet(),
+            )
+        )
+    }
+
+    @Test
+    fun preferredRepresentativeArtworkNeedsFetchWhenNoAlternateExists() {
+        assertTrue(
+            needsRepresentativeSeasonArtwork(
+                prefersRepresentativeArtwork = true,
                 hasSeasonAlternateArtwork = false,
                 hasEpisodeArtwork = false,
             )
@@ -44,8 +76,7 @@ class SeasonArtworkSelectorTest {
     fun seasonAlternateArtworkAvoidsRepresentativeFetch() {
         assertFalse(
             needsRepresentativeSeasonArtwork(
-                primaryArtworkKey = "tag:same-primary",
-                sharedPrimaryArtworkKeys = setOf("tag:same-primary"),
+                prefersRepresentativeArtwork = true,
                 hasSeasonAlternateArtwork = true,
                 hasEpisodeArtwork = false,
             )
@@ -67,7 +98,7 @@ class SeasonArtworkSelectorTest {
 
         val artwork =
             selectSeasonCardArtwork(
-                primaryImageIsShared = true,
+                preferRepresentativeArtwork = true,
                 seasonPrimary = duplicatePrimary,
                 seasonThumb = null,
                 seasonBackdrop = null,
@@ -94,7 +125,7 @@ class SeasonArtworkSelectorTest {
 
         val artwork =
             selectSeasonCardArtwork(
-                primaryImageIsShared = false,
+                preferRepresentativeArtwork = false,
                 seasonPrimary = seasonPrimary,
                 seasonThumb = null,
                 seasonBackdrop = null,

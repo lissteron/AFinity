@@ -42,8 +42,8 @@ import com.makd.afinity.data.models.media.AfinityEpisode
 import com.makd.afinity.data.models.media.AfinityItem
 import com.makd.afinity.data.models.media.AfinitySeason
 import com.makd.afinity.data.models.media.AfinityShow
+import com.makd.afinity.data.models.media.prefersRepresentativeSeasonArtwork
 import com.makd.afinity.data.models.media.seasonCardArtwork
-import com.makd.afinity.data.models.media.seasonPrimaryArtworkKey
 import com.makd.afinity.data.models.media.sharedSeasonPrimaryArtworkKeys
 import com.makd.afinity.data.models.tmdb.TmdbReview
 import com.makd.afinity.navigation.Destination
@@ -124,8 +124,8 @@ internal fun SeasonsSection(
             items(seasons, key = { it.id.toString() }) { season ->
                 SeasonCard(
                     season = season,
-                    primaryImageIsShared =
-                        season.seasonPrimaryArtworkKey() in sharedPrimaryArtworkKeys,
+                    preferRepresentativeArtwork =
+                        season.prefersRepresentativeSeasonArtwork(sharedPrimaryArtworkKeys),
                     onClick = {
                         val route =
                             Destination.createEpisodeListRoute(
@@ -145,11 +145,11 @@ internal fun SeasonsSection(
 @Composable
 internal fun SeasonCard(
     season: AfinitySeason,
-    primaryImageIsShared: Boolean,
+    preferRepresentativeArtwork: Boolean,
     onClick: () -> Unit,
     cardWidth: Dp,
 ) {
-    val artwork = season.seasonCardArtwork(primaryImageIsShared)
+    val artwork = season.seasonCardArtwork(preferRepresentativeArtwork)
 
     Column(modifier = Modifier.width(cardWidth)) {
         Card(
