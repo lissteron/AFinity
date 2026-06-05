@@ -37,9 +37,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.makd.afinity.R
+import com.makd.afinity.data.models.extensions.backdropBlurHash
+import com.makd.afinity.data.models.extensions.backdropImageUrl
 import com.makd.afinity.data.models.extensions.primaryBlurHash
 import com.makd.afinity.data.models.extensions.primaryImageUrl
-import com.makd.afinity.data.models.extensions.showPrimaryImageUrl
+import com.makd.afinity.data.models.extensions.thumbBlurHash
+import com.makd.afinity.data.models.extensions.thumbImageUrl
 import com.makd.afinity.data.models.media.AfinityBoxSet
 import com.makd.afinity.data.models.media.AfinityEpisode
 import com.makd.afinity.data.models.media.AfinityItem
@@ -140,6 +143,10 @@ internal fun SeasonsSection(
 
 @Composable
 internal fun SeasonCard(season: AfinitySeason, onClick: () -> Unit, cardWidth: Dp) {
+    val seasonImageUrl =
+        season.images.primaryImageUrl ?: season.images.thumbImageUrl ?: season.images.backdropImageUrl
+    val seasonBlurHash =
+        season.images.primaryBlurHash ?: season.images.thumbBlurHash ?: season.images.backdropBlurHash
 
     Column(modifier = Modifier.width(cardWidth)) {
         Card(
@@ -151,10 +158,9 @@ internal fun SeasonCard(season: AfinitySeason, onClick: () -> Unit, cardWidth: D
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 AsyncImage(
-                    imageUrl = season.images.primaryImageUrl ?: season.images.showPrimaryImageUrl,
+                    imageUrl = seasonImageUrl,
                     contentDescription = season.name,
-                    blurHash =
-                        season.images.primaryBlurHash ?: season.images.showPrimaryImageBlurHash,
+                    blurHash = seasonBlurHash,
                     targetWidth = cardWidth,
                     targetHeight = cardWidth * 3f / 2f,
                     modifier = Modifier.fillMaxSize(),
