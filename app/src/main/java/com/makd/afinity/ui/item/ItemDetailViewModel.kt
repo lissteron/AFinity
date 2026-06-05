@@ -27,7 +27,10 @@ import com.makd.afinity.data.models.media.AfinityMovie
 import com.makd.afinity.data.models.media.AfinitySeason
 import com.makd.afinity.data.models.media.AfinityShow
 import com.makd.afinity.data.models.media.AfinityVideo
+import com.makd.afinity.data.models.media.hasSeasonCardArtwork
+import com.makd.afinity.data.models.media.needsRepresentativeSeasonArtwork
 import com.makd.afinity.data.models.media.offlinePlaybackEpisode
+import com.makd.afinity.data.models.media.sharedSeasonPrimaryArtworkKeys
 import com.makd.afinity.data.models.media.toAfinityEpisode
 import com.makd.afinity.data.models.media.toAfinityMovie
 import com.makd.afinity.data.models.media.toAfinityShow
@@ -53,6 +56,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -65,6 +69,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import org.jellyfin.sdk.model.api.BaseItemKind
 import com.makd.afinity.R
 import timber.log.Timber
@@ -471,7 +476,8 @@ constructor(
                 }
                 if (serverItem is AfinityShow) {
                     try {
-                        val seasons = mediaRepository.getSeasons(serverItem.id)
+                        val seasons =
+                            loadSeasonCardArtworkFallbacks(mediaRepository.getSeasons(serverItem.id))
                         _uiState.value = _uiState.value.copy(seasons = seasons)
                     } catch (e: Exception) {
                         Timber.w(e, "Failed to refresh seasons in background sync")
@@ -749,7 +755,7 @@ constructor(
                 }
                 viewModelScope.launch {
                     try {
-                        val seasons = mediaRepository.getSeasons(itemId)
+                        val seasons = loadSeasonCardArtworkFallbacks(mediaRepository.getSeasons(itemId))
                         _uiState.update { it.copy(seasons = seasons) }
                     } catch (e: Exception) {
                         Timber.e(e, "Failed to get seasons")
@@ -858,6 +864,50 @@ constructor(
                     }
                 }
             }
+        }
+    }
+
+    private suspend fun loadSeasonCardArtworkFallbacks(
+        seasons: List<AfinitySeason>
+    ): List<AfinitySeason> {
+        val sharedPrimaryArtworkKeys = seasons.sharedSeasonPrimaryArtworkKeys()
+        if (sharedPrimaryArtworkKeys.isEmpty()) return seasons
+
+        return supervisorScope {
+            seasons
+                .map { season ->
+                    async {
+                        if (!season.needsRepresentativeSeasonArtwork(sharedPrimaryArtworkKeys)) {
+                            return@async season
+                        }
+
+                        try {
+                            val representativeEpisode =
+                                mediaRepository
+                                    .getEpisodes(
+                                        seasonId = season.id,
+                                        seriesId = season.seriesId,
+                                        fields = FieldSets.EPISODE_LIST,
+                                        limit = 1,
+                                    )
+                                    .firstOrNull { episode ->
+                                        episode.images.hasSeasonCardArtwork()
+                                    }
+
+                            if (representativeEpisode == null) {
+                                season
+                            } else {
+                                season.copy(episodes = listOf(representativeEpisode))
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Timber.w(e, "Failed to load representative season artwork")
+                            season
+                        }
+                    }
+                }
+                .awaitAll()
         }
     }
 

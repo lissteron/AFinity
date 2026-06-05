@@ -37,17 +37,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.makd.afinity.R
-import com.makd.afinity.data.models.extensions.backdropBlurHash
-import com.makd.afinity.data.models.extensions.backdropImageUrl
-import com.makd.afinity.data.models.extensions.primaryBlurHash
-import com.makd.afinity.data.models.extensions.primaryImageUrl
-import com.makd.afinity.data.models.extensions.thumbBlurHash
-import com.makd.afinity.data.models.extensions.thumbImageUrl
 import com.makd.afinity.data.models.media.AfinityBoxSet
 import com.makd.afinity.data.models.media.AfinityEpisode
 import com.makd.afinity.data.models.media.AfinityItem
 import com.makd.afinity.data.models.media.AfinitySeason
 import com.makd.afinity.data.models.media.AfinityShow
+import com.makd.afinity.data.models.media.seasonCardArtwork
+import com.makd.afinity.data.models.media.seasonPrimaryArtworkKey
+import com.makd.afinity.data.models.media.sharedSeasonPrimaryArtworkKeys
 import com.makd.afinity.data.models.tmdb.TmdbReview
 import com.makd.afinity.navigation.Destination
 import com.makd.afinity.ui.components.AsyncImage
@@ -118,6 +115,8 @@ internal fun SeasonsSection(
 
         val cardWidth = widthSizeClass.portraitWidth
 
+        val sharedPrimaryArtworkKeys = seasons.sharedSeasonPrimaryArtworkKeys()
+
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(horizontal = 0.dp),
@@ -125,6 +124,8 @@ internal fun SeasonsSection(
             items(seasons, key = { it.id.toString() }) { season ->
                 SeasonCard(
                     season = season,
+                    primaryImageIsShared =
+                        season.seasonPrimaryArtworkKey() in sharedPrimaryArtworkKeys,
                     onClick = {
                         val route =
                             Destination.createEpisodeListRoute(
@@ -142,11 +143,13 @@ internal fun SeasonsSection(
 }
 
 @Composable
-internal fun SeasonCard(season: AfinitySeason, onClick: () -> Unit, cardWidth: Dp) {
-    val seasonImageUrl =
-        season.images.primaryImageUrl ?: season.images.thumbImageUrl ?: season.images.backdropImageUrl
-    val seasonBlurHash =
-        season.images.primaryBlurHash ?: season.images.thumbBlurHash ?: season.images.backdropBlurHash
+internal fun SeasonCard(
+    season: AfinitySeason,
+    primaryImageIsShared: Boolean,
+    onClick: () -> Unit,
+    cardWidth: Dp,
+) {
+    val artwork = season.seasonCardArtwork(primaryImageIsShared)
 
     Column(modifier = Modifier.width(cardWidth)) {
         Card(
@@ -158,9 +161,9 @@ internal fun SeasonCard(season: AfinitySeason, onClick: () -> Unit, cardWidth: D
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 AsyncImage(
-                    imageUrl = seasonImageUrl,
+                    imageUrl = artwork.imageUrl,
                     contentDescription = season.name,
-                    blurHash = seasonBlurHash,
+                    blurHash = artwork.blurHash,
                     targetWidth = cardWidth,
                     targetHeight = cardWidth * 3f / 2f,
                     modifier = Modifier.fillMaxSize(),
