@@ -907,11 +907,58 @@ constructor(
         return serverDatabaseDao.pauseOrphanedActiveDownloads(activeBackendRunId, error, updatedAt)
     }
 
+    override suspend fun requeueOrphanedActiveDownloads(
+        activeBackendRunId: UUID,
+        error: String?,
+        updatedAt: Long,
+    ): Int {
+        return serverDatabaseDao.requeueOrphanedActiveDownloads(activeBackendRunId, error, updatedAt)
+    }
+
     override suspend fun pauseAllActiveDownloads(
         error: String?,
         updatedAt: Long,
     ): Int {
         return serverDatabaseDao.pauseAllActiveDownloads(error, updatedAt)
+    }
+
+    override suspend fun requeueAllActiveDownloads(
+        error: String?,
+        updatedAt: Long,
+    ): Int {
+        return serverDatabaseDao.requeueAllActiveDownloads(error, updatedAt)
+    }
+
+    override suspend fun requeuePausedDownloadsByError(
+        legacyError: String,
+        newError: String?,
+        updatedAt: Long,
+    ): Int {
+        return serverDatabaseDao.requeuePausedDownloadsByError(legacyError, newError, updatedAt)
+    }
+
+    override suspend fun requeuePausedDownloadsByErrorPattern(
+        legacyErrorPattern: String,
+        newError: String?,
+        updatedAt: Long,
+    ): Int {
+        return serverDatabaseDao.requeuePausedDownloadsByErrorPattern(
+            legacyErrorPattern,
+            newError,
+            updatedAt,
+        )
+    }
+
+    override suspend fun requeueZeroByteFailedDownloadsByError(
+        legacyError: String,
+        newError: String?,
+        updatedAt: Long,
+    ): Int {
+        return serverDatabaseDao.requeueZeroByteFailedDownloadsByError(
+            legacyError,
+            newError,
+            updatedAt,
+        )
     }
 
     override suspend fun insertMovieIfDownloadCompleted(

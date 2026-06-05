@@ -244,6 +244,7 @@ constructor(
         jellyseerrRepository.clearActiveSession()
         audiobookshelfRepository.clearActiveSession()
         _currentSession.value = null
+        _isServerReachable.value = true
         securePrefsRepository.clearAuthenticationData()
         apiClients.clear()
 

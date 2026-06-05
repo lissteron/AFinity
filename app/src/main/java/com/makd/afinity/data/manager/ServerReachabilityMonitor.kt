@@ -8,15 +8,18 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -41,6 +44,12 @@ constructor(
 
     private val _state = MutableStateFlow(ServerReachabilityState.UNKNOWN)
     val state: StateFlow<ServerReachabilityState> = _state.asStateFlow()
+
+    private val immediateProbeRequests =
+        MutableSharedFlow<String>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
 
     private var monitorJob: Job? = null
     private var consecutiveFailures = 0
@@ -79,7 +88,13 @@ constructor(
             scope.launch {
                 var nextDelayMs = 0L
                 while (currentCoroutineContext().isActive) {
-                    if (nextDelayMs > 0L) delay(nextDelayMs)
+                    if (nextDelayMs > 0L) {
+                        val reason =
+                            withTimeoutOrNull(nextDelayMs) { immediateProbeRequests.first() }
+                        if (reason != null) {
+                            Timber.d("Server reachability: foreground probe requested ($reason)")
+                        }
+                    }
 
                     val reachable = probe(session)
                     nextDelayMs =
@@ -90,6 +105,14 @@ constructor(
                         }
                 }
             }
+    }
+
+    fun probeNow(reason: String) {
+        if (!networkConnectivityMonitor.isCurrentlyConnected()) return
+        if (sessionManager.currentSession.value == null) return
+
+        Timber.d("Server reachability: immediate probe requested ($reason)")
+        immediateProbeRequests.tryEmit(reason)
     }
 
     private suspend fun probe(session: Session): Boolean {

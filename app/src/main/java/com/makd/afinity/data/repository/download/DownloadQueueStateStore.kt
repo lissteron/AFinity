@@ -28,7 +28,7 @@ constructor(private val databaseRepository: DatabaseRepository) {
         reason: String,
         now: Long = System.currentTimeMillis(),
     ): Int =
-        databaseRepository.pauseOrphanedActiveDownloads(
+        databaseRepository.requeueOrphanedActiveDownloads(
             activeBackendRunId = backendRunId,
             error = reason,
             updatedAt = now,
@@ -39,10 +39,44 @@ constructor(private val databaseRepository: DatabaseRepository) {
         now: Long = System.currentTimeMillis(),
     ): Int = databaseRepository.pauseAllActiveDownloads(error = reason, updatedAt = now)
 
-    suspend fun reconcileStartupActiveClaims(
-        reason: String = "Interrupted download recovered to paused queue state",
+    suspend fun requeueAllActiveForTransientStop(
+        reason: String,
         now: Long = System.currentTimeMillis(),
-    ): Int = databaseRepository.pauseAllActiveDownloads(error = reason, updatedAt = now)
+    ): Int = databaseRepository.requeueAllActiveDownloads(error = reason, updatedAt = now)
+
+    suspend fun reconcileStartupActiveClaims(
+        reason: String = "Interrupted download recovered to queued state",
+        now: Long = System.currentTimeMillis(),
+    ): Int = databaseRepository.requeueAllActiveDownloads(error = reason, updatedAt = now)
+
+    suspend fun requeuePausedInterruptedDownloads(
+        now: Long = System.currentTimeMillis()
+    ): Int =
+        databaseRepository.requeuePausedDownloadsByError(
+            legacyError = LEGACY_INTERRUPTED_PAUSED_REASON,
+            newError = "Interrupted download recovered to queued state",
+            updatedAt = now,
+        )
+
+    suspend fun requeuePausedUidtStoppedDownloads(
+        now: Long = System.currentTimeMillis()
+    ): Int =
+        databaseRepository.requeuePausedDownloadsByErrorPattern(
+            legacyErrorPattern = UIDT_STOPPED_PAUSED_REASON_PATTERN,
+            newError = "UIDT system stop recovered to queued state",
+            updatedAt = now,
+        )
+
+    suspend fun requeueZeroByteTransientFailedDownloads(
+        now: Long = System.currentTimeMillis()
+    ): Int =
+        TRANSIENT_ZERO_BYTE_FAILED_REASONS.sumOf { legacyError ->
+            databaseRepository.requeueZeroByteFailedDownloadsByError(
+                legacyError = legacyError,
+                newError = "Transient network failure recovered to queued state",
+                updatedAt = now,
+            )
+        }
 
     suspend fun claimOldestQueuedDownload(
         backendRunId: UUID,
@@ -152,6 +186,17 @@ constructor(private val databaseRepository: DatabaseRepository) {
         reason: String,
         now: Long = System.currentTimeMillis(),
     ): Boolean = databaseRepository.pauseActiveDownload(downloadId, reason, now)
+
+    private companion object {
+        const val LEGACY_INTERRUPTED_PAUSED_REASON =
+            "Interrupted download recovered to paused queue state"
+        const val UIDT_STOPPED_PAUSED_REASON_PATTERN = "UIDT job stopped:%"
+        val TRANSIENT_ZERO_BYTE_FAILED_REASONS =
+            listOf(
+                "Unknown IO error occurred!",
+                "HTTP host unreachable",
+            )
+    }
 }
 
 data class DownloadQueueSnapshot(

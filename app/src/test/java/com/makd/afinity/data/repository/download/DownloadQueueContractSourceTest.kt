@@ -52,6 +52,8 @@ class DownloadQueueContractSourceTest {
         assertTrue(source.contains(".socketFactory(network.socketFactory)"))
         assertTrue(source.contains("network.getAllByName(hostname).toList()"))
         assertTrue(source.contains("activeClient?.dispatcher?.cancelAll()"))
+        assertTrue(source.contains("network != null && network == currentNetwork"))
+        assertTrue(source.contains("NetworkChangeResult.Unchanged"))
     }
 
     @Test
@@ -124,6 +126,41 @@ class DownloadQueueContractSourceTest {
     }
 
     @Test
+    fun downloadQueueRecoveryIsNotBlockedByStaleServerUnreachableOfflineState() {
+        val offlineManager =
+            readSource("src/main/java/com/makd/afinity/data/manager/OfflineModeManager.kt")
+        val repository =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/JellyfinDownloadRepository.kt"
+            )
+
+        assertTrue(offlineManager.contains("suspend fun isHardOffline()"))
+        assertTrue(!offlineManager.substringAfter("suspend fun isHardOffline()").contains("isServerReachable"))
+
+        val scheduleQueueSource =
+            repository.substring(
+                repository.indexOf("private suspend fun scheduleQueue"),
+                repository.indexOf("private fun buildQueuedDownload"),
+            )
+        assertTrue(scheduleQueueSource.contains("offlineModeManager.isHardOffline()"))
+        assertTrue(!scheduleQueueSource.contains("offlineModeManager.isCurrentlyOffline()"))
+
+        val startDownloadSource =
+            repository.substring(
+                repository.indexOf("override suspend fun startDownload"),
+                repository.indexOf("private suspend fun scheduleQueue"),
+            )
+        assertTrue(startDownloadSource.contains("offlineModeManager.isHardOffline()"))
+
+        val resumeDownloadSource =
+            repository.substring(
+                repository.indexOf("override suspend fun resumeDownload"),
+                repository.indexOf("override suspend fun cancelDownload"),
+            )
+        assertTrue(resumeDownloadSource.contains("offlineModeManager.isHardOffline()"))
+    }
+
+    @Test
     fun policyViolationRequeueIsRunnerOwnedBeforeFallbackDbRequeue() {
         val source =
             readSource(
@@ -185,6 +222,102 @@ class DownloadQueueContractSourceTest {
     }
 
     @Test
+    fun interruptedActiveDownloadsRecoverToQueuedNotPaused() {
+        val stateStore =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/DownloadQueueStateStore.kt"
+            )
+        val dao = readSource("src/main/java/com/makd/afinity/data/database/dao/ServerDatabaseDao.kt")
+        val migration =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/DownloadQueueMigration.kt"
+            )
+        val runner =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/DownloadQueueRunner.kt"
+            )
+
+        assertTrue(stateStore.contains("databaseRepository.requeueOrphanedActiveDownloads"))
+        assertTrue(stateStore.contains("databaseRepository.requeueAllActiveDownloads"))
+        assertTrue(stateStore.contains("suspend fun requeueAllActiveForTransientStop"))
+        assertTrue(stateStore.contains("databaseRepository.requeuePausedDownloadsByError"))
+        assertTrue(stateStore.contains("databaseRepository.requeuePausedDownloadsByErrorPattern"))
+        assertTrue(stateStore.contains("databaseRepository.requeueZeroByteFailedDownloadsByError"))
+        assertTrue(stateStore.contains("LEGACY_INTERRUPTED_PAUSED_REASON"))
+        assertTrue(stateStore.contains("UIDT_STOPPED_PAUSED_REASON_PATTERN"))
+        assertTrue(stateStore.contains("TRANSIENT_ZERO_BYTE_FAILED_REASONS"))
+        assertTrue(stateStore.contains("\"Unknown IO error occurred!\""))
+        assertTrue(stateStore.contains("\"HTTP host unreachable\""))
+        assertTrue(!stateStore.contains("databaseRepository.pauseOrphanedActiveDownloads"))
+        assertTrue(
+            !stateStore
+                .substringAfter("suspend fun reconcileStartupActiveClaims")
+                .contains("pauseAllActiveDownloads")
+        )
+        assertTrue(dao.contains("abstract suspend fun requeueOrphanedActiveDownloads"))
+        assertTrue(dao.contains("abstract suspend fun requeueAllActiveDownloads"))
+        assertTrue(dao.contains("abstract suspend fun requeuePausedDownloadsByError"))
+        assertTrue(dao.contains("abstract suspend fun requeuePausedDownloadsByErrorPattern"))
+        assertTrue(dao.contains("abstract suspend fun requeueZeroByteFailedDownloadsByError"))
+        assertTrue(dao.contains("status = 'FAILED'"))
+        assertTrue(dao.contains("bytesDownloaded = 0"))
+        assertTrue(dao.contains("totalBytes = 0"))
+        assertTrue(dao.contains("SET status = 'QUEUED'"))
+        assertTrue(migration.contains("Interrupted download recovered to queued state"))
+        assertTrue(migration.contains("stateStore.requeuePausedInterruptedDownloads()"))
+        assertTrue(migration.contains("stateStore.requeuePausedUidtStoppedDownloads()"))
+        assertTrue(migration.contains("stateStore.requeueZeroByteTransientFailedDownloads()"))
+        assertTrue(migration.contains("Requeued ${'$'}"))
+        assertTrue(runner.contains("orphaned DOWNLOADING media rows to QUEUED"))
+    }
+
+    @Test
+    fun systemUidtStopRequeuesInsteadOfPausingActiveDownload() {
+        val jobService =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/MediaDownloadQueueJobService.kt"
+            )
+        val runner =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/DownloadQueueRunner.kt"
+            )
+
+        assertTrue(jobService.contains("queueRunner.requestPolicyRequeue("))
+        assertTrue(jobService.contains("DownloadQueueScheduleTrigger.VISIBLE_LIVENESS"))
+        assertTrue(jobService.contains("queueRunner.requestPauseActive("))
+        assertTrue(jobService.contains("return startRequeueAllActiveCleanup("))
+        assertTrue(!jobService.contains("startPauseAllActiveCleanup"))
+        assertTrue(jobService.contains("stateStore.requeueAllActiveForTransientStop(reason = reason)"))
+        assertTrue(jobService.contains("finishIfCurrent(runId, params, wantsReschedule = true)"))
+        assertTrue(runner.contains("DownloadQueueStopDisposition.REQUEUE"))
+        assertTrue(runner.contains("requestPolicyRequeue(\n                reason = reason"))
+        assertTrue(!runner.contains("stopActive(\"UIDT required network is unavailable\")"))
+        assertTrue(
+            runner.contains(
+                "stateStore.requeueOwned(\n                        downloadId = claim.downloadId"
+            )
+        )
+    }
+
+    @Test
+    fun uidtTransientTransferFailuresRequeueAndTerminalFailuresKeepDiagnosticContext() {
+        val source =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/MediaDownloadTransferRunner.kt"
+            )
+
+        assertTrue(source.contains("requeueActiveDownload("))
+        assertTrue(source.contains("UIDT required network changed repeatedly"))
+        assertTrue(source.contains("result.message.isUidtTransientReason()"))
+        assertTrue(source.contains("private fun String.isUidtTransientReason()"))
+        assertTrue(source.contains("var failureStage = \"initializing media download\""))
+        assertTrue(source.contains("opening media HTTP response"))
+        assertTrue(source.contains("copying media stream"))
+        assertTrue(source.contains("private fun Throwable.toDownloadFailureMessage(stage: String)"))
+        assertTrue(source.contains("Media download failed at ${'$'}failureStage"))
+    }
+
+    @Test
     fun runtimeReconciliationUsesPersistedBackendLeaseNotAgeCutoff() {
         val runner =
             readSource(
@@ -212,7 +345,7 @@ class DownloadQueueContractSourceTest {
         assertTrue(worker.contains("backendStartFailureHandler.record"))
         assertTrue(jobService.contains("backendStartFailureHandler.record(reason)"))
         assertTrue(scheduler.contains("val snapshot = stateStore.snapshot()"))
-        assertTrue(stateStore.contains("pauseOrphanedActiveDownloads"))
+        assertTrue(stateStore.contains("requeueOrphanedActiveDownloads"))
         assertTrue(stateStore.contains("reconcileStartupActiveClaims"))
         assertTrue(!stateStore.contains("hasRowsToNormalize"))
         assertTrue(dao.contains("activeBackendRunId IS NULL OR activeBackendRunId != :activeBackendRunId"))

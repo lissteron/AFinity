@@ -99,7 +99,7 @@ fun DownloadSettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val capabilityPolicy by viewModel.capabilityPolicy.collectAsStateWithLifecycle()
-    val isOffline by offlineModeManager.isOffline.collectAsStateWithLifecycle(initialValue = false)
+    val isOffline by offlineModeManager.hardOffline.collectAsStateWithLifecycle(initialValue = false)
     val snackbarHostState = remember { SnackbarHostState() }
     val playerOffset = LocalPlayerOffset.current
     val folderPickerLauncher =

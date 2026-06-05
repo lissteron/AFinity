@@ -91,6 +91,13 @@ constructor(
 
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     fun onNetworkChanged(network: Network?): NetworkChangeResult {
+        synchronized(lock) {
+            if (network != null && network == currentNetwork) {
+                Timber.d("UIDT required network callback reported unchanged network")
+                return NetworkChangeResult.Unchanged(network, generation)
+            }
+        }
+
         val newGeneration =
             synchronized(lock) {
                 activeClient?.dispatcher?.cancelAll()
@@ -130,6 +137,8 @@ constructor(
     data class NetworkLease(val network: Network, val generation: Long)
 
     sealed class NetworkChangeResult {
+        data class Unchanged(val network: Network, val generation: Long) : NetworkChangeResult()
+
         data class Rebound(val network: Network, val generation: Long) : NetworkChangeResult()
 
         data class RequiredNetworkMissing(val generation: Long) : NetworkChangeResult()

@@ -69,7 +69,7 @@ constructor(
             ?: return@withContext Result.failure(workDataOf("error" to "Missing libraryItemId"))
         val episodeId = inputData.getString(AbsDownloadRepositoryImpl.KEY_EPISODE_ID)
 
-        if (offlineModeManager.isCurrentlyOffline()) {
+        if (offlineModeManager.isHardOffline()) {
             Timber.d("AbsDownload: offline mode active, postponing $downloadId")
             return@withContext Result.retry()
         }

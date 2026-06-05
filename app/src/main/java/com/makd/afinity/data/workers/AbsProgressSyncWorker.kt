@@ -27,7 +27,7 @@ constructor(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        if (offlineModeManager.isCurrentlyOffline()) {
+        if (offlineModeManager.isHardOffline()) {
             Timber.d("AbsProgressSync: skipping worker in offline mode")
             return@withContext Result.success()
         }

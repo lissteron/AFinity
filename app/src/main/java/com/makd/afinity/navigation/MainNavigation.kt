@@ -124,7 +124,11 @@ fun MainNavigation(
     val hasLiveTvAccess by viewModel.hasLiveTvAccess.collectAsStateWithLifecycle()
     val appLoadingState by viewModel.appLoadingState.collectAsStateWithLifecycle()
     val capabilityPolicy by viewModel.capabilityPolicy.collectAsStateWithLifecycle()
-    val isOffline by offlineModeManager.isOffline.collectAsStateWithLifecycle(initialValue = false)
+    val isOffline by offlineModeManager.hardOffline.collectAsStateWithLifecycle(initialValue = false)
+    val canLoadRemoteContent by
+        offlineModeManager.canLoadRemoteContent.collectAsStateWithLifecycle(initialValue = true)
+    val canUseAnySearchBackend =
+        canLoadRemoteContent || isJellyseerrAuthenticated || isAudiobookshelfAuthenticated
     val audiobookshelfPlaybackState by
         viewModel.audiobookshelfPlaybackManager.playbackState.collectAsStateWithLifecycle()
     val navController = rememberNavController()
@@ -273,7 +277,7 @@ fun MainNavigation(
 
     LaunchedEffect(isOffline, currentDestination) {
         if (isOffline && currentDestination != null) {
-            val currentRoute = currentDestination?.route
+            val currentRoute = currentDestination.route
             if (!isOfflineAllowedRoute(currentRoute)) {
                 Timber.d("Offline mode blocked route $currentRoute, navigating to HOME")
                 navController.navigate(Destination.HOME.route) {
@@ -285,26 +289,38 @@ fun MainNavigation(
         }
     }
 
+    LaunchedEffect(currentDestination?.route) {
+        offlineModeManager.requestConnectivityProbe("navigation")
+    }
+
     DisposableEffect(lifecycleOwner) {
         val observer =
             LifecycleEventObserver { _, event ->
-                if (event == Lifecycle.Event.ON_STOP) {
-                    viewModel.lockParent()
-                    pendingParentProtectedNavigation = false
+                when (event) {
+                    Lifecycle.Event.ON_RESUME -> {
+                        coroutineScope.launch {
+                            offlineModeManager.requestConnectivityProbe("app foreground")
+                        }
+                    }
+                    Lifecycle.Event.ON_STOP -> {
+                        viewModel.lockParent()
+                        pendingParentProtectedNavigation = false
+                    }
+                    else -> Unit
                 }
             }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(capabilityPolicy, currentDestination) {
+    LaunchedEffect(capabilityPolicy, currentDestination, isOffline, canUseAnySearchBackend) {
         val currentRoute = currentDestination?.route ?: return@LaunchedEffect
         val isSettingsRoute = isParentProtectedRoute(currentRoute) && currentRoute != Destination.SEARCH_ROUTE && currentRoute != Destination.REQUESTS.route
         val shouldBlockRoute =
             (isSettingsRoute && !capabilityPolicy.canOpenSettings) ||
                 (currentRoute == Destination.REQUESTS.route && !capabilityPolicy.canManageRequests) ||
                 (currentRoute == Destination.SEARCH_ROUTE &&
-                    (isOffline || !capabilityPolicy.canUseSearch))
+                    (isOffline || !capabilityPolicy.canUseSearch || !canUseAnySearchBackend))
 
         if (shouldBlockRoute) {
             Timber.d("Blocked protected route: $currentRoute")

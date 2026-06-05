@@ -24,10 +24,24 @@ constructor(
     suspend fun run() {
         val startupReconciled =
             stateStore.reconcileStartupActiveClaims(
-                reason = "Interrupted download recovered to paused queue state"
+                reason = "Interrupted download recovered to queued state"
             )
         if (startupReconciled > 0) {
-            Timber.w("Paused $startupReconciled interrupted DOWNLOADING rows during startup")
+            Timber.w("Requeued $startupReconciled interrupted DOWNLOADING rows during startup")
+        }
+        val repairedPaused = stateStore.requeuePausedInterruptedDownloads()
+        if (repairedPaused > 0) {
+            Timber.w("Requeued $repairedPaused legacy interrupted PAUSED rows during startup")
+        }
+        val repairedUidtStopped = stateStore.requeuePausedUidtStoppedDownloads()
+        if (repairedUidtStopped > 0) {
+            Timber.w("Requeued $repairedUidtStopped UIDT-stopped PAUSED rows during startup")
+        }
+        val repairedTransientFailed = stateStore.requeueZeroByteTransientFailedDownloads()
+        if (repairedTransientFailed > 0) {
+            Timber.w(
+                "Requeued $repairedTransientFailed zero-byte transient FAILED rows during startup"
+            )
         }
 
         if (preferences.getBoolean(KEY_LEGACY_CLEANUP_COMPLETE, false)) {

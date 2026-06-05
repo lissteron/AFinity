@@ -57,6 +57,14 @@ configure<ApplicationExtension> {
                 "proguard-rules.pro",
             )
         }
+        create("diagnostic") {
+            initWith(getByName("release"))
+            isDebuggable = true
+            isMinifyEnabled = false
+            isShrinkResources = false
+            buildConfigField("boolean", "DEBUG", "true")
+            matchingFallbacks += listOf("release")
+        }
     }
 
     splits {

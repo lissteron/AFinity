@@ -59,10 +59,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.makd.afinity.R
 import com.makd.afinity.data.manager.OfflineModeManager
+import com.makd.afinity.data.manager.OfflineModeReason
 import com.makd.afinity.data.manager.SessionManager
 import com.makd.afinity.data.models.download.DownloadQueueStatus
 import com.makd.afinity.data.models.download.DownloadQueueStatusLabelKind
 import com.makd.afinity.data.models.download.DownloadQueueStatusPresentation
+import com.makd.afinity.data.repository.AudiobookshelfRepository
+import com.makd.afinity.data.repository.JellyseerrRepository
 import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.data.repository.download.DownloadQueueNotificationFactory
 import com.makd.afinity.data.repository.download.DownloadQueueScheduleTrigger
@@ -81,6 +84,7 @@ enum class ConnectionType {
     LOCAL,
     TAILSCALE,
     REMOTE,
+    SERVER_UNAVAILABLE,
     OFFLINE,
 }
 
@@ -91,21 +95,39 @@ constructor(
     offlineModeManager: OfflineModeManager,
     sessionManager: SessionManager,
     kidModeRepository: KidModeRepository,
+    jellyseerrRepository: JellyseerrRepository,
+    audiobookshelfRepository: AudiobookshelfRepository,
     downloadQueueStatusRepository: DownloadQueueStatusRepository,
     private val downloadQueueScheduler: DownloadQueueScheduler,
 ) : ViewModel() {
     val canUseSearch =
-        combine(kidModeRepository.policy, offlineModeManager.isOffline) { policy, offline ->
-            policy.canUseSearch && !offline
+        combine(
+            kidModeRepository.policy,
+            offlineModeManager.hardOffline,
+            offlineModeManager.canLoadRemoteContent,
+            jellyseerrRepository.isAuthenticated,
+            audiobookshelfRepository.isAuthenticated,
+        ) {
+            policy,
+            hardOffline,
+            canLoadRemoteContent,
+            isJellyseerrAuthenticated,
+            isAudiobookshelfAuthenticated ->
+            val hasSearchBackend =
+                canLoadRemoteContent || isJellyseerrAuthenticated || isAudiobookshelfAuthenticated
+            policy.canUseSearch && !hardOffline && hasSearchBackend
         }
 
     val connectionType =
         combine(
-            offlineModeManager.isOffline,
+            offlineModeManager.offlineReason,
             sessionManager.currentSession.map { it?.serverUrl },
-        ) { offline, serverUrl ->
+        ) { offlineReason, serverUrl ->
             when {
-                offline -> ConnectionType.OFFLINE
+                offlineReason == OfflineModeReason.MANUAL ||
+                    offlineReason == OfflineModeReason.NO_NETWORK -> ConnectionType.OFFLINE
+                offlineReason == OfflineModeReason.SERVER_UNREACHABLE ->
+                    ConnectionType.SERVER_UNAVAILABLE
                 serverUrl != null && isLocalAddress(serverUrl) -> ConnectionType.LOCAL
                 serverUrl != null && isTailscaleAddress(serverUrl) -> ConnectionType.TAILSCALE
                 else -> ConnectionType.REMOTE
@@ -265,6 +287,7 @@ fun AfinityTopAppBar(
                             ConnectionType.LOCAL -> Color(0xFF4CAF50)
                             ConnectionType.TAILSCALE -> Color(0xFF2196F3)
                             ConnectionType.REMOTE -> Color(0xFFFF9800)
+                            ConnectionType.SERVER_UNAVAILABLE -> Color(0xFFFFC107)
                             ConnectionType.OFFLINE -> Color(0xFFF44336)
                         }
                     val indicatorIcon =
@@ -272,6 +295,7 @@ fun AfinityTopAppBar(
                             ConnectionType.LOCAL -> R.drawable.ic_wifi
                             ConnectionType.TAILSCALE -> R.drawable.ic_security
                             ConnectionType.REMOTE -> R.drawable.ic_link
+                            ConnectionType.SERVER_UNAVAILABLE -> R.drawable.ic_link
                             ConnectionType.OFFLINE -> R.drawable.ic_cloud_off
                         }
                     val indicatorContentDescription =
@@ -280,6 +304,8 @@ fun AfinityTopAppBar(
                             ConnectionType.TAILSCALE ->
                                 stringResource(R.string.cd_tailscale_connection)
                             ConnectionType.REMOTE -> stringResource(R.string.cd_remote_connection)
+                            ConnectionType.SERVER_UNAVAILABLE ->
+                                stringResource(R.string.offline_mode_server_unavailable)
                             ConnectionType.OFFLINE -> stringResource(R.string.cd_offline_mode)
                         }
 

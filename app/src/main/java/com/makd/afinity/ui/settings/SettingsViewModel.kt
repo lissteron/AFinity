@@ -82,6 +82,16 @@ constructor(
     val effectiveOfflineMode: StateFlow<Boolean> =
         offlineModeManager.isOffline.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val hardOfflineMode: StateFlow<Boolean> =
+        offlineModeManager.hardOffline.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val manualOfflineMode: StateFlow<Boolean> =
+        offlineModeManager.manualOfflineMode.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            false,
+        )
+
     val offlineReason: StateFlow<OfflineModeReason> =
         offlineModeManager.offlineReason.stateIn(
             viewModelScope,

@@ -65,7 +65,7 @@ class MediaDownloadQueueJobService : JobService() {
 
         val network = params.network
         if (network == null) {
-            return startPauseAllActiveCleanup(
+            return startRequeueAllActiveCleanup(
                 runId = runId,
                 params = params,
                 reason = "UIDT required network is unavailable",
@@ -122,10 +122,17 @@ class MediaDownloadQueueJobService : JobService() {
         val reason = "UIDT job stopped: ${params.stopReason}"
         val stopDecision = lifecycle.stop()
         if (stopDecision.shouldStopRunner) {
-            queueRunner.requestPauseActive(
-                reason = reason,
-                force = userStopped,
-            )
+            if (userStopped) {
+                queueRunner.requestPauseActive(
+                    reason = reason,
+                    force = true,
+                )
+            } else {
+                queueRunner.requestPolicyRequeue(
+                    reason = reason,
+                    scheduleAfterStop = DownloadQueueScheduleTrigger.VISIBLE_LIVENESS,
+                )
+            }
             serviceScope?.launch(start = CoroutineStart.UNDISPATCHED) {
                 queueRunner.stopActive(reason)
             }
@@ -186,7 +193,7 @@ class MediaDownloadQueueJobService : JobService() {
         return true
     }
 
-    private fun startPauseAllActiveCleanup(
+    private fun startRequeueAllActiveCleanup(
         runId: Long,
         params: JobParameters,
         reason: String,
@@ -197,12 +204,12 @@ class MediaDownloadQueueJobService : JobService() {
             serviceScope?.launch(start = CoroutineStart.UNDISPATCHED) {
                 val cleanupResult =
                     UidtJobCleanup.run {
-                        stateStore.pauseAllActiveForSchedulerFailure(reason = reason)
+                        stateStore.requeueAllActiveForTransientStop(reason = reason)
                     }
                 if (cleanupResult is UidtJobCleanupResult.Failed) {
-                    Timber.e(cleanupResult.error, "Failed to pause active rows for UIDT cleanup")
+                    Timber.e(cleanupResult.error, "Failed to requeue active rows for UIDT cleanup")
                 }
-                finishIfCurrent(runId, params, cleanupResult.wantsReschedule)
+                finishIfCurrent(runId, params, wantsReschedule = true)
             }
         return true
     }

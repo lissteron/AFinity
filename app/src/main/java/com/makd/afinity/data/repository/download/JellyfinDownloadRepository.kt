@@ -61,7 +61,7 @@ constructor(
     override suspend fun startDownload(itemId: UUID, sourceId: String): Result<UUID> =
         withContext(Dispatchers.IO) {
             return@withContext try {
-                if (offlineModeManager.isCurrentlyOffline()) {
+                if (offlineModeManager.isHardOffline()) {
                     return@withContext Result.failure(Exception("Offline mode is enabled"))
                 }
 
@@ -151,7 +151,7 @@ constructor(
         }
 
     private suspend fun scheduleQueue(trigger: DownloadQueueScheduleTrigger) {
-        if (offlineModeManager.isCurrentlyOffline()) {
+        if (offlineModeManager.isHardOffline()) {
             Timber.d("Skipping download queue schedule in offline mode")
             return
         }
@@ -253,7 +253,7 @@ constructor(
     override suspend fun resumeDownload(downloadId: UUID): Result<Unit> =
         withContext(Dispatchers.IO) {
             return@withContext try {
-                if (offlineModeManager.isCurrentlyOffline()) {
+                if (offlineModeManager.isHardOffline()) {
                     return@withContext Result.failure(Exception("Offline mode is enabled"))
                 }
 

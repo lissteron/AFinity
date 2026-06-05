@@ -390,6 +390,27 @@ abstract class ServerDatabaseDao {
     @Query(
         """
         UPDATE downloads
+        SET status = 'QUEUED',
+            activeClaimId = NULL,
+            activeBackendRunId = NULL,
+            activeBackendKind = NULL,
+            claimStartedAt = NULL,
+            claimHeartbeatAt = NULL,
+            error = :error,
+            updatedAt = :updatedAt
+        WHERE status = 'DOWNLOADING'
+            AND (activeBackendRunId IS NULL OR activeBackendRunId != :activeBackendRunId)
+        """
+    )
+    abstract suspend fun requeueOrphanedActiveDownloads(
+        activeBackendRunId: UUID,
+        error: String?,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE downloads
         SET status = 'PAUSED',
             activeClaimId = NULL,
             activeBackendRunId = NULL,
@@ -403,6 +424,90 @@ abstract class ServerDatabaseDao {
     )
     abstract suspend fun pauseAllActiveDownloads(
         error: String?,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE downloads
+        SET status = 'QUEUED',
+            activeClaimId = NULL,
+            activeBackendRunId = NULL,
+            activeBackendKind = NULL,
+            claimStartedAt = NULL,
+            claimHeartbeatAt = NULL,
+            error = :error,
+            updatedAt = :updatedAt
+        WHERE status = 'DOWNLOADING'
+        """
+    )
+    abstract suspend fun requeueAllActiveDownloads(
+        error: String?,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE downloads
+        SET status = 'QUEUED',
+            activeClaimId = NULL,
+            activeBackendRunId = NULL,
+            activeBackendKind = NULL,
+            claimStartedAt = NULL,
+            claimHeartbeatAt = NULL,
+            error = :newError,
+            updatedAt = :updatedAt
+        WHERE status = 'PAUSED'
+            AND error = :legacyError
+        """
+    )
+    abstract suspend fun requeuePausedDownloadsByError(
+        legacyError: String,
+        newError: String?,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE downloads
+        SET status = 'QUEUED',
+            activeClaimId = NULL,
+            activeBackendRunId = NULL,
+            activeBackendKind = NULL,
+            claimStartedAt = NULL,
+            claimHeartbeatAt = NULL,
+            error = :newError,
+            updatedAt = :updatedAt
+        WHERE status = 'PAUSED'
+            AND error LIKE :legacyErrorPattern
+        """
+    )
+    abstract suspend fun requeuePausedDownloadsByErrorPattern(
+        legacyErrorPattern: String,
+        newError: String?,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE downloads
+        SET status = 'QUEUED',
+            activeClaimId = NULL,
+            activeBackendRunId = NULL,
+            activeBackendKind = NULL,
+            claimStartedAt = NULL,
+            claimHeartbeatAt = NULL,
+            error = :newError,
+            updatedAt = :updatedAt
+        WHERE status = 'FAILED'
+            AND error = :legacyError
+            AND bytesDownloaded = 0
+            AND totalBytes = 0
+        """
+    )
+    abstract suspend fun requeueZeroByteFailedDownloadsByError(
+        legacyError: String,
+        newError: String?,
         updatedAt: Long,
     ): Int
 

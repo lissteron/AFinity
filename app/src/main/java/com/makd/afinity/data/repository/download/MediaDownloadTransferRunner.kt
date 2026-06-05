@@ -96,7 +96,7 @@ constructor(
                     uidtNetworkSession.currentLease()
                         ?: run {
                             val message = "UIDT required network is unavailable"
-                            pauseActiveDownload(
+                            requeueActiveDownload(
                                 claimedDownload.id,
                                 activeClaimId,
                                 activeBackendRunId,
@@ -127,12 +127,21 @@ constructor(
                         return TransferResult.Failed(result.message)
                     }
                     is SessionRestoreResult.Paused -> {
-                        pauseActiveDownload(
-                            claimedDownload.id,
-                            activeClaimId,
-                            activeBackendRunId,
-                            result.message,
-                        )
+                        if (result.message.isUidtTransientReason()) {
+                            requeueActiveDownload(
+                                claimedDownload.id,
+                                activeClaimId,
+                                activeBackendRunId,
+                                result.message,
+                            )
+                        } else {
+                            pauseActiveDownload(
+                                claimedDownload.id,
+                                activeClaimId,
+                                activeBackendRunId,
+                                result.message,
+                            )
+                        }
                         return TransferResult.Paused(result.message)
                     }
                 }
@@ -150,7 +159,7 @@ constructor(
                 if (uidtNetworkSession.hasNetworkChangedSince(restored.networkGeneration)) {
                     if (uidtNetworkSession.currentLease() == null) {
                         val message = "UIDT required network is unavailable"
-                        pauseActiveDownload(
+                        requeueActiveDownload(
                             claimedDownload.id,
                             activeClaimId,
                             activeBackendRunId,
@@ -163,6 +172,14 @@ constructor(
                         Timber.i(e, "UIDT network changed; retrying transfer from persisted byte")
                         continue
                     }
+                    val message = "UIDT required network changed repeatedly"
+                    requeueActiveDownload(
+                        claimedDownload.id,
+                        activeClaimId,
+                        activeBackendRunId,
+                        message,
+                    )
+                    return TransferResult.Paused(message)
                 }
                 throw e
             }
@@ -177,6 +194,7 @@ constructor(
         stopRequest: () -> DownloadQueueStopRequest?,
         progressObserver: suspend (DownloadProgress) -> Unit,
     ): TransferResult {
+        var failureStage = "initializing media download"
         val latest =
             databaseRepository.getDownload(claimedDownload.id)
                 ?: return TransferResult.Paused("Download row no longer exists")
@@ -188,6 +206,7 @@ constructor(
         }
 
         try {
+            failureStage = "reading download preferences"
             val qualityMode =
                 DownloadQualityMode.fromPreference(preferencesRepository.getDownloadQuality())
             val itemId = claimedDownload.itemId
@@ -197,6 +216,7 @@ constructor(
             val userId = claimedDownload.userId
             val baseUrl = apiClient.baseUrl ?: session.serverUrl
             val itemsApi = ItemsApi(apiClient)
+            failureStage = "fetching item metadata"
             ensureUidtNetworkFresh(session.networkGeneration)
             val baseItemDto =
                 itemsApi
@@ -222,6 +242,7 @@ constructor(
                     ?.firstOrNull()
                     ?: throw TerminalTransferException("Item not found")
 
+            failureStage = "converting item metadata"
             val item =
                 when (baseItemDto.type) {
                     BaseItemKind.MOVIE -> baseItemDto.toAfinityMovie(baseUrl)
@@ -231,11 +252,14 @@ constructor(
                     else -> throw TerminalTransferException("Unsupported item type: ${baseItemDto.type}")
                 }
 
+            failureStage = "selecting media source"
             val source =
                 item.sources.find { it.id == sourceId }
                     ?: throw TerminalTransferException("Source not found")
 
+            failureStage = "building download request"
             val requestPlan = buildDownloadRequestPlan(apiClient, itemId, source, qualityMode)
+            failureStage = "creating media target"
             val mediaTarget =
                 downloadStorageManager.createMediaFileTarget(
                     folderPath = claimedDownload.folderPath,
@@ -258,6 +282,7 @@ constructor(
             Timber.d("Resuming from byte: $existingFileSize")
             Timber.d("Download request plan: ${requestPlan.description}")
 
+            failureStage = "opening media HTTP response (${requestPlan.description})"
             ensureUidtNetworkFresh(session.networkGeneration)
             okHttpClient.newCall(requestBuilder.build()).execute().use { response ->
                 if (!response.isSuccessful) {
@@ -277,7 +302,9 @@ constructor(
                 var lastUpdateTime = 0L
 
                 response.body?.byteStream()?.use { input ->
+                    failureStage = "opening media output stream"
                     mediaTarget.openOutputStream(append = existingFileSize > 0).use { output ->
+                        failureStage = "copying media stream"
                         val buffer = ByteArray(BUFFER_SIZE)
                         while (true) {
                             currentCoroutineContext().ensureActive()
@@ -340,11 +367,13 @@ constructor(
                 }
             }
 
+            failureStage = "checking stop request"
             stopRequest()?.let { request ->
                 applyStopRequest(claimedDownload.id, activeClaimId, activeBackendRunId, request)
                 return TransferResult.Paused(request.reason)
             }
 
+            failureStage = "finalizing media target"
             val completedFile = mediaTarget.finish()
             val completed =
                 stateStore.completeOwned(
@@ -365,6 +394,7 @@ constructor(
                 return TransferResult.Completed(claimedDownload.id, completedFile.path)
             }
 
+            failureStage = "ensuring downloaded metadata"
             ensureItemInDatabase(
                 apiClient,
                 okHttpClient,
@@ -377,6 +407,7 @@ constructor(
             if (!isStillCompleted(claimedDownload.id)) {
                 return TransferResult.Completed(claimedDownload.id, completedFile.path)
             }
+            failureStage = "downloading sidecar assets"
             runSidecars(
                 apiClient = apiClient,
                 okHttpClient = okHttpClient,
@@ -391,6 +422,7 @@ constructor(
             if (!isStillCompleted(claimedDownload.id)) {
                 return TransferResult.Completed(claimedDownload.id, completedFile.path)
             }
+            failureStage = "creating local media source"
             createLocalSource(
                 downloadId = claimedDownload.id,
                 itemId = itemId,
@@ -404,13 +436,14 @@ constructor(
             Timber.i("Media download completed successfully for: ${claimedDownload.itemName}")
             return TransferResult.Completed(claimedDownload.id, completedFile.path)
         } catch (e: TerminalTransferException) {
+            val message = e.toDownloadFailureMessage(failureStage)
             failActiveDownload(
                 claimedDownload.id,
                 activeClaimId,
                 activeBackendRunId,
-                e.message ?: "Unknown transfer error",
+                message,
             )
-            return TransferResult.Failed(e.message ?: "Unknown transfer error")
+            return TransferResult.Failed(message)
         } catch (e: CancellationException) {
             val request = stopRequest()
             if (request != null) {
@@ -433,14 +466,15 @@ constructor(
             pauseActiveDownload(claimedDownload.id, activeClaimId, activeBackendRunId, message)
             return TransferResult.Paused(message)
         } catch (e: Exception) {
-            Timber.e(e, "Media download failed")
+            val message = e.toDownloadFailureMessage(failureStage)
+            Timber.e(e, "Media download failed at $failureStage")
             failActiveDownload(
                 claimedDownload.id,
                 activeClaimId,
                 activeBackendRunId,
-                e.message ?: "Unknown error",
+                message,
             )
-            return TransferResult.Failed(e.message ?: "Unknown error")
+            return TransferResult.Failed(message)
         }
     }
 
@@ -455,6 +489,15 @@ constructor(
         message: String,
     ) {
         stateStore.pauseOwned(downloadId, activeClaimId, activeBackendRunId, message)
+    }
+
+    private suspend fun requeueActiveDownload(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        message: String,
+    ) {
+        stateStore.requeueOwned(downloadId, activeClaimId, activeBackendRunId, message)
     }
 
     private suspend fun applyStopRequest(
@@ -668,6 +711,14 @@ constructor(
             .getOrElse {
                 replace(Regex("(?i)(api_key|apiKey|X-Emby-Token)=[^&]+"), "$1=[REDACTED]")
             }
+
+    private fun Throwable.toDownloadFailureMessage(stage: String): String {
+        val className = this::class.java.name
+        val detail = message?.takeIf { it.isNotBlank() } ?: this::class.java.simpleName
+        return "$stage: $className: $detail"
+    }
+
+    private fun String.isUidtTransientReason(): Boolean = startsWith("UIDT required network")
 
     private fun adaptiveHevcBitrate(
         sourceWidth: Int?,

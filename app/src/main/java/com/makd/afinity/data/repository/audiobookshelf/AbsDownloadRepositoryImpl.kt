@@ -91,7 +91,7 @@ constructor(
     }
 
     override suspend fun startDownload(libraryItemId: String, episodeId: String?): Result<UUID> {
-        if (offlineModeManager.isCurrentlyOffline()) {
+        if (offlineModeManager.isHardOffline()) {
             return Result.failure(Exception("Offline mode is enabled"))
         }
 
@@ -194,7 +194,7 @@ constructor(
     }
 
     private suspend fun enqueueWorker(downloadId: UUID, libraryItemId: String, episodeId: String?) {
-        if (offlineModeManager.isCurrentlyOffline()) {
+        if (offlineModeManager.isHardOffline()) {
             Timber.d("AbsDownload: skipping worker enqueue in offline mode for $downloadId")
             return
         }

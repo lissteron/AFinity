@@ -61,7 +61,7 @@ constructor(
     val currentConfig = audiobookshelfRepository.currentConfig
 
     val isOffline: StateFlow<Boolean> =
-        offlineModeManager.isOffline
+        offlineModeManager.hardOffline
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val capabilityPolicy = kidModeRepository.policy

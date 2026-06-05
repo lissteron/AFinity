@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -74,6 +75,7 @@ constructor(
         observeAuthAndLoadData()
         refreshServerInfo()
         observeDataLoaded()
+        observeRemoteContentAvailability()
     }
 
     private fun observeDataLoaded() {
@@ -81,6 +83,21 @@ constructor(
             appDataRepository.isInitialDataLoaded.collect { isLoaded ->
                 if (isLoaded) {
                     checkLiveTvAccess()
+                }
+            }
+        }
+    }
+
+    private fun observeRemoteContentAvailability() {
+        viewModelScope.launch {
+            offlineModeManager.canLoadRemoteContent.drop(1).collect { canLoadRemoteContent ->
+                if (canLoadRemoteContent) {
+                    refreshServerInfo()
+                    if (authRepository.isAuthenticated.value && appDataRepository.isInitialDataLoaded.value) {
+                        checkLiveTvAccess()
+                    }
+                } else {
+                    _hasLiveTvAccess.value = false
                 }
             }
         }
@@ -113,7 +130,7 @@ constructor(
     private fun checkLiveTvAccess() {
         viewModelScope.launch {
             try {
-                if (offlineModeManager.isCurrentlyOffline()) {
+                if (offlineModeManager.isHardOffline() || !sessionManager.isServerReachable.value) {
                     Timber.d("Skipping Live TV access check in offline mode")
                     _hasLiveTvAccess.value = false
                     return@launch
@@ -132,7 +149,7 @@ constructor(
     private fun refreshServerInfo() {
         viewModelScope.launch {
             try {
-                val isOffline = offlineModeManager.isCurrentlyOffline()
+                val isOffline = offlineModeManager.isHardOffline()
                 if (isOffline || !sessionManager.isServerReachable.value) {
                     Timber.d("Device is offline or server unreachable, skipping server info refresh")
                     return@launch
@@ -148,7 +165,7 @@ constructor(
 
     private fun loadAppData() {
         viewModelScope.launch {
-            val isOffline = offlineModeManager.isCurrentlyOffline()
+            val isOffline = offlineModeManager.isHardOffline()
 
             if (isOffline) {
                 Timber.d("Device is offline, skipping initial data load")
@@ -157,8 +174,9 @@ constructor(
             }
 
             if (!sessionManager.isServerReachable.value) {
-                Timber.d("Server unreachable (address resolution failed), starting in offline mode")
+                Timber.d("Server unreachable, deferring initial data load and requesting reconnect")
                 appDataRepository.skipInitialDataLoad()
+                offlineModeManager.requestConnectivityProbe("initial data deferred")
                 return@launch
             }
 

@@ -279,20 +279,31 @@ constructor(
             kidModeRepository.policy.collect { policy ->
                 if (!policy.canUseDiscoveryUi) {
                     clearDiscoverySections()
-                } else if (!offlineModeManager.isOffline.first()) {
+                } else if (offlineModeManager.canLoadRemoteContentNow()) {
                     loadNewHomescreenSections()
                 }
             }
         }
 
         viewModelScope.launch {
-            offlineModeManager.isOffline.collect { isOffline ->
+            offlineModeManager.hardOffline.collect { isOffline ->
                 Timber.d("Offline mode changed: $isOffline")
                 _uiState.update { it.copy(isOffline = isOffline) }
 
                 if (isOffline) {
                     loadDownloadedContent()
-                } else {
+                } else if (offlineModeManager.canLoadRemoteContentNow()) {
+                    scheduleHomeDataReload()
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            offlineModeManager.isServerUnavailable.collect { isServerUnavailable ->
+                _uiState.update { it.copy(isServerUnavailable = isServerUnavailable) }
+                if (isServerUnavailable) {
+                    loadDownloadedContent()
+                } else if (offlineModeManager.canLoadRemoteContentNow()) {
                     scheduleHomeDataReload()
                 }
             }
@@ -394,8 +405,8 @@ constructor(
                         return@launch
                     }
 
-                    if (offlineModeManager.isOffline.first()) {
-                        Timber.d("Skipping new sections in offline mode")
+                    if (!offlineModeManager.canLoadRemoteContentNow()) {
+                        Timber.d("Skipping new sections while remote content is unavailable")
                         return@launch
                     }
 
@@ -1188,7 +1199,7 @@ constructor(
     }
 
     private suspend fun loadCombinedGenres() {
-        if (offlineModeManager.isOffline.first()) return
+        if (!offlineModeManager.canLoadRemoteContentNow()) return
         try {
             appDataRepository.loadCombinedGenres()
         } catch (e: Exception) {
@@ -1200,6 +1211,10 @@ constructor(
         if (_uiState.value.genreLoadingStates[genre] == true) return
 
         viewModelScope.launch {
+            if (!offlineModeManager.canLoadRemoteContentNow()) {
+                offlineModeManager.requestConnectivityProbe("home genre movies")
+                return@launch
+            }
             try {
                 appDataRepository.loadMoviesForGenre(genre)
             } catch (e: Exception) {
@@ -1212,6 +1227,10 @@ constructor(
         if (_uiState.value.genreLoadingStates[genre] == true) return
 
         viewModelScope.launch {
+            if (!offlineModeManager.canLoadRemoteContentNow()) {
+                offlineModeManager.requestConnectivityProbe("home genre shows")
+                return@launch
+            }
             try {
                 appDataRepository.loadShowsForGenre(genre)
             } catch (e: Exception) {
@@ -1221,7 +1240,7 @@ constructor(
     }
 
     private suspend fun loadStudios() {
-        if (offlineModeManager.isOffline.first()) return
+        if (!offlineModeManager.canLoadRemoteContentNow()) return
         try {
             appDataRepository.loadStudios()
         } catch (e: Exception) {
@@ -1231,7 +1250,7 @@ constructor(
 
     private suspend fun loadUpcomingEpisodes() {
         try {
-            if (offlineModeManager.isOffline.first()) return
+            if (!offlineModeManager.canLoadRemoteContentNow()) return
             val upcoming = mediaRepository.getUpcomingEpisodes(limit = 24)
             _uiState.update { it.copy(upcomingEpisodes = upcoming) }
         } catch (e: Exception) {
@@ -1247,7 +1266,8 @@ constructor(
 
     fun refresh() {
         viewModelScope.launch {
-            if (offlineModeManager.isOffline.first()) {
+            if (!offlineModeManager.canLoadRemoteContentNow()) {
+                offlineModeManager.requestConnectivityProbe("home refresh")
                 loadDownloadedContent()
                 return@launch
             }
@@ -1265,8 +1285,8 @@ constructor(
     }
 
     private suspend fun scheduleHomeDataReload() {
-        if (offlineModeManager.isCurrentlyOffline()) {
-            Timber.d("Skipping home data reload schedule in offline mode")
+        if (!offlineModeManager.canLoadRemoteContentNow()) {
+            Timber.d("Skipping home data reload schedule while remote content is unavailable")
             return
         }
 
@@ -1402,5 +1422,6 @@ data class HomeUiState(
         emptyList(),
     val separateTvLibrarySections: List<Pair<AfinityCollection, List<AfinityShow>>> = emptyList(),
     val isOffline: Boolean = false,
+    val isServerUnavailable: Boolean = false,
     val showQualityDialog: Boolean = false,
 )

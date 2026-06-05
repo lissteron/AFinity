@@ -309,8 +309,37 @@ interface DatabaseRepository {
         updatedAt: Long = System.currentTimeMillis(),
     ): Int
 
+    suspend fun requeueOrphanedActiveDownloads(
+        activeBackendRunId: UUID,
+        error: String?,
+        updatedAt: Long = System.currentTimeMillis(),
+    ): Int
+
     suspend fun pauseAllActiveDownloads(
         error: String?,
+        updatedAt: Long = System.currentTimeMillis(),
+    ): Int
+
+    suspend fun requeueAllActiveDownloads(
+        error: String?,
+        updatedAt: Long = System.currentTimeMillis(),
+    ): Int
+
+    suspend fun requeuePausedDownloadsByError(
+        legacyError: String,
+        newError: String?,
+        updatedAt: Long = System.currentTimeMillis(),
+    ): Int
+
+    suspend fun requeuePausedDownloadsByErrorPattern(
+        legacyErrorPattern: String,
+        newError: String?,
+        updatedAt: Long = System.currentTimeMillis(),
+    ): Int
+
+    suspend fun requeueZeroByteFailedDownloadsByError(
+        legacyError: String,
+        newError: String?,
         updatedAt: Long = System.currentTimeMillis(),
     ): Int
 

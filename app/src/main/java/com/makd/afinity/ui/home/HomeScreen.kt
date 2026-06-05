@@ -107,9 +107,12 @@ fun HomeScreen(
     val screenHeight = configuration.screenHeightDp.dp
     val lazyListState = rememberLazyListState()
     val continueWatchingScrollState = rememberLazyListState()
+    val showDownloadedContent = uiState.isOffline || uiState.isServerUnavailable
+    val useOfflineContinueWatching =
+        uiState.isOffline || (uiState.isServerUnavailable && uiState.continueWatching.isEmpty())
 
     val continueWatchingItems =
-        if (uiState.isOffline) uiState.offlineContinueWatching else uiState.continueWatching
+        if (useOfflineContinueWatching) uiState.offlineContinueWatching else uiState.continueWatching
     LaunchedEffect(continueWatchingItems.firstOrNull()?.id) {
         if (continueWatchingItems.isNotEmpty()) {
             continueWatchingScrollState.scrollToItem(0)
@@ -146,7 +149,7 @@ fun HomeScreen(
                             uiState.heroCarouselItems.isNotEmpty()
 
                     val continueWatchingItems =
-                        if (uiState.isOffline) {
+                        if (useOfflineContinueWatching) {
                             uiState.offlineContinueWatching
                         } else {
                             uiState.continueWatching
@@ -160,13 +163,13 @@ fun HomeScreen(
                             !uiState.isOffline &&
                                 uiState.isLoading &&
                                 uiState.latestMedia.isNotEmpty() -> "cw_skeleton"
-                            uiState.isOffline && uiState.downloadedMovies.isNotEmpty() ->
+                            showDownloadedContent && uiState.downloadedMovies.isNotEmpty() ->
                                 "downloaded_movies"
-                            uiState.isOffline && uiState.downloadedShows.isNotEmpty() ->
+                            showDownloadedContent && uiState.downloadedShows.isNotEmpty() ->
                                 "downloaded_shows"
-                            uiState.isOffline && uiState.downloadedAudiobooks.isNotEmpty() ->
+                            showDownloadedContent && uiState.downloadedAudiobooks.isNotEmpty() ->
                                 "downloaded_audiobooks"
-                            uiState.isOffline && uiState.downloadedPodcastEpisodes.isNotEmpty() ->
+                            showDownloadedContent && uiState.downloadedPodcastEpisodes.isNotEmpty() ->
                                 "downloaded_podcasts"
                             !uiState.isOffline && uiState.nextUp.isNotEmpty() -> "next_up"
                             else -> null
@@ -258,7 +261,7 @@ fun HomeScreen(
                             }
                         }
 
-                        if (uiState.isOffline && uiState.downloadedMovies.isNotEmpty()) {
+                        if (showDownloadedContent && uiState.downloadedMovies.isNotEmpty()) {
                             item(key = "downloaded_movies") {
                                 Box(modifier = getItemModifier("downloaded_movies")) {
                                     Column {
@@ -274,7 +277,7 @@ fun HomeScreen(
                             }
                         }
 
-                        if (uiState.isOffline && uiState.downloadedShows.isNotEmpty()) {
+                        if (showDownloadedContent && uiState.downloadedShows.isNotEmpty()) {
                             item(key = "downloaded_shows") {
                                 Box(modifier = getItemModifier("downloaded_shows")) {
                                     Column {
@@ -290,7 +293,7 @@ fun HomeScreen(
                             }
                         }
 
-                        if (uiState.isOffline && uiState.downloadedAudiobooks.isNotEmpty()) {
+                        if (showDownloadedContent && uiState.downloadedAudiobooks.isNotEmpty()) {
                             item(key = "downloaded_audiobooks") {
                                 Box(modifier = getItemModifier("downloaded_audiobooks")) {
                                     Column {
@@ -306,7 +309,7 @@ fun HomeScreen(
                             }
                         }
 
-                        if (uiState.isOffline && uiState.downloadedPodcastEpisodes.isNotEmpty()) {
+                        if (showDownloadedContent && uiState.downloadedPodcastEpisodes.isNotEmpty()) {
                             item(key = "downloaded_podcasts") {
                                 Box(modifier = getItemModifier("downloaded_podcasts")) {
                                     Column {

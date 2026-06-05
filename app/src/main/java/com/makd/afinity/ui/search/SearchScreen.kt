@@ -113,6 +113,7 @@ fun SearchScreen(
     val selectedEpisodeDownloadInfo by
         viewModel.selectedEpisodeDownloadInfo.collectAsStateWithLifecycle()
     val canDownload by viewModel.canDownload.collectAsStateWithLifecycle()
+    val canLoadJellyfinContent by viewModel.canLoadJellyfinContent.collectAsStateWithLifecycle()
     val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -135,16 +136,13 @@ fun SearchScreen(
                 when {
                     uiState.isJellyseerrSearchMode -> viewModel.performJellyseerrSearch()
                     uiState.isAudiobookshelfSearchMode -> viewModel.performAudiobookshelfSearch()
-                    else -> {
-                        viewModel.performSearch()
-                        viewModel.performAudiobookshelfSearch()
-                    }
+                    else -> viewModel.performAllAvailableSearches()
                 }
             },
         )
 
         if (
-            uiState.libraries.isNotEmpty() ||
+            (canLoadJellyfinContent && uiState.libraries.isNotEmpty()) ||
                 isJellyseerrAuthenticated ||
                 isAudiobookshelfAuthenticated
         ) {
@@ -155,9 +153,10 @@ fun SearchScreen(
                 isJellyseerrSearchMode = uiState.isJellyseerrSearchMode,
                 isAudiobookshelfAuthenticated = isAudiobookshelfAuthenticated,
                 isAudiobookshelfSearchMode = uiState.isAudiobookshelfSearchMode,
+                canLoadJellyfinContent = canLoadJellyfinContent,
                 onLibrarySelected = viewModel::selectLibrary,
+                onAllSearchSelected = viewModel::selectAllSearchMode,
                 onJellyseerrSearchSelected = viewModel::selectJellyseerrSearchMode,
-                onJellyfinSearchSelected = viewModel::selectJellyfinSearchMode,
                 onAudiobookshelfSearchSelected = viewModel::selectAudiobookshelfSearchMode,
             )
         }
@@ -167,12 +166,16 @@ fun SearchScreen(
                 !uiState.isJellyseerrSearchMode &&
                     !uiState.isAudiobookshelfSearchMode &&
                     uiState.selectedLibrary == null
+            val hasAnyAllResults =
+                uiState.searchResults.isNotEmpty() ||
+                    uiState.audiobookshelfSearchResults.isNotEmpty() ||
+                    uiState.jellyseerrSearchResults.isNotEmpty()
             val allLoading =
                 if (isAllMode) {
-                    uiState.isSearching &&
-                        uiState.isAudiobookshelfSearching &&
-                        uiState.searchResults.isEmpty() &&
-                        uiState.audiobookshelfSearchResults.isEmpty()
+                    !hasAnyAllResults &&
+                        (uiState.isSearching ||
+                            uiState.isAudiobookshelfSearching ||
+                            uiState.isJellyseerrSearching)
                 } else {
                     uiState.isSearching ||
                         uiState.isJellyseerrSearching ||
@@ -427,9 +430,10 @@ private fun HorizontalLibraryFilters(
     isJellyseerrSearchMode: Boolean,
     isAudiobookshelfAuthenticated: Boolean,
     isAudiobookshelfSearchMode: Boolean,
+    canLoadJellyfinContent: Boolean,
     onLibrarySelected: (AfinityCollection?) -> Unit,
+    onAllSearchSelected: () -> Unit,
     onJellyseerrSearchSelected: () -> Unit,
-    onJellyfinSearchSelected: () -> Unit,
     onAudiobookshelfSearchSelected: () -> Unit,
 ) {
     LazyRow(
@@ -444,10 +448,7 @@ private fun HorizontalLibraryFilters(
                     !isJellyseerrSearchMode &&
                         !isAudiobookshelfSearchMode &&
                         selectedLibrary == null,
-                onClick = {
-                    onJellyfinSearchSelected()
-                    onLibrarySelected(null)
-                },
+                onClick = onAllSearchSelected,
                 showCheckIcon = true,
             )
         }
@@ -474,19 +475,18 @@ private fun HorizontalLibraryFilters(
             }
         }
 
-        items(libraries, key = { it.id }) { library ->
-            LibraryFilterChip(
-                text = library.name,
-                isSelected =
-                    !isJellyseerrSearchMode &&
-                        !isAudiobookshelfSearchMode &&
-                        selectedLibrary?.id == library.id,
-                onClick = {
-                    onJellyfinSearchSelected()
-                    onLibrarySelected(library)
-                },
-                showCheckIcon = false,
-            )
+        if (canLoadJellyfinContent) {
+            items(libraries, key = { it.id }) { library ->
+                LibraryFilterChip(
+                    text = library.name,
+                    isSelected =
+                        !isJellyseerrSearchMode &&
+                            !isAudiobookshelfSearchMode &&
+                            selectedLibrary?.id == library.id,
+                    onClick = { onLibrarySelected(library) },
+                    showCheckIcon = false,
+                )
+            }
         }
     }
 }

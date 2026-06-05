@@ -44,10 +44,10 @@ constructor(
             val reconciled =
                 stateStore.reconcileOrphanedActiveClaims(
                     backendRunId = backendRunId,
-                    reason = "Interrupted download recovered to paused queue state",
+                    reason = "Interrupted download recovered to queued state",
                 )
             if (reconciled > 0) {
-                Timber.w("Reconciled $reconciled orphaned DOWNLOADING media rows to PAUSED")
+                Timber.w("Reconciled $reconciled orphaned DOWNLOADING media rows to QUEUED")
             }
 
             while (stopState.current() == null) {
@@ -108,13 +108,31 @@ constructor(
 
     suspend fun stopActive(reason: String) {
         requestPauseActive(reason)
+        val activeStopRequest =
+            stopState.current()
+                ?: DownloadQueueStopRequest(
+                    reason = reason,
+                    disposition = DownloadQueueStopDisposition.PAUSE,
+                    scheduleAfterStop = null,
+                    allowScheduleAfterStop = true,
+                )
         activeClaim?.let { claim ->
-            stateStore.pauseOwned(
-                downloadId = claim.downloadId,
-                activeClaimId = claim.activeClaimId,
-                backendRunId = claim.backendRunId,
-                reason = reason,
-            )
+            when (activeStopRequest.disposition) {
+                DownloadQueueStopDisposition.PAUSE ->
+                    stateStore.pauseOwned(
+                        downloadId = claim.downloadId,
+                        activeClaimId = claim.activeClaimId,
+                        backendRunId = claim.backendRunId,
+                        reason = activeStopRequest.reason,
+                    )
+                DownloadQueueStopDisposition.REQUEUE ->
+                    stateStore.requeueOwned(
+                        downloadId = claim.downloadId,
+                        activeClaimId = claim.activeClaimId,
+                        backendRunId = claim.backendRunId,
+                        reason = activeStopRequest.reason,
+                    )
+            }
         }
     }
 
@@ -142,7 +160,12 @@ constructor(
     suspend fun onUidtNetworkChanged(network: Network?) {
         val result = uidtNetworkSession.onNetworkChanged(network)
         if (result is UidtNetworkSession.NetworkChangeResult.RequiredNetworkMissing) {
-            stopActive("UIDT required network is unavailable")
+            val reason = "UIDT required network is unavailable"
+            requestPolicyRequeue(
+                reason = reason,
+                scheduleAfterStop = DownloadQueueScheduleTrigger.VISIBLE_LIVENESS,
+            )
+            stopActive(reason)
         }
     }
 

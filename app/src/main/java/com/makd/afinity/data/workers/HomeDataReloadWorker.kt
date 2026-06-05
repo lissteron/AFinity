@@ -21,8 +21,8 @@ constructor(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
-        if (offlineModeManager.isCurrentlyOffline()) {
-            Timber.d("HomeDataReloadWorker: skipping reload in offline mode")
+        if (!offlineModeManager.canLoadRemoteContentNow()) {
+            Timber.d("HomeDataReloadWorker: skipping reload while remote content is unavailable")
             return Result.success()
         }
 

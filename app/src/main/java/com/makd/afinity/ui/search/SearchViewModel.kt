@@ -2,6 +2,7 @@ package com.makd.afinity.ui.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.PlaybackEvent
 import com.makd.afinity.data.manager.PlaybackStateManager
 import com.makd.afinity.data.models.audiobookshelf.LibraryItem
@@ -82,6 +83,7 @@ constructor(
     private val itemUserDataDelegate: ItemUserDataDelegate,
     private val preferencesRepository: PreferencesRepository,
     private val networkMonitor: NetworkConnectivityMonitor,
+    private val offlineModeManager: OfflineModeManager,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SearchUiState())
@@ -91,6 +93,9 @@ constructor(
             .combine(networkMonitor.isOnWifiFlow) { wifiOnly, onWifi -> !wifiOnly || onWifi }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
+    val canLoadJellyfinContent: StateFlow<Boolean> =
+        offlineModeManager.canLoadRemoteContent
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     val isJellyseerrAuthenticated = jellyseerrRepository.isAuthenticated
     val isAudiobookshelfAuthenticated = audiobookshelfRepository.isAuthenticated
@@ -125,11 +130,35 @@ constructor(
                     when {
                         _uiState.value.isJellyseerrSearchMode -> performJellyseerrSearch()
                         _uiState.value.isAudiobookshelfSearchMode -> performAudiobookshelfSearch()
-                        else -> {
-                            launch { performSearch() }
-                            launch { performAudiobookshelfSearch() }
-                            launch { performJellyseerrSearch() }
-                        }
+                        else -> performAllAvailableSearches()
+                    }
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            canLoadJellyfinContent.collect { canLoadJellyfinContent ->
+                if (!canLoadJellyfinContent) {
+                    searchJob?.cancel()
+                    _uiState.update {
+                        it.copy(
+                            selectedLibrary = null,
+                            searchResults = emptyList(),
+                            genres = emptyList(),
+                            isSearching = false,
+                        )
+                    }
+                } else if (appDataRepository.isInitialDataLoaded.value) {
+                    loadLibraries()
+                    loadGenres()
+
+                    val state = _uiState.value
+                    if (
+                        state.searchQuery.length >= 2 &&
+                            !state.isJellyseerrSearchMode &&
+                            !state.isAudiobookshelfSearchMode
+                    ) {
+                        performSearch()
                     }
                 }
             }
@@ -139,7 +168,9 @@ constructor(
             appDataRepository.isInitialDataLoaded.collect { isLoaded ->
                 if (isLoaded) {
                     loadLibraries()
-                    loadGenres()
+                    if (canLoadJellyfinContent.value) {
+                        loadGenres()
+                    }
                     if (_uiState.value.searchQuery.isNotEmpty()) {
                         searchQueryFlow.tryEmit(_uiState.value.searchQuery)
                     }
@@ -311,6 +342,12 @@ constructor(
     fun loadGenres() {
         viewModelScope.launch {
             try {
+                if (!offlineModeManager.canLoadRemoteContentNow()) {
+                    _uiState.value = _uiState.value.copy(genres = emptyList())
+                    offlineModeManager.requestConnectivityProbe("search genres")
+                    return@launch
+                }
+
                 val selectedLibraryId = _uiState.value.selectedLibrary?.id
                 val genres =
                     mediaRepository.getGenres(
@@ -328,6 +365,11 @@ constructor(
     }
 
     fun loadAudiobookshelfGenres() {
+        if (!audiobookshelfRepository.isAuthenticated.value) {
+            _uiState.update { it.copy(audiobookshelfGenres = emptyList()) }
+            return
+        }
+
         viewModelScope.launch {
             try {
                 var libraries = audiobookshelfRepository.getLibrariesFlow().first()
@@ -377,17 +419,45 @@ constructor(
     }
 
     fun selectLibrary(library: AfinityCollection?) {
-        searchJob?.cancel()
+        if (library == null) {
+            selectAllSearchMode()
+            return
+        }
+
+        cancelAllSearchJobs()
+
+        if (!canLoadJellyfinContent.value) {
+            _uiState.value =
+                _uiState.value.copy(
+                    selectedLibrary = null,
+                    searchResults = emptyList(),
+                    audiobookshelfSearchResults = emptyList(),
+                    jellyseerrSearchResults = emptyList(),
+                    isSearching = false,
+                    isAudiobookshelfSearching = false,
+                    isJellyseerrSearching = false,
+                )
+            viewModelScope.launch {
+                offlineModeManager.requestConnectivityProbe("search library")
+            }
+            return
+        }
 
         _uiState.value =
             _uiState.value.copy(
                 selectedLibrary = library,
                 isAudiobookshelfSearchMode = false,
                 audiobookshelfSearchResults = emptyList(),
+                jellyseerrSearchResults = emptyList(),
                 searchResults = emptyList(),
+                isSearching = false,
+                isAudiobookshelfSearching = false,
+                isJellyseerrSearching = false,
             )
 
-        loadGenres()
+        if (canLoadJellyfinContent.value) {
+            loadGenres()
+        }
 
         if (_uiState.value.searchQuery.isNotEmpty()) {
             performSearch()
@@ -412,6 +482,13 @@ constructor(
         searchJob =
             viewModelScope.launch {
                 try {
+                    if (!offlineModeManager.canLoadRemoteContentNow()) {
+                        _uiState.value =
+                            _uiState.value.copy(searchResults = emptyList(), isSearching = false)
+                        offlineModeManager.requestConnectivityProbe("search jellyfin")
+                        return@launch
+                    }
+
                     _uiState.value = _uiState.value.copy(isSearching = true)
                     val results =
                         mediaRepository.getItems(
@@ -500,6 +577,13 @@ constructor(
 
     fun selectJellyseerrSearchMode() {
         cancelAllSearchJobs()
+        if (!jellyseerrRepository.isAuthenticated.value) {
+            _currentUser.value = null
+            clearJellyseerrSearchState()
+            _uiState.update { it.copy(isJellyseerrSearchMode = false) }
+            return
+        }
+
         _uiState.update {
             it.copy(
                 isJellyseerrSearchMode = true,
@@ -508,6 +592,9 @@ constructor(
                 audiobookshelfSearchResults = emptyList(),
                 searchResults = emptyList(),
                 jellyseerrSearchResults = emptyList(),
+                isSearching = false,
+                isAudiobookshelfSearching = false,
+                isJellyseerrSearching = false,
             )
         }
 
@@ -519,6 +606,11 @@ constructor(
     }
 
     private fun loadCurrentUser() {
+        if (!jellyseerrRepository.isAuthenticated.value) {
+            _currentUser.value = null
+            return
+        }
+
         viewModelScope.launch {
             jellyseerrRepository
                 .getCurrentUser()
@@ -530,20 +622,42 @@ constructor(
     }
 
     fun selectJellyfinSearchMode() {
+        selectAllSearchMode()
+    }
+
+    fun selectAllSearchMode() {
         cancelAllSearchJobs()
         _uiState.update {
-            it.copy(isJellyseerrSearchMode = false, isAudiobookshelfSearchMode = false)
+            it.copy(
+                selectedLibrary = null,
+                isJellyseerrSearchMode = false,
+                isAudiobookshelfSearchMode = false,
+                searchResults = emptyList(),
+                audiobookshelfSearchResults = emptyList(),
+                jellyseerrSearchResults = emptyList(),
+                isSearching = false,
+                isAudiobookshelfSearching = false,
+                isJellyseerrSearching = false,
+            )
+        }
+
+        if (canLoadJellyfinContent.value) {
+            loadGenres()
         }
 
         if (_uiState.value.searchQuery.isNotEmpty()) {
-            performSearch()
-            performAudiobookshelfSearch()
-            performJellyseerrSearch()
+            performAllAvailableSearches()
         }
     }
 
     fun selectAudiobookshelfSearchMode() {
         cancelAllSearchJobs()
+        if (!audiobookshelfRepository.isAuthenticated.value) {
+            clearAudiobookshelfSearchState()
+            _uiState.update { it.copy(isAudiobookshelfSearchMode = false) }
+            return
+        }
+
         _uiState.update {
             it.copy(
                 isAudiobookshelfSearchMode = true,
@@ -552,6 +666,9 @@ constructor(
                 jellyseerrSearchResults = emptyList(),
                 searchResults = emptyList(),
                 audiobookshelfSearchResults = emptyList(),
+                isSearching = false,
+                isJellyseerrSearching = false,
+                isAudiobookshelfSearching = false,
             )
         }
 
@@ -567,6 +684,11 @@ constructor(
         if (query.isEmpty()) return
 
         audiobookshelfSearchJob?.cancel()
+        if (!audiobookshelfRepository.isAuthenticated.value) {
+            clearAudiobookshelfSearchState()
+            return
+        }
+
         audiobookshelfSearchJob =
             viewModelScope.launch {
                 try {
@@ -644,6 +766,11 @@ constructor(
         if (query.isEmpty()) return
 
         jellyseerrSearchJob?.cancel()
+        if (!jellyseerrRepository.isAuthenticated.value) {
+            clearJellyseerrSearchState()
+            return
+        }
+
         jellyseerrSearchJob =
             viewModelScope.launch {
                 try {
@@ -689,6 +816,30 @@ constructor(
                     Timber.e(e, "Error during Jellyseerr search")
                 }
             }
+    }
+
+    fun performAllAvailableSearches() {
+        performSearch()
+        performAudiobookshelfSearch()
+        performJellyseerrSearch()
+    }
+
+    private fun clearAudiobookshelfSearchState() {
+        _uiState.update {
+            it.copy(
+                audiobookshelfSearchResults = emptyList(),
+                isAudiobookshelfSearching = false,
+            )
+        }
+    }
+
+    private fun clearJellyseerrSearchState() {
+        _uiState.update {
+            it.copy(
+                jellyseerrSearchResults = emptyList(),
+                isJellyseerrSearching = false,
+            )
+        }
     }
 
     fun showRequestDialog(

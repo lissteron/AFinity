@@ -122,11 +122,11 @@ constructor(
     val uiState: StateFlow<ItemDetailUiState> = _uiState.asStateFlow()
     val capabilityPolicy = kidModeRepository.policy
     val isOffline: StateFlow<Boolean> =
-        offlineModeManager.isOffline
+        offlineModeManager.hardOffline
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val completedDownloadItemIds: StateFlow<Set<UUID>> =
-        databaseRepository
-            .getDownloadsByStatusFlow(listOf(DownloadStatus.COMPLETED))
+        downloadRepository
+            .getCompletedDownloadsFlow()
             .map { downloads -> downloads.map { it.itemId }.toSet() }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
@@ -592,15 +592,14 @@ constructor(
         viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-                val isOffline = offlineModeManager.isOffline.first()
-                if (!isOffline) {
+                val canLoadRemoteContent = offlineModeManager.canLoadRemoteContentNow()
+                var loadedFromOfflineCache = false
+                if (canLoadRemoteContent) {
                     launchParallelFetches()
                 }
 
                 val item =
-                    if (isOffline) {
-                        loadItemFromDatabase()?.let { filterOfflineItemToCompletedDownloads(it) }
-                    } else {
+                    if (canLoadRemoteContent) {
                         mediaRepository.getItem(itemId, fields = FieldSets.ITEM_DETAIL)?.let {
                             baseItemDto ->
                             when (baseItemDto.type) {
@@ -631,6 +630,13 @@ constructor(
                                 else -> null
                             }
                         }
+                            ?: run {
+                                loadedFromOfflineCache = true
+                                loadDownloadedItemFromDatabase()
+                            }
+                    } else {
+                        loadedFromOfflineCache = true
+                        loadDownloadedItemFromDatabase()
                     }
 
                 if (item == null) {
@@ -638,14 +644,15 @@ constructor(
                         _uiState.value.copy(
                             isLoading = false,
                             error =
-                                if (isOffline) "Item not available offline" else "Item not found",
+                                if (canLoadRemoteContent) "Item not found"
+                                else "Item not available offline",
                         )
                     return@launch
                 }
 
                 _uiState.value = _uiState.value.copy(item = item, isLoading = false)
 
-                if (!isOffline) {
+                if (canLoadRemoteContent && !loadedFromOfflineCache) {
                     if (item is AfinityMovie || item is AfinityShow) {
                         launch { loadReviewsAndRatings(item) }
                     }
@@ -888,10 +895,13 @@ constructor(
         }
     }
 
+    private suspend fun loadDownloadedItemFromDatabase(): AfinityItem? =
+        loadItemFromDatabase()?.let { filterOfflineItemToCompletedDownloads(it) }
+
     private suspend fun filterOfflineItemToCompletedDownloads(item: AfinityItem): AfinityItem? {
         val downloadedItemIds =
-            databaseRepository
-                .getDownloadsByStatusFlow(listOf(DownloadStatus.COMPLETED))
+            downloadRepository
+                .getCompletedDownloadsFlow()
                 .first()
                 .map { it.itemId }
                 .toSet()

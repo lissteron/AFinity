@@ -99,11 +99,15 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val effectiveOfflineMode by viewModel.effectiveOfflineMode.collectAsStateWithLifecycle()
+    val hardOfflineMode by viewModel.hardOfflineMode.collectAsStateWithLifecycle()
+    val manualOfflineMode by viewModel.manualOfflineMode.collectAsStateWithLifecycle()
+    val offlineReason by viewModel.offlineReason.collectAsStateWithLifecycle()
     val connectionType =
-        remember(effectiveOfflineMode, uiState.serverUrl) {
+        remember(hardOfflineMode, offlineReason, uiState.serverUrl) {
             when {
-                effectiveOfflineMode -> ConnectionType.OFFLINE
+                hardOfflineMode -> ConnectionType.OFFLINE
+                offlineReason == OfflineModeReason.SERVER_UNREACHABLE ->
+                    ConnectionType.SERVER_UNAVAILABLE
                 uiState.serverUrl != null && isLocalAddress(uiState.serverUrl!!) ->
                     ConnectionType.LOCAL
                 uiState.serverUrl != null && isTailscaleAddress(uiState.serverUrl!!) ->
@@ -111,8 +115,6 @@ fun SettingsScreen(
                 else -> ConnectionType.REMOTE
             }
         }
-    val isNetworkAvailable by viewModel.isNetworkAvailable.collectAsStateWithLifecycle()
-    val offlineReason by viewModel.offlineReason.collectAsStateWithLifecycle()
     val isJellyseerrAuthenticated by
         viewModel.isJellyseerrAuthenticated.collectAsStateWithLifecycle()
     val isAudiobookshelfAuthenticated by
@@ -343,11 +345,9 @@ fun SettingsScreen(
                                     OfflineModeReason.ONLINE ->
                                         stringResource(R.string.offline_mode_force)
                                 },
-                            checked = effectiveOfflineMode,
+                            checked = manualOfflineMode,
                             onCheckedChange = viewModel::toggleOfflineMode,
-                            enabled =
-                                isNetworkAvailable &&
-                                    offlineReason != OfflineModeReason.SERVER_UNREACHABLE,
+                            enabled = true,
                         )
                         SettingsDivider()
                         SettingsSwitchItem(
@@ -379,7 +379,7 @@ fun SettingsScreen(
                                 if (enabled) showJellyseerrBottomSheet = true
                                 else showJellyseerrLogoutDialog = true
                             },
-                            enabled = !effectiveOfflineMode,
+                            enabled = !hardOfflineMode,
                         )
                         SettingsDivider()
                         SettingsSwitchItem(
@@ -394,7 +394,7 @@ fun SettingsScreen(
                                 if (enabled) showAudiobookshelfBottomSheet = true
                                 else showAudiobookshelfLogoutDialog = true
                             },
-                            enabled = !effectiveOfflineMode,
+                            enabled = !hardOfflineMode,
                         )
                         SettingsDivider()
                         SettingsItem(
@@ -409,7 +409,7 @@ fun SettingsScreen(
                             title = stringResource(R.string.pref_switch_session),
                             subtitle = stringResource(R.string.pref_switch_session_summary),
                             onClick =
-                                if (!effectiveOfflineMode) {
+                                if (!hardOfflineMode) {
                                     { showSessionSwitcherSheet = true }
                                 } else null,
                         )
@@ -622,6 +622,7 @@ fun ProfileHeader(
                     ConnectionType.LOCAL -> Color(0xFF4CAF50)
                     ConnectionType.TAILSCALE -> Color(0xFF2196F3)
                     ConnectionType.REMOTE -> Color(0xFFFF9800)
+                    ConnectionType.SERVER_UNAVAILABLE -> Color(0xFFFFC107)
                     ConnectionType.OFFLINE -> MaterialTheme.colorScheme.error
                 }
             val indicatorIcon =
@@ -629,6 +630,7 @@ fun ProfileHeader(
                     ConnectionType.LOCAL -> R.drawable.ic_wifi
                     ConnectionType.TAILSCALE -> R.drawable.ic_security
                     ConnectionType.REMOTE -> R.drawable.ic_link
+                    ConnectionType.SERVER_UNAVAILABLE -> R.drawable.ic_link
                     ConnectionType.OFFLINE -> R.drawable.ic_cloud_off
                 }
             val indicatorContentDescription =
@@ -636,6 +638,8 @@ fun ProfileHeader(
                     ConnectionType.LOCAL -> stringResource(R.string.cd_local_connection)
                     ConnectionType.TAILSCALE -> stringResource(R.string.cd_tailscale_connection)
                     ConnectionType.REMOTE -> stringResource(R.string.cd_remote_connection)
+                    ConnectionType.SERVER_UNAVAILABLE ->
+                        stringResource(R.string.offline_mode_server_unavailable)
                     ConnectionType.OFFLINE -> stringResource(R.string.cd_offline_mode)
                 }
 

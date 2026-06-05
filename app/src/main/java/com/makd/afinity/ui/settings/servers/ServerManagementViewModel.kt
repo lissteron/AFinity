@@ -145,7 +145,7 @@ constructor(
     private val _state = MutableStateFlow(ServerManagementState())
     val state: StateFlow<ServerManagementState> = _state.asStateFlow()
 
-    val isOffline: StateFlow<Boolean> = offlineModeManager.isOffline
+    val isOffline: StateFlow<Boolean> = offlineModeManager.hardOffline
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     init {
