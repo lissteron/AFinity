@@ -4,6 +4,12 @@ import android.os.StatFs
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.makd.afinity.data.local.LocalLibraryRootBootstrapper
+import com.makd.afinity.data.local.LocalLibraryRootManager
+import com.makd.afinity.data.local.LocalLibraryRootRecord
+import com.makd.afinity.data.local.LocalLibraryRootStore
+import com.makd.afinity.data.local.LocalLibraryScanService
+import com.makd.afinity.data.local.LocalLibraryVisibilityContext
 import com.makd.afinity.data.models.audiobookshelf.AbsDownloadInfo
 import com.makd.afinity.data.models.download.DownloadInfo
 import com.makd.afinity.data.models.download.DownloadQualityMode
@@ -37,6 +43,10 @@ constructor(
     private val preferencesRepository: PreferencesRepository,
     private val downloadStorageManager: DownloadStorageManager,
     private val kidModeRepository: KidModeRepository,
+    private val localLibraryRootStore: LocalLibraryRootStore,
+    private val localLibraryRootBootstrapper: LocalLibraryRootBootstrapper,
+    private val localLibraryRootManager: LocalLibraryRootManager,
+    private val localLibraryScanService: LocalLibraryScanService,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DownloadsUiState())
@@ -46,6 +56,7 @@ constructor(
 
     init {
         observeDownloads()
+        observeLocalLibraryRoots()
         loadStorageInfo()
         loadDownloadPreferences()
     }
@@ -138,6 +149,9 @@ constructor(
                 }
 
                 downloadStorageManager.setSelectedLocation(locationId)
+                localLibraryRootBootstrapper.ensureDefaultRoot(
+                    preferSelectedDownloadLocation = true
+                )
                 val storageLocations = downloadStorageManager.getAvailableLocations()
                 _uiState.value = _uiState.value.copy(storageLocations = storageLocations)
                 loadStorageInfo()
@@ -165,6 +179,9 @@ constructor(
                 }
 
                 downloadStorageManager.setCustomTreeLocation(uri)
+                localLibraryRootBootstrapper.ensureDefaultRoot(
+                    preferSelectedDownloadLocation = true
+                )
                 val storageLocations = downloadStorageManager.getAvailableLocations()
                 _uiState.value = _uiState.value.copy(storageLocations = storageLocations)
                 loadStorageInfo()
@@ -174,6 +191,84 @@ constructor(
                     _uiState.value.copy(error = "Failed to set custom folder: ${e.message}")
             }
         }
+    }
+
+    fun addLocalLibraryFolder(uri: Uri) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
+        viewModelScope.launch {
+            try {
+                localLibraryRootManager.addSafRoot(uri)
+                rescanLocalLibraryRootsInternal()
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to add local library folder")
+                _uiState.value =
+                    _uiState.value.copy(error = "Failed to add local library folder: ${e.message}")
+            }
+        }
+    }
+
+    fun setLocalLibraryRootEnabled(rootId: UUID, enabled: Boolean) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
+        viewModelScope.launch {
+            try {
+                localLibraryRootManager.setEnabled(rootId, enabled)
+                rescanLocalLibraryRootsInternal()
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to update local library folder")
+                _uiState.value =
+                    _uiState.value.copy(error = "Failed to update local library folder: ${e.message}")
+            }
+        }
+    }
+
+    fun setDefaultLocalLibraryRoot(rootId: UUID) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
+        viewModelScope.launch {
+            try {
+                localLibraryRootManager.setDefaultForDownloads(rootId)
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to set default local library folder")
+                _uiState.value =
+                    _uiState.value.copy(error = "Failed to set default local library folder: ${e.message}")
+            }
+        }
+    }
+
+    fun removeLocalLibraryRoot(rootId: UUID) {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
+        viewModelScope.launch {
+            try {
+                localLibraryRootManager.removeRoot(rootId)
+                rescanLocalLibraryRootsInternal()
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to remove local library folder")
+                _uiState.value =
+                    _uiState.value.copy(error = "Failed to remove local library folder: ${e.message}")
+            }
+        }
+    }
+
+    fun rescanLocalLibraryRoots() {
+        if (!kidModeRepository.policy.value.canManageDownloads) return
+        viewModelScope.launch {
+            try {
+                rescanLocalLibraryRootsInternal()
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to rescan local library")
+                _uiState.value =
+                    _uiState.value.copy(error = "Failed to rescan local library: ${e.message}")
+            }
+        }
+    }
+
+    private suspend fun rescanLocalLibraryRootsInternal() {
+        localLibraryScanService.scanEnabledRoots(
+            LocalLibraryVisibilityContext(
+                currentUserId = null,
+                kidModeEnabled = kidModeRepository.policy.value.isKidModeEnabled,
+                parentUnlocked = kidModeRepository.policy.value.isParentUnlocked,
+            )
+        )
     }
 
     private fun observeDownloads() {
@@ -227,6 +322,23 @@ constructor(
                     }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to observe ABS completed downloads")
+            }
+        }
+    }
+
+    private fun observeLocalLibraryRoots() {
+        viewModelScope.launch {
+            try {
+                localLibraryRootBootstrapper.ensureDefaultRoot()
+                localLibraryRootStore
+                    .rootsFlow()
+                    .catch { e -> Timber.e(e, "Error observing local library roots") }
+                    .collect { roots ->
+                        _uiState.value =
+                            _uiState.value.copy(localLibraryRoots = roots.sortedBy { it.priority })
+                    }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to observe local library roots")
             }
         }
     }
@@ -511,6 +623,7 @@ data class DownloadsUiState(
     val imageCacheStorageUsed: Long = 0L,
     val downloadedImageStorageUsed: Long = 0L,
     val storageLocations: List<DownloadStorageLocation> = emptyList(),
+    val localLibraryRoots: List<LocalLibraryRootRecord> = emptyList(),
     val deviceStorageStats: DownloadsViewModel.DeviceStorageStats? = null,
     val artworkRefresh: ArtworkRefreshUiState = ArtworkRefreshUiState(),
     val error: String? = null,

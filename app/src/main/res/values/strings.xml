@@ -484,6 +484,17 @@
     <string name="download_location_free_fmt">%1$s free</string>
     <string name="download_location_choose_folder">Choose folder</string>
     <string name="download_location_custom_permission">System folder permission granted</string>
+    <string name="local_library_roots_title">Local library folders</string>
+    <string name="local_library_roots_summary">Folders scanned for existing video files and new downloads</string>
+    <string name="local_library_add_folder">Add folder</string>
+    <string name="local_library_rescan">Rescan</string>
+    <string name="local_library_make_default">Default</string>
+    <string name="local_library_remove">Remove</string>
+    <string name="local_library_default_fmt">%1$s, default for downloads</string>
+    <string name="local_library_kind_private">Private app storage</string>
+    <string name="local_library_kind_device">Device storage</string>
+    <string name="local_library_kind_secondary">Secondary storage</string>
+    <string name="local_library_kind_folder">Folder permission</string>
     <string name="download_quality_mode_title">Video download mode</string>
     <string name="download_quality_mode_summary">Controls how new Jellyfin video downloads are saved</string>
     <string name="download_quality_original_title">Original file</string>

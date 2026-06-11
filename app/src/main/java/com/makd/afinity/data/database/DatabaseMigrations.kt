@@ -1059,6 +1059,182 @@ object DatabaseMigrations {
             }
         }
 
+    val MIGRATION_43_44 =
+        object : Migration(43, 44) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_library_root_snapshots (
+                        registryId TEXT NOT NULL PRIMARY KEY,
+                        stableRootId TEXT,
+                        enabled INTEGER NOT NULL,
+                        available INTEGER NOT NULL,
+                        writable INTEGER NOT NULL,
+                        defaultForDownloads INTEGER NOT NULL,
+                        priority INTEGER NOT NULL,
+                        lastScanStartedAt INTEGER,
+                        lastScanCompletedAt INTEGER,
+                        lastScanStatus TEXT,
+                        lastError TEXT
+                    )
+                    """
+                        .trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_library_items (
+                        localItemId TEXT NOT NULL PRIMARY KEY,
+                        durableKey TEXT NOT NULL,
+                        mediaKind TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        showName TEXT,
+                        year INTEGER,
+                        seasonNumber INTEGER,
+                        episodeNumber INTEGER,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """
+                        .trimIndent()
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_local_library_items_durableKey ON local_library_items(durableKey)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_local_library_items_mediaKind ON local_library_items(mediaKind)"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_media_files (
+                        mediaFileId TEXT NOT NULL PRIMARY KEY,
+                        localItemId TEXT NOT NULL,
+                        durableKey TEXT NOT NULL,
+                        rootRegistryId TEXT NOT NULL,
+                        stableRootId TEXT,
+                        relativePath TEXT NOT NULL,
+                        sidecarRelativePath TEXT,
+                        ownerUserId TEXT,
+                        mediaKind TEXT NOT NULL,
+                        sizeBytes INTEGER NOT NULL,
+                        modifiedAt INTEGER NOT NULL,
+                        container TEXT,
+                        runtimeTicks INTEGER,
+                        state TEXT NOT NULL,
+                        visibleByDefault INTEGER NOT NULL,
+                        titleName TEXT NOT NULL,
+                        titleShowName TEXT,
+                        titleYear INTEGER,
+                        titleSeasonNumber INTEGER,
+                        titleEpisodeNumber INTEGER
+                    )
+                    """
+                        .trimIndent()
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_local_media_files_rootRegistryId_relativePath ON local_media_files(rootRegistryId, relativePath)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_local_media_files_localItemId ON local_media_files(localItemId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_local_media_files_durableKey ON local_media_files(durableKey)"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_media_identities (
+                        localItemId TEXT NOT NULL PRIMARY KEY,
+                        durableKey TEXT NOT NULL,
+                        serverId TEXT,
+                        jellyfinItemId TEXT,
+                        jellyfinSourceId TEXT,
+                        providerIdsJson TEXT NOT NULL,
+                        stableRootId TEXT,
+                        fingerprintStrategy TEXT NOT NULL,
+                        fingerprintValue TEXT NOT NULL
+                    )
+                    """
+                        .trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_local_media_identities_durableKey ON local_media_identities(durableKey)"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_media_sidecars (
+                        mediaFileId TEXT NOT NULL PRIMARY KEY,
+                        sidecarRelativePath TEXT NOT NULL,
+                        parseStatus TEXT NOT NULL,
+                        lastError TEXT,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """
+                        .trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_media_user_state (
+                        localItemId TEXT NOT NULL,
+                        profileUserId TEXT NOT NULL,
+                        serverId TEXT,
+                        jellyfinUserId TEXT,
+                        jellyfinItemId TEXT,
+                        playbackPositionTicks INTEGER NOT NULL,
+                        played INTEGER NOT NULL,
+                        favorite INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        PRIMARY KEY(localItemId, profileUserId)
+                    )
+                    """
+                        .trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_media_import_jobs (
+                        jobId TEXT NOT NULL PRIMARY KEY,
+                        rootRegistryId TEXT NOT NULL,
+                        relativePath TEXT NOT NULL,
+                        mediaFileId TEXT,
+                        state TEXT NOT NULL,
+                        lastError TEXT,
+                        updatedAt INTEGER NOT NULL
+                    )
+                    """
+                        .trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_library_scan_runs (
+                        scanRunId TEXT NOT NULL PRIMARY KEY,
+                        rootRegistryId TEXT NOT NULL,
+                        startedAt INTEGER NOT NULL,
+                        completedAt INTEGER,
+                        status TEXT NOT NULL,
+                        discoveredFiles INTEGER NOT NULL,
+                        importedItems INTEGER NOT NULL,
+                        updatedItems INTEGER NOT NULL,
+                        unavailableItems INTEGER NOT NULL,
+                        duplicateGroups INTEGER NOT NULL,
+                        parseWarnings INTEGER NOT NULL,
+                        errorsJson TEXT NOT NULL
+                    )
+                    """
+                        .trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS local_media_visibility (
+                        localItemId TEXT NOT NULL,
+                        profileUserId TEXT NOT NULL,
+                        visible INTEGER NOT NULL,
+                        reason TEXT NOT NULL,
+                        updatedAt INTEGER NOT NULL,
+                        PRIMARY KEY(localItemId, profileUserId)
+                    )
+                    """
+                        .trimIndent()
+                )
+            }
+        }
+
     val ALL_MIGRATIONS =
         arrayOf(
             MIGRATION_1_2,
@@ -1103,5 +1279,6 @@ object DatabaseMigrations {
             MIGRATION_40_41,
             MIGRATION_41_42,
             MIGRATION_42_43,
+            MIGRATION_43_44,
         )
 }

@@ -98,18 +98,46 @@ constructor(
         itemId: UUID,
         sourceId: String,
         extension: String,
+        relativeMediaPath: String? = null,
     ): MediaFileTarget =
         withContext(Dispatchers.IO) {
             val selectedId = preferencesRepository.getDownloadStorageLocationId()
             val customTreeUri = preferencesRepository.getCustomDownloadTreeUri()?.let(Uri::parse)
             if (selectedId == CUSTOM_TREE_ID && customTreeUri != null) {
-                createCustomMediaFileTarget(customTreeUri, folderPath ?: itemId.toString(), sourceId, extension)
+                if (relativeMediaPath != null) {
+                    createCustomMediaFileTarget(customTreeUri, relativeMediaPath)
+                } else {
+                    createCustomMediaFileTarget(customTreeUri, folderPath ?: itemId.toString(), sourceId, extension)
+                }
             } else {
-                val itemDir = File(getSelectedDownloadsRoot(), folderPath ?: itemId.toString())
-                val mediaDir = File(itemDir, "media").also { it.mkdirs() }
-                val outputFile = File(mediaDir, "$sourceId.$extension.download")
-                val finalFile = File(mediaDir, "$sourceId.$extension")
+                val finalFile =
+                    if (relativeMediaPath != null) {
+                        File(getSelectedDownloadsRoot(), relativeMediaPath)
+                    } else {
+                        val itemDir = File(getSelectedDownloadsRoot(), folderPath ?: itemId.toString())
+                        File(File(itemDir, "media").also { it.mkdirs() }, "$sourceId.$extension")
+                    }
+                finalFile.parentFile?.mkdirs()
+                val outputFile =
+                    if (relativeMediaPath != null) {
+                        File(finalFile.parentFile, "${finalFile.name}.part")
+                    } else {
+                        File(finalFile.parentFile, "${finalFile.name}.download")
+                    }
                 MediaFileTarget.FileTarget(outputFile, finalFile)
+            }
+        }
+
+    suspend fun createMediaFileTargetForRoot(
+        rootUriOrPath: String,
+        usesSafTree: Boolean,
+        relativeMediaPath: String,
+    ): MediaFileTarget =
+        withContext(Dispatchers.IO) {
+            if (usesSafTree) {
+                createCustomMediaFileTarget(Uri.parse(rootUriOrPath), relativeMediaPath)
+            } else {
+                createFileMediaTarget(File(rootUriOrPath), relativeMediaPath)
             }
         }
 
@@ -119,26 +147,59 @@ constructor(
         directoryName: String,
         fileName: String,
         mimeType: String,
+        relativeSidecarPath: String? = null,
     ): SidecarFileTarget =
         withContext(Dispatchers.IO) {
             val customTreeUri = getCustomTreeUriForDownload(download)
             if (customTreeUri != null) {
                 var parent = rootDocumentUri(customTreeUri)
-                (download?.folderPath ?: itemId.toString())
-                    .split('/')
-                    .filter { it.isNotBlank() }
-                    .forEach { segment -> parent = findOrCreateDirectory(parent, segment) }
-                directoryName
-                    .split('/')
-                    .filter { it.isNotBlank() }
-                    .forEach { segment -> parent = findOrCreateDirectory(parent, segment) }
-                val sidecarDir = parent
-                val documentUri = findOrCreateFile(sidecarDir, fileName, mimeType)
-                SidecarFileTarget.UriTarget(context, documentUri)
+                if (relativeSidecarPath != null) {
+                    val segments = relativeSidecarPath.split('/').filter { it.isNotBlank() }
+                    segments.dropLast(1).forEach { segment ->
+                        parent = findOrCreateDirectory(parent, segment)
+                    }
+                    val documentUri =
+                        findOrCreateFile(parent, segments.lastOrNull() ?: fileName, mimeType)
+                    SidecarFileTarget.UriTarget(context, documentUri)
+                } else {
+                    (download?.folderPath ?: itemId.toString())
+                        .split('/')
+                        .filter { it.isNotBlank() }
+                        .forEach { segment -> parent = findOrCreateDirectory(parent, segment) }
+                    directoryName
+                        .split('/')
+                        .filter { it.isNotBlank() }
+                        .forEach { segment -> parent = findOrCreateDirectory(parent, segment) }
+                    val sidecarDir = parent
+                    val documentUri = findOrCreateFile(sidecarDir, fileName, mimeType)
+                    SidecarFileTarget.UriTarget(context, documentUri)
+                }
             } else {
-                val itemDir = getItemDownloadDirectory(download, itemId)
-                val sidecarDir = File(itemDir, directoryName).also { it.mkdirs() }
-                SidecarFileTarget.FileTarget(File(sidecarDir, fileName))
+                if (relativeSidecarPath != null) {
+                    val sidecarFile = File(getSelectedDownloadsRoot(), relativeSidecarPath)
+                    sidecarFile.parentFile?.mkdirs()
+                    SidecarFileTarget.FileTarget(sidecarFile)
+                } else {
+                    val itemDir = getItemDownloadDirectory(download, itemId)
+                    val sidecarDir = File(itemDir, directoryName).also { it.mkdirs() }
+                    SidecarFileTarget.FileTarget(File(sidecarDir, fileName))
+                }
+            }
+        }
+
+    suspend fun createSidecarFileTargetForRoot(
+        rootUriOrPath: String,
+        usesSafTree: Boolean,
+        relativeSidecarPath: String,
+        mimeType: String,
+    ): SidecarFileTarget =
+        withContext(Dispatchers.IO) {
+            if (usesSafTree) {
+                createCustomSidecarFileTarget(Uri.parse(rootUriOrPath), relativeSidecarPath, mimeType)
+            } else {
+                val sidecarFile = File(rootUriOrPath, relativeSidecarPath)
+                sidecarFile.parentFile?.mkdirs()
+                SidecarFileTarget.FileTarget(sidecarFile)
             }
         }
 
@@ -253,6 +314,44 @@ constructor(
             DocumentsContract.deleteDocument(context.contentResolver, existing)
         }
         return MediaFileTarget.UriTarget(context, outputUri, finalName)
+    }
+
+    private fun createCustomMediaFileTarget(
+        treeUri: Uri,
+        relativeMediaPath: String,
+    ): MediaFileTarget.UriTarget {
+        var parent = rootDocumentUri(treeUri)
+        val segments = relativeMediaPath.split('/').filter { it.isNotBlank() }
+        segments.dropLast(1).forEach { segment ->
+            parent = findOrCreateDirectory(parent, segment)
+        }
+        val finalName = segments.lastOrNull() ?: "media.mkv"
+        val outputUri = findOrCreateFile(parent, "$finalName.part", "application/octet-stream")
+        findChild(parent, finalName)?.let { existing ->
+            DocumentsContract.deleteDocument(context.contentResolver, existing)
+        }
+        return MediaFileTarget.UriTarget(context, outputUri, finalName)
+    }
+
+    private fun createFileMediaTarget(root: File, relativeMediaPath: String): MediaFileTarget.FileTarget {
+        val finalFile = File(root, relativeMediaPath)
+        finalFile.parentFile?.mkdirs()
+        val outputFile = File(finalFile.parentFile, "${finalFile.name}.part")
+        return MediaFileTarget.FileTarget(outputFile, finalFile)
+    }
+
+    private fun createCustomSidecarFileTarget(
+        treeUri: Uri,
+        relativeSidecarPath: String,
+        mimeType: String,
+    ): SidecarFileTarget.UriTarget {
+        var parent = rootDocumentUri(treeUri)
+        val segments = relativeSidecarPath.split('/').filter { it.isNotBlank() }
+        segments.dropLast(1).forEach { segment ->
+            parent = findOrCreateDirectory(parent, segment)
+        }
+        val documentUri = findOrCreateFile(parent, segments.lastOrNull() ?: "media.afinity.json", mimeType)
+        return SidecarFileTarget.UriTarget(context, documentUri)
     }
 
     private fun rootDocumentUri(treeUri: Uri): Uri =

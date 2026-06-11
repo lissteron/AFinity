@@ -6,6 +6,26 @@ import android.net.Uri
 import android.os.Build
 import android.view.WindowManager
 import com.makd.afinity.data.database.entities.DownloadDto
+import com.makd.afinity.data.local.AfinityMediaSidecar
+import com.makd.afinity.data.local.AfinitySidecarDownload
+import com.makd.afinity.data.local.AfinitySidecarIdentity
+import com.makd.afinity.data.local.AfinitySidecarLocalIdentity
+import com.makd.afinity.data.local.AfinitySidecarMediaFile
+import com.makd.afinity.data.local.AfinitySidecarServer
+import com.makd.afinity.data.local.AfinitySidecarTitles
+import com.makd.afinity.data.local.AfinitySidecarUser
+import com.makd.afinity.data.local.AfinitySidecarFingerprint
+import com.makd.afinity.data.local.LocalLibraryFileSystem
+import com.makd.afinity.data.local.LocalLibraryIndexRepository
+import com.makd.afinity.data.local.LocalLibraryPathPolicy
+import com.makd.afinity.data.local.LocalLibraryRootBootstrapper
+import com.makd.afinity.data.local.LocalLibraryRootKind
+import com.makd.afinity.data.local.LocalLibraryRootRecord
+import com.makd.afinity.data.local.LocalLibraryScanService
+import com.makd.afinity.data.local.LocalLibrarySidecarReader
+import com.makd.afinity.data.local.LocalLibraryVisibilityContext
+import com.makd.afinity.data.local.LocalMediaImportJobRecord
+import com.makd.afinity.data.local.LocalMediaImportState
 import com.makd.afinity.data.models.download.DownloadQualityMode
 import com.makd.afinity.data.models.download.DownloadStatus
 import com.makd.afinity.data.models.extensions.toAfinityEpisode
@@ -14,6 +34,7 @@ import com.makd.afinity.data.models.extensions.toAfinitySeason
 import com.makd.afinity.data.models.extensions.toAfinityShow
 import com.makd.afinity.data.models.media.AfinityEpisode
 import com.makd.afinity.data.models.media.AfinityImages
+import com.makd.afinity.data.models.media.AfinityItem
 import com.makd.afinity.data.models.media.AfinityMediaStream
 import com.makd.afinity.data.models.media.AfinityMovie
 import com.makd.afinity.data.models.media.AfinityPersonImage
@@ -65,6 +86,12 @@ constructor(
     private val preferencesRepository: PreferencesRepository,
     private val sessionRestoreResolver: SessionRestoreResolver,
     private val uidtNetworkSession: UidtNetworkSession,
+    private val localLibraryPathPolicy: LocalLibraryPathPolicy,
+    private val localLibrarySidecarReader: LocalLibrarySidecarReader,
+    private val localLibraryRootBootstrapper: LocalLibraryRootBootstrapper,
+    private val localLibraryScanService: LocalLibraryScanService,
+    private val localLibraryFileSystem: LocalLibraryFileSystem,
+    private val localLibraryIndexRepository: LocalLibraryIndexRepository,
 ) {
     companion object {
         const val BUFFER_SIZE = 8192
@@ -260,12 +287,12 @@ constructor(
             failureStage = "building download request"
             val requestPlan = buildDownloadRequestPlan(apiClient, itemId, source, qualityMode)
             failureStage = "creating media target"
+            val localLibraryRoot = localLibraryRootBootstrapper.ensureDefaultRoot()
+            val canonicalRelativeMediaPath = item.toCanonicalLocalLibraryPath(requestPlan.extension)
             val mediaTarget =
-                downloadStorageManager.createMediaFileTarget(
-                    folderPath = claimedDownload.folderPath,
-                    itemId = itemId,
-                    sourceId = sourceId,
-                    extension = requestPlan.extension,
+                localLibraryFileSystem.createMediaWriteTarget(
+                    root = localLibraryRoot,
+                    relativeMediaPath = canonicalRelativeMediaPath,
                 )
             val existingFileSize = if (requestPlan.resumable) mediaTarget.resumeSize else 0L
             val requestBuilder =
@@ -375,12 +402,25 @@ constructor(
 
             failureStage = "finalizing media target"
             val completedFile = mediaTarget.finish()
+            failureStage = "importing completed media into local library"
+            ensureCompletedMediaImportState(
+                download = claimedDownload,
+                item = item,
+                source = source,
+                baseUrl = baseUrl,
+                userId = userId,
+                relativeMediaPath = canonicalRelativeMediaPath,
+                completedPath = completedFile.path,
+                completedSize = completedFile.sizeBytes,
+                localLibraryRoot = localLibraryRoot,
+                qualityMode = qualityMode,
+            )
             val completed =
                 stateStore.completeOwned(
                     downloadId = claimedDownload.id,
                     activeClaimId = activeClaimId,
                     backendRunId = activeBackendRunId,
-                    bytes = completedFile.size,
+                    bytes = completedFile.sizeBytes,
                     filePath = completedFile.path,
                 )
             if (!completed) {
@@ -429,7 +469,7 @@ constructor(
                 sourceId = sourceId,
                 sourceName = source.name,
                 path = completedFile.path,
-                size = completedFile.size,
+                size = completedFile.sizeBytes,
                 originalStreams = source.mediaStreams,
             )
 
@@ -1565,6 +1605,271 @@ constructor(
         }
         return target
     }
+
+    private fun AfinityItem.toCanonicalLocalLibraryPath(extension: String): String =
+        when (this) {
+            is AfinityMovie ->
+                localLibraryPathPolicy.movieMediaPath(
+                    title = name,
+                    year = productionYear,
+                    extension = extension,
+                )
+
+            is AfinityEpisode ->
+                localLibraryPathPolicy.episodeMediaPath(
+                    showTitle = seriesName,
+                    seasonNumber = parentIndexNumber,
+                    episodeNumber = indexNumber,
+                    episodeTitle = name,
+                    extension = extension,
+                )
+
+            else -> localLibraryPathPolicy.movieMediaPath(name, null, extension)
+        }
+
+    private suspend fun ensureCompletedMediaImportState(
+        download: DownloadDto,
+        item: AfinityItem,
+        source: AfinitySource,
+        baseUrl: String,
+        userId: UUID,
+        relativeMediaPath: String,
+        completedPath: String,
+        completedSize: Long,
+        localLibraryRoot: LocalLibraryRootRecord,
+        qualityMode: DownloadQualityMode,
+    ) {
+        val importResult =
+            runCatching {
+                require(
+                    writeLocalLibrarySidecar(
+                        download = download,
+                        item = item,
+                        source = source,
+                        baseUrl = baseUrl,
+                        userId = userId,
+                        relativeMediaPath = relativeMediaPath,
+                        completedPath = completedPath,
+                        completedSize = completedSize,
+                        localLibraryRoot = localLibraryRoot,
+                        qualityMode = qualityMode,
+                    )
+                ) {
+                    "Failed to write local library sidecar for $relativeMediaPath"
+                }
+                val visibilityContext =
+                    LocalLibraryVisibilityContext(
+                        currentUserId = userId.toString(),
+                        kidModeEnabled = false,
+                        parentUnlocked = false,
+                    )
+                val summary = localLibraryScanService.scanRoot(localLibraryRoot, visibilityContext)
+                require(!summary.cancelled) { "Local library scan was cancelled" }
+                require(
+                    localLibraryIndexRepository.allMediaFiles().any {
+                        it.rootRegistryId == localLibraryRoot.registryId &&
+                            it.relativePath == relativeMediaPath
+                    }
+                ) {
+                    "Completed media was not imported by local library scan: $relativeMediaPath"
+                }
+            }
+        importResult.onFailure { error ->
+            localLibraryIndexRepository.recordImportJob(
+                LocalMediaImportJobRecord(
+                    jobId =
+                        UUID.nameUUIDFromBytes(
+                                "${localLibraryRoot.registryId}:$relativeMediaPath:download-import-pending"
+                                    .toByteArray()
+                            )
+                            .toString(),
+                    rootRegistryId = localLibraryRoot.registryId,
+                    relativePath = relativeMediaPath,
+                    mediaFileId = null,
+                    state = LocalMediaImportState.IMPORT_PENDING,
+                    lastError = error.message ?: "Completed media import failed",
+                    updatedAt = System.currentTimeMillis(),
+                )
+            )
+            Timber.w(error, "Completed media retained as local library import-pending")
+        }
+    }
+
+    private suspend fun writeLocalLibrarySidecar(
+        download: DownloadDto,
+        item: AfinityItem,
+        source: AfinitySource,
+        baseUrl: String,
+        userId: UUID,
+        relativeMediaPath: String,
+        completedPath: String,
+        completedSize: Long,
+        localLibraryRoot: LocalLibraryRootRecord,
+        qualityMode: DownloadQualityMode,
+    ): Boolean {
+        val mediaUri = Uri.parse(completedPath)
+        val relativeSidecarPath = localLibraryPathPolicy.sidecarPathForMedia(relativeMediaPath)
+        val completedModifiedAt =
+            if (mediaUri.scheme == "content") System.currentTimeMillis()
+            else File(completedPath).lastModified()
+        val titles =
+            when (item) {
+                is AfinityMovie ->
+                    AfinitySidecarTitles(
+                        name = item.name,
+                        year = item.productionYear,
+                    )
+
+                is AfinityEpisode ->
+                    AfinitySidecarTitles(
+                        name = item.name,
+                        showName = item.seriesName,
+                        seasonNumber = item.parentIndexNumber,
+                        episodeNumber = item.indexNumber,
+                    )
+
+                else -> AfinitySidecarTitles(name = item.name)
+            }
+        val sidecar =
+            AfinityMediaSidecar(
+                schemaVersion = 1,
+                mediaKind =
+                    when (item) {
+                        is AfinityEpisode -> "episode"
+                        else -> "movie"
+                    },
+                server =
+                    AfinitySidecarServer(
+                        serverId = download.serverId,
+                        serverName = null,
+                        baseUrlHint = sanitizeBaseUrlHint(baseUrl),
+                    ),
+                user = AfinitySidecarUser(userId = userId.toString()),
+                identity =
+                    AfinitySidecarIdentity(
+                        itemId = item.id.toString(),
+                        sourceId = source.id,
+                        providerIds = item.providerIds.orEmpty(),
+                    ),
+                localIdentity =
+                    AfinitySidecarLocalIdentity(
+                        localItemId = item.id.toString(),
+                        stableRootId = localLibraryRoot.stableRootId?.toString(),
+                        relativePathAtWrite = relativeMediaPath,
+                        fingerprint =
+                            AfinitySidecarFingerprint(
+                                strategy = "size-mtime-path-v1",
+                                value = "$completedSize:$completedModifiedAt:$relativeMediaPath",
+                            ),
+                    ),
+                titles = titles,
+                mediaFile =
+                    AfinitySidecarMediaFile(
+                        relativePath = relativeMediaPath,
+                        container = relativeMediaPath.substringAfterLast('.', ""),
+                        sizeBytes = completedSize,
+                        runtimeTicks = item.runtimeTicks,
+                        videoCodec = source.videoCodec,
+                        audioCodec = source.audioCodec,
+                        width = source.width,
+                        height = source.height,
+                    ),
+                download =
+                    AfinitySidecarDownload(
+                        qualityMode = qualityMode.displayName,
+                        downloadedAt = System.currentTimeMillis(),
+                        downloadedByAFinity = true,
+                    ),
+            )
+        val sidecarWritten =
+            localLibraryFileSystem.writeText(
+                root = localLibraryRoot,
+                relativePath = relativeSidecarPath,
+                text = localLibrarySidecarReader.encodeMediaSidecar(sidecar),
+                mimeType = "application/json",
+            )
+        if (!sidecarWritten) return false
+        if (!writeLocalLibraryNfo(localLibraryRoot, item, relativeMediaPath)) {
+            Timber.w("Failed to write optional local library NFO for $relativeMediaPath")
+        }
+        return true
+    }
+
+    private fun writeLocalLibraryNfo(
+        localLibraryRoot: LocalLibraryRootRecord,
+        item: AfinityItem,
+        relativeMediaPath: String,
+    ): Boolean {
+        return when (item) {
+            is AfinityMovie -> {
+                val nfoPath =
+                    relativeMediaPath.substringBeforeLast('/', "") + "/movie.nfo"
+                localLibraryFileSystem.writeText(
+                    root = localLibraryRoot,
+                    relativePath = nfoPath.trimStart('/'),
+                    text =
+                        """
+                        <movie>
+                          <title>${item.name.xmlEscaped()}</title>
+                          <year>${item.productionYear?.toString().orEmpty().xmlEscaped()}</year>
+                        </movie>
+                        """
+                            .trimIndent(),
+                    mimeType = "application/xml",
+                )
+            }
+
+            is AfinityEpisode -> {
+                val episodeNfoPath =
+                    relativeMediaPath.substringBeforeLast('.', relativeMediaPath) + ".nfo"
+                val episodeWritten =
+                    localLibraryFileSystem.writeText(
+                        root = localLibraryRoot,
+                        relativePath = episodeNfoPath,
+                        text =
+                            """
+                            <episodedetails>
+                              <title>${item.name.xmlEscaped()}</title>
+                              <showtitle>${item.seriesName.xmlEscaped()}</showtitle>
+                              <season>${item.parentIndexNumber}</season>
+                              <episode>${item.indexNumber}</episode>
+                            </episodedetails>
+                            """
+                                .trimIndent(),
+                        mimeType = "application/xml",
+                    )
+                val showWritten =
+                    localLibraryFileSystem.writeText(
+                        root = localLibraryRoot,
+                        relativePath = localLibraryPathPolicy.tvShowNfoPath(item.seriesName),
+                        text =
+                            """
+                            <tvshow>
+                              <title>${item.seriesName.xmlEscaped()}</title>
+                            </tvshow>
+                            """
+                                .trimIndent(),
+                        mimeType = "application/xml",
+                    )
+                episodeWritten && showWritten
+            }
+
+            else -> true
+        }
+    }
+
+    private fun sanitizeBaseUrlHint(baseUrl: String): String =
+        runCatching {
+                val url = baseUrl.toHttpUrl()
+                url.newBuilder().encodedPath("/").query(null).fragment(null).build().toString().trimEnd('/')
+            }
+            .getOrDefault(baseUrl.substringBefore('?').trimEnd('/'))
+
+    private fun String.xmlEscaped(): String =
+        replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    private fun LocalLibraryRootRecord.usesSafTree(): Boolean =
+        kind == LocalLibraryRootKind.SAF_TREE || Uri.parse(uriOrPath).scheme == "content"
 
     private suspend fun createLocalSource(
         downloadId: UUID,

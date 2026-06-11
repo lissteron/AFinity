@@ -28,6 +28,11 @@ import androidx.media3.ui.PlayerView
 import com.makd.afinity.R
 import com.makd.afinity.cast.CastEvent
 import com.makd.afinity.cast.CastManager
+import com.makd.afinity.data.local.LocalLibraryVisibilityContext
+import com.makd.afinity.data.local.LocalPlaybackResolution
+import com.makd.afinity.data.local.LocalPlaybackResolutionRequest
+import com.makd.afinity.data.local.LocalPlaybackSourceRepository
+import com.makd.afinity.data.local.LocalMediaUserStateRepository
 import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.PlaybackStateManager
 import com.makd.afinity.data.models.livetv.AfinityChannel
@@ -98,6 +103,8 @@ constructor(
     private val apiClient: ApiClient,
     private val audiobookshelfPlayer: AudiobookshelfPlayer,
     private val offlineModeManager: OfflineModeManager,
+    private val localPlaybackSourceRepository: LocalPlaybackSourceRepository,
+    private val localMediaUserStateRepository: LocalMediaUserStateRepository,
     kidModeRepository: KidModeRepository,
 ) : ViewModel(), Player.Listener {
 
@@ -344,19 +351,8 @@ constructor(
                                 } ?: -1
 
                             if (source?.type == AfinitySourceType.LOCAL) {
-                                if (offlineModeManager.isCurrentlyOffline()) {
-                                    playbackRepository.reportPlaybackProgress(
-                                        itemId = item.id,
-                                        sessionId = sessionId,
-                                        positionTicks = positionTicks,
-                                        isPaused = isPaused,
-                                        audioStreamIndex = jfAudioIndex,
-                                        subtitleStreamIndex = jfSubIndex,
-                                        playMethod = "DirectPlay",
-                                        repeatMode = "RepeatNone",
-                                    )
-                                }
-                                Timber.d("Skipping remote progress report for local playback")
+                                saveLocalPlaybackProgress(source, positionTicks, played = false)
+                                Timber.d("Saved local playback progress and skipped remote progress report")
                                 return@let
                             }
 
@@ -1000,13 +996,7 @@ constructor(
                 val streamUrlDeferred =
                     async(Dispatchers.IO) {
                         if (useLocalSource) {
-                            mediaSource.path?.let { path ->
-                                if (path.startsWith("content://") || path.startsWith("file://")) {
-                                    path
-                                } else {
-                                    "file://$path"
-                                }
-                            }
+                            resolveLocalPlaybackUrl(mediaSource)
                         } else {
                             playbackRepository.getStreamUrl(
                                 itemId = fullItem.id,
@@ -1699,6 +1689,67 @@ constructor(
         playlistManager.clearQueue()
     }
 
+    private suspend fun resolveLocalPlaybackUrl(mediaSource: AfinitySource): String? {
+        val mediaFileId = runCatching { UUID.fromString(mediaSource.id) }.getOrNull()
+        if (mediaFileId != null) {
+            val capability = capabilityPolicy.value
+            val visibilityContext =
+                LocalLibraryVisibilityContext(
+                    currentUserId = preferencesRepository.getCurrentUserId(),
+                    kidModeEnabled = capability.isKidModeEnabled,
+                    parentUnlocked = capability.isParentUnlocked,
+                )
+            return when (
+                val resolution =
+                    localPlaybackSourceRepository.resolve(
+                        LocalPlaybackResolutionRequest(
+                            mediaFileId = mediaFileId,
+                            visibilityContext = visibilityContext,
+                        )
+                    )
+            ) {
+                is LocalPlaybackResolution.Resolved -> resolution.playerUri
+                is LocalPlaybackResolution.Unavailable -> {
+                    Timber.w("Local playback source unavailable: ${resolution.reason}")
+                    null
+                }
+            }
+        }
+
+        return mediaSource.path.let { path ->
+            if (path.startsWith("content://") || path.startsWith("file://")) {
+                path
+            } else {
+                "file://$path"
+            }
+        }
+    }
+
+    private fun saveLocalPlaybackProgress(
+        mediaSource: AfinitySource?,
+        positionTicks: Long,
+        played: Boolean,
+    ) {
+        if (mediaSource?.type != AfinitySourceType.LOCAL) return
+        val mediaFileId = runCatching { UUID.fromString(mediaSource.id) }.getOrNull() ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val profileUserId = preferencesRepository.getCurrentUserId()
+            if (profileUserId.isNullOrBlank()) {
+                Timber.w("Cannot save local playback progress without current user id")
+                return@launch
+            }
+            if (!localMediaUserStateRepository.savePlaybackProgress(
+                    mediaFileId = mediaFileId,
+                    profileUserId = profileUserId,
+                    positionTicks = positionTicks,
+                    played = played,
+                )
+            ) {
+                Timber.w("Local playback progress target not found for mediaFileId=$mediaFileId")
+            }
+        }
+    }
+
     /**
      * Given a list of [candidates] (sources of the next episode), returns the one that best matches
      * [reference] (the source currently playing). Matching priority:
@@ -1982,7 +2033,18 @@ constructor(
 
         if (item != null) {
             if (!_uiState.value.isPlayingIntro) {
-                playbackStateManager.notifyPlaybackStopped(item.id, finalPosition)
+                val source =
+                    item.sources.firstOrNull { it.id == _uiState.value.currentMediaSourceId }
+                        ?: item.sources.firstOrNull()
+                if (source?.type == AfinitySourceType.LOCAL) {
+                    saveLocalPlaybackProgress(
+                        mediaSource = source,
+                        positionTicks = finalPosition * 10000,
+                        played = false,
+                    )
+                } else {
+                    playbackStateManager.notifyPlaybackStopped(item.id, finalPosition)
+                }
             }
         } else {
             Timber.w("stopPlayback called but currentItem is null")
@@ -2030,7 +2092,18 @@ constructor(
                 player.currentPosition
             }
 
-        playbackStateManager.notifyPlaybackStopped(item.id, position)
+        val source =
+            item.sources.firstOrNull { it.id == _uiState.value.currentMediaSourceId }
+                ?: item.sources.firstOrNull()
+        if (source?.type == AfinitySourceType.LOCAL) {
+            saveLocalPlaybackProgress(
+                mediaSource = source,
+                positionTicks = position * 10000,
+                played = isEnded && player.duration > 0,
+            )
+        } else {
+            playbackStateManager.notifyPlaybackStopped(item.id, position)
+        }
     }
 
     override fun onCleared() {

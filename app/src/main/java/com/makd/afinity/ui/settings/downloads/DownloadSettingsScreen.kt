@@ -75,6 +75,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.makd.afinity.R
 import com.makd.afinity.data.manager.OfflineModeManager
+import com.makd.afinity.data.local.LocalLibraryRootKind
+import com.makd.afinity.data.local.LocalLibraryRootRecord
 import com.makd.afinity.data.models.audiobookshelf.AbsDownloadInfo
 import com.makd.afinity.data.models.audiobookshelf.AbsDownloadStatus
 import com.makd.afinity.data.models.download.DownloadInfo
@@ -105,6 +107,10 @@ fun DownloadSettingsScreen(
     val folderPickerLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) viewModel.setCustomDownloadStorageLocation(uri)
+        }
+    val localLibraryFolderPickerLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri != null) viewModel.addLocalLibraryFolder(uri)
         }
 
     LaunchedEffect(uiState.error) {
@@ -200,9 +206,15 @@ fun DownloadSettingsScreen(
             item {
                 DownloadStorageLocationCard(
                     locations = uiState.storageLocations,
+                    localLibraryRoots = uiState.localLibraryRoots,
                     hasActiveDownloads = uiState.activeDownloads.isNotEmpty(),
                     onLocationSelected = viewModel::setDownloadStorageLocation,
                     onChooseFolder = { folderPickerLauncher.launch(null) },
+                    onAddLocalLibraryFolder = { localLibraryFolderPickerLauncher.launch(null) },
+                    onRootEnabledChanged = viewModel::setLocalLibraryRootEnabled,
+                    onSetDefaultRoot = viewModel::setDefaultLocalLibraryRoot,
+                    onRemoveRoot = viewModel::removeLocalLibraryRoot,
+                    onRescanLocalLibrary = viewModel::rescanLocalLibraryRoots,
                     canModify = capabilityPolicy.canManageDownloads,
                     formatSize = viewModel::formatStorageSize,
                     modifier = Modifier.padding(horizontal = 16.dp),
@@ -532,9 +544,15 @@ fun StatusHub(
 @Composable
 fun DownloadStorageLocationCard(
     locations: List<DownloadStorageLocation>,
+    localLibraryRoots: List<LocalLibraryRootRecord>,
     hasActiveDownloads: Boolean,
     onLocationSelected: (String) -> Unit,
     onChooseFolder: () -> Unit,
+    onAddLocalLibraryFolder: () -> Unit,
+    onRootEnabledChanged: (UUID, Boolean) -> Unit,
+    onSetDefaultRoot: (UUID) -> Unit,
+    onRemoveRoot: (UUID) -> Unit,
+    onRescanLocalLibrary: () -> Unit,
     canModify: Boolean = true,
     formatSize: (Long) -> String,
     modifier: Modifier = Modifier,
@@ -635,6 +653,115 @@ fun DownloadStorageLocationCard(
                     },
                 )
             }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp))
+
+            ListItem(
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                headlineContent = {
+                    Text(
+                        text = stringResource(R.string.local_library_roots_title),
+                        style =
+                            MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold
+                            ),
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        text = stringResource(R.string.local_library_roots_summary),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                leadingContent = {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_folder),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                },
+                trailingContent = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(enabled = canModify, onClick = onRescanLocalLibrary) {
+                            Text(stringResource(R.string.local_library_rescan))
+                        }
+                        TextButton(enabled = canModify, onClick = onAddLocalLibraryFolder) {
+                            Text(stringResource(R.string.local_library_add_folder))
+                        }
+                    }
+                },
+            )
+
+            localLibraryRoots.forEach { root ->
+                ListItem(
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    leadingContent = {
+                        Switch(
+                            checked = root.enabled,
+                            enabled = canModify,
+                            onCheckedChange = { enabled ->
+                                onRootEnabledChanged(root.registryId, enabled)
+                            },
+                            modifier = Modifier.scale(0.8f),
+                        )
+                    },
+                    headlineContent = {
+                        Text(
+                            text = root.displayName,
+                            style =
+                                MaterialTheme.typography.bodyLarge.copy(
+                                    fontWeight = FontWeight.Bold
+                                ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                    supportingContent = {
+                        Column {
+                            Text(
+                                text = localLibraryRootStatusLabel(root),
+                                style = MaterialTheme.typography.bodySmall,
+                                color =
+                                    if (root.defaultForDownloads) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                            )
+                            Text(
+                                text = root.uriOrPath,
+                                style =
+                                    MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = FontFamily.Monospace
+                                    ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    },
+                    trailingContent = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (!root.defaultForDownloads && root.enabled && root.writable) {
+                                TextButton(
+                                    enabled = canModify,
+                                    onClick = { onSetDefaultRoot(root.registryId) },
+                                ) {
+                                    Text(stringResource(R.string.local_library_make_default))
+                                }
+                            }
+                            if (localLibraryRoots.size > 1) {
+                                TextButton(
+                                    enabled = canModify,
+                                    onClick = { onRemoveRoot(root.registryId) },
+                                ) {
+                                    Text(stringResource(R.string.local_library_remove))
+                                }
+                            }
+                        }
+                    },
+                )
+            }
         }
     }
 }
@@ -648,6 +775,24 @@ private fun locationStorageLabel(
         stringResource(R.string.download_location_custom_permission)
     } else {
         stringResource(R.string.download_location_free_fmt, formatSize(location.freeBytes))
+}
+
+@Composable
+private fun localLibraryRootStatusLabel(root: LocalLibraryRootRecord): String {
+    val kind =
+        when (root.kind) {
+            LocalLibraryRootKind.APP_PRIVATE -> stringResource(R.string.local_library_kind_private)
+            LocalLibraryRootKind.DEVICE_SHARED -> stringResource(R.string.local_library_kind_device)
+            LocalLibraryRootKind.SECONDARY_FILE_PATH ->
+                stringResource(R.string.local_library_kind_secondary)
+
+            LocalLibraryRootKind.SAF_TREE -> stringResource(R.string.local_library_kind_folder)
+        }
+    return if (root.defaultForDownloads) {
+        stringResource(R.string.local_library_default_fmt, kind)
+    } else {
+        kind
+    }
 }
 
 @Composable
@@ -798,7 +943,7 @@ fun ActiveDownloadCard(
                     }
 
                 Text(
-                    text = subtitle ?: download.sourceName,
+                    text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,

@@ -10,6 +10,7 @@ import com.makd.afinity.data.database.dao.GenreCacheDao
 import com.makd.afinity.data.database.dao.ItemMetadataCacheDao
 import com.makd.afinity.data.database.dao.JellyfinStatsDao
 import com.makd.afinity.data.database.dao.LibraryCacheDao
+import com.makd.afinity.data.database.dao.LocalLibraryDao
 import com.makd.afinity.data.database.dao.MediaStreamDao
 import com.makd.afinity.data.database.dao.MovieDao
 import com.makd.afinity.data.database.dao.MovieSectionDao
@@ -145,5 +146,10 @@ object DatabaseModule {
     @Provides
     fun provideMovieSectionDao(database: AfinityDatabase): MovieSectionDao {
         return database.movieSectionDao()
+    }
+
+    @Provides
+    fun provideLocalLibraryDao(database: AfinityDatabase): LocalLibraryDao {
+        return database.localLibraryDao()
     }
 }

@@ -1,6 +1,7 @@
 package com.makd.afinity.data.repository.download
 
 import com.makd.afinity.data.database.entities.DownloadDto
+import com.makd.afinity.data.local.LocalLibraryDeletionPolicy
 import com.makd.afinity.data.database.entities.toDownloadInfo
 import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
@@ -47,6 +48,7 @@ constructor(
     private val downloadStorageManager: DownloadStorageManager,
     private val offlineModeManager: OfflineModeManager,
     private val downloadedArtworkRefresher: DownloadedArtworkRefresher,
+    private val localLibraryDeletionPolicy: LocalLibraryDeletionPolicy,
 ) : DownloadRepository {
 
     companion object {
@@ -295,35 +297,16 @@ constructor(
             return@withContext try {
                 val download = databaseRepository.getDownload(downloadId)
                 if (download != null) {
-                    if (download.status == DownloadStatus.DOWNLOADING) {
+                    val decision = localLibraryDeletionPolicy.cancelDownload(download)
+                    if (decision.cancelActiveTransfer) {
                         downloadQueueScheduler.cancelQueue()
                     }
-                    databaseRepository.deleteDownload(downloadId)
-
-                    download.filePath?.takeIf(downloadStorageManager::isContentUri)?.let {
-                        downloadStorageManager.deleteDocumentUri(it)
+                    if (decision.deleteQueueRow) {
+                        databaseRepository.deleteDownload(downloadId)
                     }
-
-                    val itemDir =
-                        downloadStorageManager.getItemDownloadDirectory(download, download.itemId)
-                    val mediaDir = File(itemDir, "media")
-                    if (mediaDir.exists()) {
-                        mediaDir
-                            .listFiles { _, name -> name.startsWith(download.sourceId) }
-                            ?.forEach { file ->
-                                Timber.d("Deleting download file: ${file.name}")
-                                file.delete()
-                            }
-                    }
-                    if (
-                        itemDir.exists() &&
-                            (itemDir.listFiles()?.isEmpty() == true ||
-                                itemDir.listFiles()?.all {
-                                    it.name == "media" && it.listFiles()?.isEmpty() == true
-                                } == true)
-                    ) {
-                        itemDir.deleteRecursively()
-                    }
+                    Timber.d(
+                        "Cancelled download ${download.id}; physical media deletion is not part of ${decision.action}"
+                    )
                 }
                 scheduleQueue(DownloadQueueScheduleTrigger.USER_ACTION)
 
@@ -341,27 +324,17 @@ constructor(
                     databaseRepository.getDownload(downloadId)
                         ?: return@withContext Result.failure(Exception("Download not found"))
 
-                if (download.status == DownloadStatus.DOWNLOADING) {
+                val decision = localLibraryDeletionPolicy.removeDownloadHistory(download)
+                if (decision.cancelActiveTransfer) {
                     downloadQueueScheduler.cancelQueue()
                 }
 
-                val itemFolder =
-                    downloadStorageManager.getItemDownloadDirectory(download, download.itemId)
-
-                databaseRepository.deleteDownload(downloadId)
-
-                download.filePath?.takeIf(downloadStorageManager::isContentUri)?.let {
-                    downloadStorageManager.deleteDocumentUri(it)
+                if (decision.deleteQueueRow) {
+                    databaseRepository.deleteDownload(downloadId)
                 }
-
-                if (itemFolder.exists()) {
-                    itemFolder.deleteRecursively()
-                }
-
-                val sources = databaseRepository.getSources(download.itemId)
-                sources
-                    .filter { it.type == AfinitySourceType.LOCAL }
-                    .forEach { databaseRepository.deleteSource(it.id) }
+                Timber.d(
+                    "Removed download history ${download.id}; physical media deletion is not part of ${decision.action}"
+                )
                 scheduleQueue(DownloadQueueScheduleTrigger.USER_ACTION)
 
                 Result.success(Unit)

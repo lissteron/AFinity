@@ -12,6 +12,7 @@ import com.makd.afinity.data.database.dao.ItemMetadataCacheDao
 import com.makd.afinity.data.database.dao.JellyfinStatsDao
 import com.makd.afinity.data.database.dao.JellyseerrDao
 import com.makd.afinity.data.database.dao.LibraryCacheDao
+import com.makd.afinity.data.database.dao.LocalLibraryDao
 import com.makd.afinity.data.database.dao.MediaStreamDao
 import com.makd.afinity.data.database.dao.MovieDao
 import com.makd.afinity.data.database.dao.MovieSectionDao
@@ -52,6 +53,15 @@ import com.makd.afinity.data.database.entities.JellyseerrAddressEntity
 import com.makd.afinity.data.database.entities.JellyseerrConfigEntity
 import com.makd.afinity.data.database.entities.JellyseerrRequestEntity
 import com.makd.afinity.data.database.entities.LibraryCacheEntity
+import com.makd.afinity.data.database.entities.LocalLibraryItemEntity
+import com.makd.afinity.data.database.entities.LocalLibraryRootSnapshotEntity
+import com.makd.afinity.data.database.entities.LocalLibraryScanRunEntity
+import com.makd.afinity.data.database.entities.LocalMediaFileEntity
+import com.makd.afinity.data.database.entities.LocalMediaIdentityEntity
+import com.makd.afinity.data.database.entities.LocalMediaImportJobEntity
+import com.makd.afinity.data.database.entities.LocalMediaSidecarEntity
+import com.makd.afinity.data.database.entities.LocalMediaUserStateEntity
+import com.makd.afinity.data.database.entities.LocalMediaVisibilityEntity
 import com.makd.afinity.data.database.entities.MovieSectionCacheEntity
 import com.makd.afinity.data.database.entities.PersonSectionCacheEntity
 import com.makd.afinity.data.database.entities.ShowGenreCacheEntity
@@ -100,8 +110,17 @@ import com.makd.afinity.data.models.user.User
             AudiobookshelfAddressEntity::class,
             JellyfinStatsCacheEntity::class,
             AbsDownloadEntity::class,
+            LocalLibraryRootSnapshotEntity::class,
+            LocalLibraryItemEntity::class,
+            LocalMediaFileEntity::class,
+            LocalMediaIdentityEntity::class,
+            LocalMediaSidecarEntity::class,
+            LocalMediaUserStateEntity::class,
+            LocalMediaImportJobEntity::class,
+            LocalLibraryScanRunEntity::class,
+            LocalMediaVisibilityEntity::class,
         ],
-    version = 43,
+    version = 44,
     exportSchema = false,
 )
 @TypeConverters(AfinityTypeConverters::class)
@@ -152,4 +171,6 @@ abstract class AfinityDatabase : RoomDatabase() {
     abstract fun jellyfinStatsDao(): JellyfinStatsDao
 
     abstract fun absDownloadDao(): AbsDownloadDao
+
+    abstract fun localLibraryDao(): LocalLibraryDao
 }

@@ -13,6 +13,9 @@ import androidx.work.WorkManager
 import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.PlaybackEvent
 import com.makd.afinity.data.manager.PlaybackStateManager
+import com.makd.afinity.data.local.LocalLibraryMediaRepository
+import com.makd.afinity.data.local.LocalLibraryScanService
+import com.makd.afinity.data.local.LocalLibraryVisibilityContext
 import com.makd.afinity.data.models.GenreItem
 import com.makd.afinity.data.models.GenreType
 import com.makd.afinity.data.models.MovieSection
@@ -93,6 +96,8 @@ constructor(
     private val preferencesRepository: PreferencesRepository,
     private val networkMonitor: NetworkConnectivityMonitor,
     private val kidModeRepository: KidModeRepository,
+    private val localLibraryScanService: LocalLibraryScanService,
+    private val localLibraryMediaRepository: LocalLibraryMediaRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -935,20 +940,50 @@ constructor(
 
             Timber.d("Loading downloaded content for user: $userId")
 
+            val capability = kidModeRepository.policy.value
+            val localLibraryContent =
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                            val visibilityContext =
+                                LocalLibraryVisibilityContext(
+                                    currentUserId = userId.toString(),
+                                    kidModeEnabled = capability.isKidModeEnabled,
+                                    parentUnlocked = capability.isParentUnlocked,
+                                )
+                            localLibraryScanService.scanEnabledRoots(visibilityContext)
+                            localLibraryMediaRepository.getVisibleMovies(
+                                profileUserId = userId.toString(),
+                                visibilityContext = visibilityContext,
+                            ) to
+                                localLibraryMediaRepository.getVisibleShows(
+                                    profileUserId = userId.toString(),
+                                    visibilityContext = visibilityContext,
+                                )
+                        }
+                        .onFailure { Timber.w(it, "Failed to load local library content") }
+                        .getOrDefault(emptyList<AfinityMovie>() to emptyList<AfinityShow>())
+                }
+            val localLibraryMovies = localLibraryContent.first
+            val localLibraryShows = localLibraryContent.second
+
             val completedDownloads = downloadRepository.getCompletedDownloadsFlow().first()
             val downloadedItemIds = completedDownloads.map { it.itemId }.toSet()
 
-            val downloadedMovies =
+            val downloadedMoviesFromCache =
                 databaseRepository.getAllMovies(userId).filter { movie ->
                     movie.id in downloadedItemIds
                 }
 
             val allShows = databaseRepository.getAllShows(userId)
-            val downloadedShows = allShows.filter { show ->
+            val downloadedShowsFromCache = allShows.filter { show ->
                 show.seasons.any { season ->
                     season.episodes.any { episode -> episode.id in downloadedItemIds }
                 }
             }
+            val downloadedMovies =
+                (localLibraryMovies + downloadedMoviesFromCache).distinctBy { it.id }
+            val downloadedShows =
+                (localLibraryShows + downloadedShowsFromCache).distinctBy { it.id }
 
             Timber.d(
                 "Found ${downloadedMovies.size} movies and ${downloadedShows.size} shows with downloads"
