@@ -1,6 +1,7 @@
 package com.makd.afinity.data.local
 
 import java.util.UUID
+import kotlinx.serialization.Serializable
 
 enum class LocalLibraryRootKind {
     APP_PRIVATE,
@@ -95,6 +96,22 @@ data class LocalLibraryTitle(
     val episodeNumber: Int? = null,
 )
 
+@Serializable
+data class LocalMediaArtwork(
+    val primaryUri: String? = null,
+    val backdropUri: String? = null,
+    val thumbUri: String? = null,
+    val logoUri: String? = null,
+    val seasonPrimaryUri: String? = null,
+    val seasonBackdropUri: String? = null,
+    val seasonThumbUri: String? = null,
+    val seasonLogoUri: String? = null,
+    val showPrimaryUri: String? = null,
+    val showBackdropUri: String? = null,
+    val showThumbUri: String? = null,
+    val showLogoUri: String? = null,
+)
+
 data class LocalMediaFileRecord(
     val mediaFileId: UUID,
     val rootRegistryId: UUID,
@@ -111,6 +128,7 @@ data class LocalMediaFileRecord(
     val runtimeTicks: Long?,
     val state: LocalMediaImportState = LocalMediaImportState.IMPORTED,
     val visibleByDefault: Boolean = true,
+    val artwork: LocalMediaArtwork = LocalMediaArtwork(),
 )
 
 data class LocalLibraryScanSummary(

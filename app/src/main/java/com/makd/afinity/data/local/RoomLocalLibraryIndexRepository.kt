@@ -191,6 +191,7 @@ constructor(private val dao: LocalLibraryDao) : LocalLibraryIndexRepository {
             titleYear = title.year,
             titleSeasonNumber = title.seasonNumber,
             titleEpisodeNumber = title.episodeNumber,
+            artworkJson = json.encodeToString(artwork),
         )
 
     private fun LocalMediaFileRecord.toSidecarEntity(): LocalMediaSidecarEntity? {
@@ -285,6 +286,9 @@ constructor(private val dao: LocalLibraryDao) : LocalLibraryIndexRepository {
             runtimeTicks = runtimeTicks,
             state = LocalMediaImportState.valueOf(state),
             visibleByDefault = visibleByDefault,
+            artwork =
+                runCatching { json.decodeFromString<LocalMediaArtwork>(artworkJson) }
+                    .getOrDefault(LocalMediaArtwork()),
         )
     }
 }

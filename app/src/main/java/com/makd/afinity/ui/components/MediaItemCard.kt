@@ -38,7 +38,10 @@ import com.makd.afinity.data.models.extensions.backdropBlurHash
 import com.makd.afinity.data.models.extensions.backdropImageUrl
 import com.makd.afinity.data.models.extensions.primaryBlurHash
 import com.makd.afinity.data.models.extensions.primaryImageUrl
+import com.makd.afinity.data.models.extensions.thumbBlurHash
+import com.makd.afinity.data.models.extensions.thumbImageUrl
 import com.makd.afinity.data.models.media.AfinityBoxSet
+import com.makd.afinity.data.models.media.AfinityEpisode
 import com.makd.afinity.data.models.media.AfinityItem
 import com.makd.afinity.data.models.media.AfinityMovie
 import com.makd.afinity.data.models.media.AfinitySeason
@@ -65,10 +68,12 @@ fun MediaItemCard(
             elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
+                val imageUrl = item.cardImageUrl()
+                val blurHash = item.cardBlurHash()
                 AsyncImage(
-                    imageUrl = item.images.primaryImageUrl ?: item.images.backdropImageUrl,
+                    imageUrl = imageUrl,
                     contentDescription = item.name,
-                    blurHash = item.images.primaryBlurHash ?: item.images.backdropBlurHash,
+                    blurHash = blurHash,
                     targetWidth = cardWidth,
                     targetHeight = cardWidth * 3f / 2f,
                     contentScale = ContentScale.Crop,
@@ -276,3 +281,21 @@ fun MediaItemCard(
         }
     }
 }
+
+private fun AfinityItem.cardImageUrl(): String? =
+    if (this is AfinityEpisode) {
+        images.primaryImageUrl
+            ?: images.thumbImageUrl
+            ?: images.backdropImageUrl
+    } else {
+        images.primaryImageUrl ?: images.backdropImageUrl
+    }
+
+private fun AfinityItem.cardBlurHash(): String? =
+    if (this is AfinityEpisode) {
+        images.primaryBlurHash
+            ?: images.thumbBlurHash
+            ?: images.backdropBlurHash
+    } else {
+        images.primaryBlurHash ?: images.backdropBlurHash
+    }

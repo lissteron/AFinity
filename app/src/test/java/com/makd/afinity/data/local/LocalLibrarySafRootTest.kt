@@ -108,6 +108,13 @@ class LocalLibrarySafRootTest {
             mimeType: String,
         ): Boolean = false
 
+        override fun writeBytes(
+            root: LocalLibraryRootRecord,
+            relativePath: String,
+            bytes: ByteArray,
+            mimeType: String,
+        ): Boolean = false
+
         override fun exists(
             root: LocalLibraryRootRecord,
             relativePath: String,
@@ -122,6 +129,11 @@ class LocalLibrarySafRootTest {
             root: LocalLibraryRootRecord,
             relativePath: String,
         ): String = "${root.uriOrPath}/$relativePath"
+
+        override fun assetUri(
+            root: LocalLibraryRootRecord,
+            relativePath: String,
+        ): String? = "${root.uriOrPath}/$relativePath".takeIf { files.containsKey(relativePath) }
 
         override fun delete(
             root: LocalLibraryRootRecord,

@@ -57,6 +57,13 @@ configure<ApplicationExtension> {
                 "proguard-rules.pro",
             )
         }
+        create("releaseDebuggable") {
+            initWith(getByName("release"))
+            isDebuggable = true
+            signingConfig = signingConfigs.getByName("debug")
+            buildConfigField("boolean", "DEBUG", "true")
+            matchingFallbacks += listOf("release")
+        }
         create("diagnostic") {
             initWith(getByName("release"))
             isDebuggable = true

@@ -44,11 +44,20 @@ interface LocalLibraryFileSystem {
         mimeType: String = "text/plain",
     ): Boolean
 
+    fun writeBytes(
+        root: LocalLibraryRootRecord,
+        relativePath: String,
+        bytes: ByteArray,
+        mimeType: String = "application/octet-stream",
+    ): Boolean
+
     fun exists(root: LocalLibraryRootRecord, relativePath: String): Boolean
 
     fun isReadable(root: LocalLibraryRootRecord, relativePath: String): Boolean
 
     fun playerUri(root: LocalLibraryRootRecord, relativePath: String): String
+
+    fun assetUri(root: LocalLibraryRootRecord, relativePath: String): String?
 
     fun delete(root: LocalLibraryRootRecord, relativePath: String): Boolean
 
@@ -77,6 +86,13 @@ constructor(private val context: Context) : LocalLibraryFileSystem {
         mimeType: String,
     ): Boolean = root.delegate().writeText(root, relativePath, text, mimeType)
 
+    override fun writeBytes(
+        root: LocalLibraryRootRecord,
+        relativePath: String,
+        bytes: ByteArray,
+        mimeType: String,
+    ): Boolean = root.delegate().writeBytes(root, relativePath, bytes, mimeType)
+
     override fun exists(root: LocalLibraryRootRecord, relativePath: String): Boolean =
         root.delegate().exists(root, relativePath)
 
@@ -85,6 +101,9 @@ constructor(private val context: Context) : LocalLibraryFileSystem {
 
     override fun playerUri(root: LocalLibraryRootRecord, relativePath: String): String =
         root.delegate().playerUri(root, relativePath)
+
+    override fun assetUri(root: LocalLibraryRootRecord, relativePath: String): String? =
+        root.delegate().assetUri(root, relativePath)
 
     override fun delete(root: LocalLibraryRootRecord, relativePath: String): Boolean =
         root.delegate().delete(root, relativePath)
@@ -136,6 +155,30 @@ class FilePathLibraryFileSystem : LocalLibraryFileSystem {
             }
             .getOrDefault(false)
 
+    override fun writeBytes(
+        root: LocalLibraryRootRecord,
+        relativePath: String,
+        bytes: ByteArray,
+        mimeType: String,
+    ): Boolean =
+        runCatching {
+                val file = root.resolve(relativePath)
+                file.parentFile?.mkdirs()
+                val tempFile = File(file.parentFile, "${file.name}.refresh")
+                tempFile.writeBytes(bytes)
+                if (tempFile.length() != bytes.size.toLong()) {
+                    tempFile.delete()
+                    return@runCatching false
+                }
+                if (file.exists()) file.delete()
+                if (!tempFile.renameTo(file)) {
+                    tempFile.copyTo(file, overwrite = true)
+                    tempFile.delete()
+                }
+                true
+            }
+            .getOrDefault(false)
+
     override fun exists(root: LocalLibraryRootRecord, relativePath: String): Boolean =
         root.resolve(relativePath).exists()
 
@@ -144,6 +187,9 @@ class FilePathLibraryFileSystem : LocalLibraryFileSystem {
 
     override fun playerUri(root: LocalLibraryRootRecord, relativePath: String): String =
         root.resolve(relativePath).absolutePath
+
+    override fun assetUri(root: LocalLibraryRootRecord, relativePath: String): String? =
+        root.resolve(relativePath).takeIf { it.exists() && it.isFile }?.toPath()?.toUri()?.toASCIIString()
 
     override fun delete(root: LocalLibraryRootRecord, relativePath: String): Boolean {
         val file = root.resolve(relativePath)
@@ -266,6 +312,21 @@ class SafTreeLibraryFileSystem(private val context: Context) : LocalLibraryFileS
             .getOrDefault(false)
     }
 
+    override fun writeBytes(
+        root: LocalLibraryRootRecord,
+        relativePath: String,
+        bytes: ByteArray,
+        mimeType: String,
+    ): Boolean {
+        val documentUri = resolveOrCreateDocument(root, relativePath, mimeType) ?: return false
+        return runCatching {
+                context.contentResolver.openOutputStream(documentUri, "w")?.use { output ->
+                    output.write(bytes)
+                } != null
+            }
+            .getOrDefault(false)
+    }
+
     override fun exists(root: LocalLibraryRootRecord, relativePath: String): Boolean =
         resolveDocument(root, relativePath, requireDirectory = null) != null
 
@@ -275,6 +336,9 @@ class SafTreeLibraryFileSystem(private val context: Context) : LocalLibraryFileS
     override fun playerUri(root: LocalLibraryRootRecord, relativePath: String): String =
         resolveDocument(root, relativePath, requireDirectory = false)?.uri?.toString()
             ?: root.uriOrPath
+
+    override fun assetUri(root: LocalLibraryRootRecord, relativePath: String): String? =
+        resolveDocument(root, relativePath, requireDirectory = false)?.uri?.toString()
 
     override fun delete(root: LocalLibraryRootRecord, relativePath: String): Boolean {
         val documentUri = resolveDocument(root, relativePath, requireDirectory = false)?.uri ?: return true

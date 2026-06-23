@@ -1,5 +1,6 @@
 package com.makd.afinity.data.local
 
+import android.net.Uri
 import com.makd.afinity.data.models.media.AfinityChapter
 import com.makd.afinity.data.models.media.AfinityEpisode
 import com.makd.afinity.data.models.media.AfinityItem
@@ -11,6 +12,7 @@ import com.makd.afinity.data.models.media.AfinityShow
 import com.makd.afinity.data.models.media.AfinitySource
 import com.makd.afinity.data.models.media.AfinitySourceType
 import com.makd.afinity.data.models.media.offlinePlaybackEpisode
+import java.io.File
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -35,6 +37,14 @@ constructor(
         NoopLocalMediaVisibilityRepository,
 ) {
     fun catalogGenerationFlow(): Flow<String> = indexRepository.catalogGenerationFlow()
+
+    suspend fun hasIndexedMediaMissingArtwork(): Boolean =
+        withContext(Dispatchers.IO) {
+            indexRepository.allMediaFiles().any { file -> file.hasMissingRequiredArtwork() }
+        }
+
+    suspend fun hasIndexedMedia(): Boolean =
+        withContext(Dispatchers.IO) { indexRepository.allMediaFiles().isNotEmpty() }
 
     suspend fun getVisibleMovies(
         profileUserId: String? = null,
@@ -180,15 +190,59 @@ constructor(
                 states[identity.localItemId],
             )
 
-    private fun LocalMediaFileRecord.toVisibleEpisodeOrNull(
+    private fun List<LocalMediaFileRecord>.toVisibleEpisodeEntries(
         rootsById: Map<UUID, LocalLibraryRootRecord>,
         states: Map<String, LocalMediaUserStateRecord>,
-    ): AfinityEpisode? =
-        takeIf { it.mediaKind == LocalMediaKind.EPISODE }
-            ?.toEpisode(
-                rootsById[rootRegistryId]?.takeIf { root -> root.isVisibleRoot() },
-                states[identity.localItemId],
-            )
+    ): List<LocalEpisodeCatalogEntry> {
+        val candidates =
+            mapNotNull { file ->
+                if (file.mediaKind != LocalMediaKind.EPISODE) return@mapNotNull null
+                val root =
+                    rootsById[file.rootRegistryId]?.takeIf { root -> root.isVisibleRoot() }
+                        ?: return@mapNotNull null
+                val showName = file.title.showName ?: return@mapNotNull null
+                val seasonNumber = file.title.seasonNumber ?: 0
+                LocalEpisodeCandidate(
+                    file = file,
+                    root = root,
+                    state = states[file.identity.localItemId],
+                    seasonNumber = seasonNumber,
+                    localSeriesKey = file.localSeriesIdentityKey(showName),
+                )
+            }
+
+        return candidates
+            .groupBy { it.localSeriesKey }
+            .values
+            .flatMap { seriesCandidates ->
+                val localSeriesKey = seriesCandidates.first().localSeriesKey
+                val seriesId =
+                    seriesCandidates.canonicalUuidOrLocal(
+                        selector = { it.file.identity.jellyfinSeriesId },
+                        fallbackKey = "local-show:$localSeriesKey",
+                    )
+                val seasonIdsByNumber =
+                    seriesCandidates
+                        .groupBy { it.seasonNumber }
+                        .mapValues { (seasonNumber, seasonCandidates) ->
+                            seasonCandidates.canonicalUuidOrLocal(
+                                selector = { it.file.identity.jellyfinSeasonId },
+                                fallbackKey = "local-season:$localSeriesKey:$seasonNumber",
+                            )
+                        }
+
+                seriesCandidates.mapNotNull { candidate ->
+                    candidate.file.toEpisode(
+                        root = candidate.root,
+                        userState = candidate.state,
+                        seriesId = seriesId,
+                        seasonId = seasonIdsByNumber.getValue(candidate.seasonNumber),
+                    )?.let { episode ->
+                        LocalEpisodeCatalogEntry(episode = episode, artwork = candidate.file.artwork)
+                    }
+                }
+            }
+    }
 
     private suspend fun visibleSnapshot(
         profileUserId: String?,
@@ -201,11 +255,11 @@ constructor(
             indexRepository
                 .visibleMediaFiles(visibilityContext)
                 .filter { it.identity.localItemId !in hidden }
-        val episodes =
-            visibleFiles.mapNotNull { file -> file.toVisibleEpisodeOrNull(rootsById, states) }
+        val episodeEntries = visibleFiles.toVisibleEpisodeEntries(rootsById, states)
+        val episodes = episodeEntries.map { it.episode }
         val movies =
             visibleFiles.mapNotNull { file -> file.toVisibleMovieOrNull(rootsById, states) }
-        val shows = episodes.toShows()
+        val shows = episodeEntries.toShows()
         val continueWatching =
             (movies + episodes)
                 .filter { item -> item.playbackPositionTicks > 0L && !item.played }
@@ -217,16 +271,18 @@ constructor(
         )
     }
 
-    private fun List<AfinityEpisode>.toShows(): List<AfinityShow> =
+    private fun List<LocalEpisodeCatalogEntry>.toShows(): List<AfinityShow> =
         this
-            .groupBy { it.seriesId }
-            .map { (seriesId, seriesEpisodes) ->
-                val seriesName = seriesEpisodes.firstOrNull()?.seriesName ?: "Local Show"
+            .groupBy { it.episode.seriesId }
+            .map { (seriesId, seriesEntries) ->
+                val seriesName = seriesEntries.firstOrNull()?.episode?.seriesName ?: "Local Show"
                 val seasons =
-                    seriesEpisodes
-                        .groupBy { it.seasonId }
-                        .map { (_, seasonEpisodes) ->
+                    seriesEntries
+                        .groupBy { it.episode.seasonId }
+                        .map { (_, seasonEntries) ->
+                            val seasonEpisodes = seasonEntries.map { it.episode }
                             val first = seasonEpisodes.first()
+                            val seasonImages = seasonEntries.toSeasonImages()
                             AfinitySeason(
                                 id = first.seasonId,
                                 name = "Season ${first.parentIndexNumber}",
@@ -247,12 +303,13 @@ constructor(
                                 canPlay = true,
                                 canDownload = false,
                                 unplayedItemCount = seasonEpisodes.count { !it.played },
-                                images = AfinityImages(),
+                                images = seasonImages,
                                 providerIds = null,
                                 externalUrls = null,
                             )
                         }
                         .sortedBy { it.indexNumber }
+                val showImages = seriesEntries.map { it.episode }.toShowImages()
                 AfinityShow(
                     id = seriesId,
                     name = seriesName,
@@ -280,8 +337,8 @@ constructor(
                     trailer = null,
                     tagline = null,
                     seasonCount = seasons.size,
-                    episodeCount = seriesEpisodes.size,
-                    images = AfinityImages(),
+                    episodeCount = seriesEntries.size,
+                    images = showImages,
                     providerIds = null,
                     externalUrls = null,
                 )
@@ -292,6 +349,19 @@ constructor(
         val movies: List<AfinityMovie>,
         val shows: List<AfinityShow>,
         val continueWatching: List<AfinityItem>,
+    )
+
+    private data class LocalEpisodeCandidate(
+        val file: LocalMediaFileRecord,
+        val root: LocalLibraryRootRecord,
+        val state: LocalMediaUserStateRecord?,
+        val seasonNumber: Int,
+        val localSeriesKey: String,
+    )
+
+    private data class LocalEpisodeCatalogEntry(
+        val episode: AfinityEpisode,
+        val artwork: LocalMediaArtwork,
     )
 
     private fun LocalMediaFileRecord.toMovie(
@@ -324,7 +394,7 @@ constructor(
             endDate = null,
             trailer = null,
             tagline = null,
-            images = AfinityImages(),
+            images = artwork.toAfinityImages(),
             chapters = emptyList(),
             trickplayInfo = null,
             providerIds = identity.providerIds.takeIf { it.isNotEmpty() },
@@ -335,15 +405,13 @@ constructor(
     private fun LocalMediaFileRecord.toEpisode(
         root: LocalLibraryRootRecord?,
         userState: LocalMediaUserStateRecord?,
+        seriesId: UUID,
+        seasonId: UUID,
     ): AfinityEpisode? {
         root ?: return null
         val showName = title.showName ?: return null
         val seasonNumber = title.seasonNumber ?: 0
         val episodeNumber = title.episodeNumber ?: 0
-        val seriesId = localSeriesUuid(showName)
-        val seasonId =
-            identity.jellyfinSeasonId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
-                ?: UUID.nameUUIDFromBytes("local-season:$seriesId:$seasonNumber".toByteArray())
         return AfinityEpisode(
             id = itemUuid(),
             name = title.name,
@@ -368,7 +436,7 @@ constructor(
             seasonId = seasonId,
             communityRating = null,
             people = emptyList(),
-            images = AfinityImages(),
+            images = artwork.toAfinityImages(),
             chapters = emptyList(),
             trickplayInfo = null,
             providerIds = identity.providerIds.takeIf { it.isNotEmpty() },
@@ -404,10 +472,6 @@ constructor(
             ?: runCatching { UUID.fromString(identity.localItemId) }.getOrNull()
             ?: UUID.nameUUIDFromBytes(identity.localItemId.toByteArray())
 
-    private fun LocalMediaFileRecord.localSeriesUuid(showName: String): UUID =
-        identity.jellyfinSeriesId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
-            ?: UUID.nameUUIDFromBytes("local-show:${localSeriesIdentityKey(showName)}".toByteArray())
-
     private fun LocalMediaFileRecord.localSeriesIdentityKey(showName: String): String {
         val rootIdentity = stableRootId ?: rootRegistryId
         val showFolder =
@@ -425,4 +489,157 @@ constructor(
             append("show:").append(showFolder)
         }
     }
+
+    private fun <T> Collection<T>.canonicalUuidOrLocal(
+        selector: (T) -> String?,
+        fallbackKey: String,
+    ): UUID {
+        val remoteIds =
+            mapNotNull { item -> selector(item)?.toUuidOrNull() }
+                .distinct()
+        return remoteIds.singleOrNull() ?: UUID.nameUUIDFromBytes(fallbackKey.toByteArray())
+    }
+
+    private fun String.toUuidOrNull(): UUID? =
+        runCatching { UUID.fromString(this) }.getOrNull()
+
+    private fun LocalMediaArtwork.toAfinityImages(): AfinityImages =
+        AfinityImages(
+            primary = primaryUri?.toAndroidAssetUri(),
+            backdrop = backdropUri?.toAndroidAssetUri(),
+            thumb = thumbUri?.toAndroidAssetUri(),
+            logo = logoUri?.toAndroidAssetUri(),
+            showPrimary = showPrimaryUri?.toAndroidAssetUri(),
+            showBackdrop = showBackdropUri?.toAndroidAssetUri(),
+            showThumb = showThumbUri?.toAndroidAssetUri(),
+            showLogo = showLogoUri?.toAndroidAssetUri(),
+        )
+
+    private fun List<LocalEpisodeCatalogEntry>.toSeasonImages(): AfinityImages {
+        val images = map { it.episode.images }
+        return AfinityImages(
+            primary = firstArtworkUri { it.seasonPrimaryUri },
+            backdrop = firstArtworkUri { it.seasonBackdropUri },
+            thumb = firstArtworkUri { it.seasonThumbUri },
+            logo = firstArtworkUri { it.seasonLogoUri },
+            showPrimary = images.firstUri { it.showPrimary },
+            showBackdrop = images.firstUri { it.showBackdrop },
+            showThumb = images.firstUri { it.showThumb },
+            showLogo = images.firstUri { it.showLogo },
+        )
+    }
+
+    private fun List<AfinityEpisode>.toShowImages(): AfinityImages {
+        val images = map { it.images }
+        return AfinityImages(
+            primary = images.firstUri { it.showPrimary },
+            backdrop = images.firstUri { it.showBackdrop },
+            thumb = images.firstUri { it.showThumb },
+            logo = images.firstUri { it.showLogo },
+        )
+    }
+
+    private fun List<AfinityImages>.firstUri(selector: (AfinityImages) -> Uri?): Uri? =
+        firstNotNullOfOrNull(selector)
+
+    private fun List<LocalEpisodeCatalogEntry>.firstArtworkUri(
+        selector: (LocalMediaArtwork) -> String?
+    ): Uri? =
+        firstNotNullOfOrNull { entry -> selector(entry.artwork)?.toAndroidAssetUri() }
+
+    private fun LocalMediaArtwork.isEmpty(): Boolean =
+        primaryUri == null &&
+            backdropUri == null &&
+            thumbUri == null &&
+            logoUri == null &&
+            seasonPrimaryUri == null &&
+            seasonBackdropUri == null &&
+            seasonThumbUri == null &&
+            seasonLogoUri == null &&
+            showPrimaryUri == null &&
+            showBackdropUri == null &&
+            showThumbUri == null &&
+            showLogoUri == null
+
+    private fun LocalMediaFileRecord.hasMissingRequiredArtwork(): Boolean =
+        when (mediaKind) {
+            LocalMediaKind.MOVIE -> artwork.itemDisplayArtworkMissing() || artwork.hasLegacyJavaFileUri()
+            LocalMediaKind.EPISODE ->
+                artwork.hasLegacyJavaFileUri() ||
+                    !hasScopedEpisodeItemDisplayArtwork() ||
+                    artwork.seasonDisplayArtworkMissing() ||
+                    artwork.showDisplayArtworkMissing()
+        }
+
+    private fun LocalMediaArtwork.itemDisplayArtworkMissing(): Boolean =
+        primaryUri == null && thumbUri == null && backdropUri == null
+
+    private fun LocalMediaFileRecord.hasScopedEpisodeItemDisplayArtwork(): Boolean =
+        listOfNotNull(artwork.primaryUri, artwork.thumbUri, artwork.backdropUri)
+            .any { uri -> uri.matchesEpisodeItemArtworkPath(relativePath) }
+
+    private fun String.matchesEpisodeItemArtworkPath(relativeMediaPath: String): Boolean {
+        val mediaDir = LocalLibraryArtworkPaths.mediaDirectory(relativeMediaPath)
+        val baseName = LocalLibraryArtworkPaths.mediaBaseName(relativeMediaPath)
+        if (mediaDir.isBlank() || baseName.isBlank()) return false
+        val nestedDirs =
+            LocalLibraryArtworkPaths.itemImagesDirectory(relativeMediaPath, LocalMediaKind.EPISODE)
+                .pathVariants()
+                .map { "$it/" }
+        val prefixedParents =
+            listOf(mediaDir, listOf(mediaDir, "images").joinRelativePath())
+                .flatMap { it.pathVariants() }
+                .map { "$it/" }
+        val baseNames = baseName.pathSegmentVariants()
+        return nestedDirs.any { contains(it) } ||
+            prefixedParents.any { parent ->
+                val afterParent = substringAfter(parent, missingDelimiterValue = "")
+                afterParent.isNotEmpty() && baseNames.any { base -> afterParent.startsWith("$base-") }
+            }
+    }
+
+    private fun LocalMediaArtwork.seasonDisplayArtworkMissing(): Boolean =
+        seasonPrimaryUri == null && seasonThumbUri == null && seasonBackdropUri == null
+
+    private fun LocalMediaArtwork.showDisplayArtworkMissing(): Boolean =
+        showPrimaryUri == null && showThumbUri == null && showBackdropUri == null
+
+    private fun LocalMediaArtwork.hasLegacyJavaFileUri(): Boolean =
+        listOfNotNull(
+                primaryUri,
+                backdropUri,
+                thumbUri,
+                logoUri,
+                seasonPrimaryUri,
+                seasonBackdropUri,
+                seasonThumbUri,
+                seasonLogoUri,
+                showPrimaryUri,
+                showBackdropUri,
+                showThumbUri,
+                showLogoUri,
+            )
+            .any { it.isLegacyJavaFileUri() }
+
+    private fun String.isLegacyJavaFileUri(): Boolean =
+        startsWith("file:/") && !startsWith("file:///")
+
+    private fun String.toAndroidAssetUri(): Uri {
+        val parsed = Uri.parse(this)
+        val path = parsed.path
+        return if (parsed.scheme == "file" && path != null) Uri.fromFile(File(path)) else parsed
+    }
+
+    private fun String.pathVariants(): Set<String> =
+        pathSegmentVariants() + split('/').joinToString("/") { segment ->
+            segment.pathSegmentVariants().last()
+        }
+
+    private fun String.pathSegmentVariants(): Set<String> =
+        linkedSetOf(this, replace(" ", "%20"), strictPercentEncode())
+
+    private fun String.strictPercentEncode(): String =
+        java.net.URLEncoder.encode(this, Charsets.UTF_8.name()).replace("+", "%20")
+
+    private fun List<String>.joinRelativePath(): String = filter { it.isNotBlank() }.joinToString("/")
 }

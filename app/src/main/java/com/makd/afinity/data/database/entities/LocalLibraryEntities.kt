@@ -65,6 +65,7 @@ data class LocalMediaFileEntity(
     val titleYear: Int?,
     val titleSeasonNumber: Int?,
     val titleEpisodeNumber: Int?,
+    val artworkJson: String,
 )
 
 @Entity(tableName = "local_media_identities", indices = [Index(value = ["durableKey"])])

@@ -41,14 +41,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.makd.afinity.R
 import com.makd.afinity.data.models.download.DownloadInfo
+import com.makd.afinity.data.models.extensions.backdropBlurHash
+import com.makd.afinity.data.models.extensions.backdropImageUrl
 import com.makd.afinity.data.models.extensions.primaryBlurHash
 import com.makd.afinity.data.models.extensions.primaryImageUrl
-import com.makd.afinity.data.models.extensions.showBackdropBlurHash
-import com.makd.afinity.data.models.extensions.showBackdropImageUrl
-import com.makd.afinity.data.models.extensions.showPrimaryBlurHash
-import com.makd.afinity.data.models.extensions.showPrimaryImageUrl
-import com.makd.afinity.data.models.extensions.showThumbBlurHash
-import com.makd.afinity.data.models.extensions.showThumbImageUrl
 import com.makd.afinity.data.models.extensions.thumbBlurHash
 import com.makd.afinity.data.models.extensions.thumbImageUrl
 import com.makd.afinity.data.models.media.AfinityEpisode
@@ -133,12 +129,12 @@ fun EpisodeDetailOverlay(
                 remember(episode.id, isUnaired) {
                     if (isUnaired) {
                         episode.images.thumbImageUrl
-                            ?: episode.images.showThumbImageUrl
-                            ?: episode.images.showBackdropImageUrl
-                            ?: episode.images.showPrimaryImageUrl
                             ?: episode.images.primaryImageUrl
+                            ?: episode.images.backdropImageUrl
                     } else {
-                        episode.images.primaryImageUrl ?: episode.images.thumbImageUrl
+                        episode.images.primaryImageUrl
+                            ?: episode.images.thumbImageUrl
+                            ?: episode.images.backdropImageUrl
                     }
                 }
 
@@ -146,12 +142,12 @@ fun EpisodeDetailOverlay(
                 remember(episode.id, isUnaired) {
                     if (isUnaired) {
                         episode.images.thumbBlurHash
-                            ?: episode.images.showThumbBlurHash
-                            ?: episode.images.showBackdropBlurHash
-                            ?: episode.images.showPrimaryBlurHash
                             ?: episode.images.primaryBlurHash
+                            ?: episode.images.backdropBlurHash
                     } else {
-                        episode.images.primaryBlurHash ?: episode.images.thumbBlurHash
+                        episode.images.primaryBlurHash
+                            ?: episode.images.thumbBlurHash
+                            ?: episode.images.backdropBlurHash
                     }
                 }
 

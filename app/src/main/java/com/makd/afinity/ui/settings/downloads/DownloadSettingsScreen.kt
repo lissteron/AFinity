@@ -269,6 +269,7 @@ fun DownloadSettingsScreen(
                         uiState.completedDownloads.count { download ->
                             download.itemType.uppercase() in setOf("MOVIE", "EPISODE")
                         },
+                    localArtworkRefreshCount = uiState.localArtworkRefreshCount,
                     artworkRefresh = uiState.artworkRefresh,
                     onCacheEnabledChange = viewModel::setImageCacheEnabled,
                     onCacheSizeChange = { viewModel.setImageCacheSizeMb(it.toInt()) },
@@ -1503,6 +1504,7 @@ fun ImageCacheSettingsCard(
     cacheStorageUsed: Long,
     downloadedImageStorageUsed: Long,
     completedVideoCount: Int,
+    localArtworkRefreshCount: Int,
     artworkRefresh: ArtworkRefreshUiState,
     onCacheEnabledChange: (Boolean) -> Unit,
     onCacheSizeChange: (Float) -> Unit,
@@ -1513,6 +1515,7 @@ fun ImageCacheSettingsCard(
     modifier: Modifier = Modifier,
 ) {
     var showRefreshDialog by remember { mutableStateOf(false) }
+    val totalRefreshableVideos = completedVideoCount + localArtworkRefreshCount
 
     if (showRefreshDialog) {
         AlertDialog(
@@ -1520,7 +1523,7 @@ fun ImageCacheSettingsCard(
             title = { Text("Refresh downloaded artwork?") },
             text = {
                 Text(
-                    "Refresh artwork for $completedVideoCount downloaded videos. " +
+                    "Refresh artwork for $totalRefreshableVideos videos. " +
                         "Existing downloaded artwork will be replaced."
                 )
             },
@@ -1611,7 +1614,15 @@ fun ImageCacheSettingsCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = "$completedVideoCount downloaded videos",
+                text =
+                    buildString {
+                        append("$completedVideoCount downloaded videos")
+                        if (localArtworkRefreshCount > 0) {
+                            append(" + ")
+                            append(localArtworkRefreshCount)
+                            append(" local artwork updates")
+                        }
+                    },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
                 modifier = Modifier.padding(top = 2.dp),
@@ -1650,7 +1661,7 @@ fun ImageCacheSettingsCard(
             } else {
                 TextButton(
                     onClick = { showRefreshDialog = true },
-                    enabled = canModify && completedVideoCount > 0,
+                    enabled = canModify && totalRefreshableVideos > 0,
                     modifier = Modifier.align(Alignment.End),
                 ) {
                     Text("Refresh downloaded artwork")

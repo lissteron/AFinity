@@ -61,6 +61,21 @@ class OfflineLocalCatalogUiContractSourceTest {
     }
 
     @Test
+    fun applicationBackfillsLocalArtworkIndexOffTheHomeCriticalPath() {
+        val app = readSource("src/main/java/com/makd/afinity/AfinityApplication.kt")
+
+        assertTrue(app.contains("localLibraryMediaRepository.hasIndexedMediaMissingArtwork()"))
+        assertTrue(app.contains("localLibraryMediaRepository.hasIndexedMedia()"))
+        assertTrue(app.contains("val needsIndexRebuild = !hasIndexedMedia"))
+        assertTrue(app.contains("if (!needsIndexRebuild && !hasMissingArtwork) return@launch"))
+        assertFalse(app.contains("localLibraryScanService.hasCompletedVideoDownloads()"))
+        assertFalse(app.contains("if (!hasCompletedVideoDownloads) return@launch"))
+        assertTrue(app.contains("localLibraryScanService.scanEnabledRootsWithArtworkBackfill("))
+        assertTrue(app.contains("Repairing local library index in background"))
+        assertTrue(app.contains("applicationScope.launch(Dispatchers.IO)"))
+    }
+
+    @Test
     fun startupShellDoesNotBlockLocalHomeOnRemoteBootstrap() {
         val navigation = readSource("src/main/java/com/makd/afinity/navigation/MainNavigationViewModel.kt")
         val homeScreen = readSource("src/main/java/com/makd/afinity/ui/home/HomeScreen.kt")
@@ -92,6 +107,7 @@ class OfflineLocalCatalogUiContractSourceTest {
     @Test
     fun localCatalogRepositoryOwnsRoomThreadingBoundary() {
         val repository = readSource("src/main/java/com/makd/afinity/data/local/LocalLibraryMediaRepository.kt")
+        val fileSystem = readSource("src/main/java/com/makd/afinity/data/local/LocalLibraryFileSystem.kt")
 
         assertTrue(repository.contains("import kotlinx.coroutines.Dispatchers"))
         assertTrue(repository.contains("import kotlinx.coroutines.withContext"))
@@ -99,11 +115,110 @@ class OfflineLocalCatalogUiContractSourceTest {
         assertFalse(repository.contains("private val fileSystem: LocalLibraryFileSystem"))
         assertFalse(repository.contains("fileSystem.playerUri("))
         assertTrue(repository.contains("path = localCatalogPath()"))
+        assertTrue(repository.contains("suspend fun hasIndexedMediaMissingArtwork()"))
+        assertTrue(repository.contains("images = artwork.toAfinityImages()"))
+        assertTrue(repository.contains("val seasonImages = seasonEntries.toSeasonImages()"))
+        assertTrue(repository.contains("val showImages = seriesEntries.map { it.episode }.toShowImages()"))
+        assertTrue(repository.contains("private fun LocalMediaArtwork.toAfinityImages()"))
+        assertTrue(repository.contains("primary = primaryUri?.toAndroidAssetUri()"))
+        assertFalse(repository.contains("primary = seasonPrimaryUri?.let(Uri::parse)"))
+        assertTrue(repository.contains("primary = firstArtworkUri { it.seasonPrimaryUri }"))
+        assertTrue(repository.contains("primary = images.firstUri { it.showPrimary }"))
+        assertFalse(repository.contains("it.showPrimary ?: it.primary"))
+        assertFalse(repository.contains("it.seasonPrimaryUri }\n                    ?: images.firstUri"))
+        assertTrue(repository.contains("hasScopedEpisodeItemDisplayArtwork()"))
+        assertTrue(repository.contains("matchesEpisodeItemArtworkPath(relativePath)"))
+        assertTrue(repository.contains("hasLegacyJavaFileUri()"))
+        assertTrue(repository.contains("Uri.fromFile(File(path))"))
+        assertTrue(fileSystem.contains("?.toPath()?.toUri()?.toASCIIString()"))
+        assertFalse(fileSystem.contains("?.toURI()?.toString()"))
         assertTrue(
             repository.contains(
                 "private fun LocalMediaFileRecord.localCatalogPath(): String = \"local://${'$'}mediaFileId\""
             )
         )
+    }
+
+    @Test
+    fun downloadedArtworkRefreshNormalizesSidecarImagesBeforeLocalScan() {
+        val downloadsViewModel = readSource("src/main/java/com/makd/afinity/ui/downloads/DownloadsViewModel.kt")
+        val transferRunner =
+            readSource("src/main/java/com/makd/afinity/data/repository/download/MediaDownloadTransferRunner.kt")
+        val scanService = readSource("src/main/java/com/makd/afinity/data/local/LocalLibraryScanService.kt")
+        val backfillService =
+            readSource("src/main/java/com/makd/afinity/data/local/LocalLibraryArtworkBackfillService.kt")
+        val originRefresher =
+            readSource("src/main/java/com/makd/afinity/data/local/LocalLibraryOriginArtworkRefresher.kt")
+
+        assertTrue(downloadsViewModel.contains("refreshableLocalLibraryArtworkCount()"))
+        assertTrue(downloadsViewModel.contains("refreshLocalLibraryArtworkFromOrigins"))
+        assertTrue(downloadsViewModel.contains("localArtworkRefreshCount"))
+        assertTrue(downloadsViewModel.contains("updateLocalArtworkRefreshCount()"))
+        assertTrue(downloadsViewModel.contains("completedVideoCount + localArtworkCount"))
+        assertFalse(downloadsViewModel.contains("No downloaded videos to refresh"))
+        val settingsScreen =
+            readSource("src/main/java/com/makd/afinity/ui/settings/downloads/DownloadSettingsScreen.kt")
+        assertTrue(settingsScreen.contains("localArtworkRefreshCount = uiState.localArtworkRefreshCount"))
+        assertTrue(settingsScreen.contains("val totalRefreshableVideos = completedVideoCount + localArtworkRefreshCount"))
+        assertTrue(settingsScreen.contains("enabled = canModify && totalRefreshableVideos > 0"))
+        assertFalse(settingsScreen.contains("enabled = canModify && completedVideoCount > 0"))
+        assertTrue(
+            transferRunner.indexOf("localLibraryScanService.backfillDownloadedArtwork(listOf(completedDownload))") <
+                transferRunner.indexOf("if (artworkBackfill.writtenFiles > 0)")
+        )
+        assertTrue(transferRunner.contains("if (artworkBackfill.writtenFiles > 0)"))
+        assertTrue(scanService.contains("LocalLibraryArtworkBackfillService"))
+        assertTrue(scanService.contains("LocalLibraryOriginArtworkRefresher"))
+        assertTrue(scanService.contains("scanEnabledRootsWithArtworkBackfill("))
+        assertTrue(scanService.contains("val localScan = scanEnabledRoots(visibilityContext)"))
+        assertTrue(
+            scanService.indexOf("val localScan = scanEnabledRoots(visibilityContext)") <
+                scanService.indexOf("val originRefresh = refreshLocalLibraryArtworkFromOrigins()")
+        )
+        assertTrue(backfillService.contains("fileSystem.writeBytes("))
+        assertTrue(backfillService.contains("seasonImageDirectories(sourceRoots)"))
+        assertTrue(backfillService.contains("showImageDirectories(sourceRoots)"))
+        assertTrue(backfillService.contains("LocalLibraryArtworkPaths.itemImagesDirectory("))
+        assertTrue(originRefresher.contains("LocalLibraryArtworkOrigin("))
+        assertTrue(originRefresher.contains("identity.jellyfinItemId"))
+        assertTrue(originRefresher.contains("needsOriginArtworkRefresh("))
+        assertTrue(originRefresher.contains("LocalLibraryArtworkPaths.itemImagesDirectory("))
+        assertTrue(originRefresher.contains("updateSidecarParentIdentity("))
+    }
+
+    @Test
+    fun mediaItemCardsUseOnlyEpisodeArtworkForLocalCatalogVideos() {
+        val card = readSource("src/main/java/com/makd/afinity/ui/components/MediaItemCard.kt")
+        val videoSurfaces =
+            listOf(
+                card,
+                readSource("src/main/java/com/makd/afinity/ui/components/ContinueWatchingCard.kt"),
+                readSource("src/main/java/com/makd/afinity/ui/components/EpisodeListCard.kt"),
+                readSource("src/main/java/com/makd/afinity/ui/home/components/HomeSections.kt"),
+                readSource("src/main/java/com/makd/afinity/ui/item/components/EpisodeDetailOverlay.kt"),
+            )
+
+        assertTrue(card.contains("private fun AfinityItem.cardImageUrl()"))
+        assertTrue(card.contains("if (this is AfinityEpisode)"))
+        val episodeBranch =
+            card.substring(
+                card.indexOf("if (this is AfinityEpisode)"),
+                card.indexOf("} else {", card.indexOf("if (this is AfinityEpisode)")),
+            )
+        assertTrue(episodeBranch.contains("images.primaryImageUrl"))
+        assertTrue(episodeBranch.contains("images.thumbImageUrl"))
+        assertTrue(episodeBranch.contains("images.backdropImageUrl"))
+        assertFalse(episodeBranch.contains("images.showThumbImageUrl"))
+        assertFalse(episodeBranch.contains("images.showBackdropImageUrl"))
+        assertFalse(episodeBranch.contains("images.showPrimaryImageUrl"))
+        videoSurfaces.forEach { source ->
+            assertFalse(source.contains("showThumbImageUrl"))
+            assertFalse(source.contains("showBackdropImageUrl"))
+            assertFalse(source.contains("showPrimaryImageUrl"))
+            assertFalse(source.contains("showThumbBlurHash"))
+            assertFalse(source.contains("showBackdropBlurHash"))
+            assertFalse(source.contains("showPrimaryBlurHash"))
+        }
     }
 
     @Test

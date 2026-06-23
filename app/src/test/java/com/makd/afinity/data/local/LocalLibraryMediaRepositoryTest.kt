@@ -80,6 +80,124 @@ class LocalLibraryMediaRepositoryTest {
     }
 
     @Test
+    fun episodeWithOnlyParentArtworkStillNeedsOriginItemArtworkRefresh() = runBlocking {
+        val root = root()
+        val index = InMemoryLocalLibraryIndexRepository()
+        index.replaceRootScan(
+            root,
+            listOf(
+                episodeRecord(
+                    root,
+                    artwork =
+                        LocalMediaArtwork(
+                            seasonPrimaryUri = "content://local/season-primary.jpg",
+                            showPrimaryUri = "content://local/show-primary.jpg",
+                        ),
+                )
+            ),
+        )
+
+        val repository =
+            LocalLibraryMediaRepository(
+                rootStore = FakeRootStore(root),
+                indexRepository = index,
+                userStateRepository = FakeLocalMediaUserStateRepository(emptyMap()),
+            )
+
+        assertTrue(repository.hasIndexedMediaMissingArtwork())
+    }
+
+    @Test
+    fun episodeWithStaleSeasonPrimaryStoredAsItemArtworkStillNeedsOriginItemArtworkRefresh() =
+        runBlocking {
+            val root = root()
+            val index = InMemoryLocalLibraryIndexRepository()
+            index.replaceRootScan(
+                root,
+                listOf(
+                    episodeRecord(
+                        root,
+                        artwork =
+                            LocalMediaArtwork(
+                                primaryUri =
+                                    "file:/library/Shows/Bluey/Season%2001/images/primary.jpg",
+                                showPrimaryUri = "file:/library/Shows/Bluey/images/primary.jpg",
+                            ),
+                    )
+                ),
+            )
+
+            val repository =
+                LocalLibraryMediaRepository(
+                    rootStore = FakeRootStore(root),
+                    indexRepository = index,
+                    userStateRepository = FakeLocalMediaUserStateRepository(emptyMap()),
+                )
+
+            assertTrue(repository.hasIndexedMediaMissingArtwork())
+        }
+
+    @Test
+    fun episodeWithLegacyJavaFileUriStillNeedsArtworkUriRepair() = runBlocking {
+        val root = root()
+        val index = InMemoryLocalLibraryIndexRepository()
+        index.replaceRootScan(
+            root,
+            listOf(
+                episodeRecord(
+                    root,
+                    artwork =
+                        LocalMediaArtwork(
+                            primaryUri =
+                                "file:/library/Shows/Bluey/Season%2001/images/Bluey%20-%20S01E03%20-%20Keepy%20Uppy/primary.jpg",
+                            seasonPrimaryUri = "file:/library/Shows/Bluey/Season%2001/images/primary.jpg",
+                            showPrimaryUri = "file:/library/Shows/Bluey/images/primary.jpg",
+                        ),
+                )
+            ),
+        )
+
+        val repository =
+            LocalLibraryMediaRepository(
+                rootStore = FakeRootStore(root),
+                indexRepository = index,
+                userStateRepository = FakeLocalMediaUserStateRepository(emptyMap()),
+            )
+
+        assertTrue(repository.hasIndexedMediaMissingArtwork())
+    }
+
+    @Test
+    fun episodeWithItemSeasonAndShowArtworkDoesNotNeedOriginArtworkRefresh() = runBlocking {
+        val root = root()
+        val index = InMemoryLocalLibraryIndexRepository()
+        index.replaceRootScan(
+            root,
+            listOf(
+                episodeRecord(
+                    root,
+                    artwork =
+                        LocalMediaArtwork(
+                            primaryUri =
+                                "file:///library/Shows/Bluey/Season%2001/images/Bluey%20-%20S01E03%20-%20Keepy%20Uppy/primary.jpg",
+                            seasonPrimaryUri = "file:///library/Shows/Bluey/Season%2001/images/primary.jpg",
+                            showPrimaryUri = "file:///library/Shows/Bluey/images/primary.jpg",
+                        ),
+                )
+            ),
+        )
+
+        val repository =
+            LocalLibraryMediaRepository(
+                rootStore = FakeRootStore(root),
+                indexRepository = index,
+                userStateRepository = FakeLocalMediaUserStateRepository(emptyMap()),
+            )
+
+        assertEquals(false, repository.hasIndexedMediaMissingArtwork())
+    }
+
+    @Test
     fun localMoviesAreFilteredByCurrentProfileOwnerHint() = runBlocking {
         val root = root()
         val index = InMemoryLocalLibraryIndexRepository()
@@ -316,7 +434,7 @@ class LocalLibraryMediaRepositoryTest {
     }
 
     @Test
-    fun jellyfinParentIdentitySeparatesSameTitledShowsWithinOneRoot() = runBlocking {
+    fun mixedJellyfinParentIdentityWithinOneLocalShowFolderDoesNotSplitShow() = runBlocking {
         val root = root()
         val index = InMemoryLocalLibraryIndexRepository()
         index.replaceRootScan(
@@ -325,6 +443,7 @@ class LocalLibraryMediaRepositoryTest {
                 episodeRecord(
                     root = root,
                     localItemId = "bluey-series-1",
+                    mediaFileId = UUID.fromString("00000000-0000-0000-0000-00000000bc01"),
                     relativePath = "Shows/Bluey/Season 01/Bluey - S01E01 - One.mkv",
                     jellyfinSeriesId = firstSeriesId.toString(),
                     jellyfinSeasonId = firstSeasonId.toString(),
@@ -332,9 +451,8 @@ class LocalLibraryMediaRepositoryTest {
                 episodeRecord(
                     root = root,
                     localItemId = "bluey-series-2",
+                    mediaFileId = UUID.fromString("00000000-0000-0000-0000-00000000bc02"),
                     relativePath = "Shows/Bluey/Season 01/Bluey - S01E02 - Two.mkv",
-                    jellyfinSeriesId = secondSeriesId.toString(),
-                    jellyfinSeasonId = secondSeasonId.toString(),
                 ),
             ),
         )
@@ -347,9 +465,54 @@ class LocalLibraryMediaRepositoryTest {
                 )
                 .getVisibleShows(userId)
 
-        assertEquals(setOf(firstSeriesId, secondSeriesId), shows.map { it.id }.toSet())
-        assertEquals(setOf(firstSeasonId, secondSeasonId), shows.flatMap { it.seasons }.map { it.id }.toSet())
+        val show = shows.single()
+        val season = show.seasons.single()
+        assertEquals(firstSeriesId, show.id)
+        assertEquals(firstSeasonId, season.id)
+        assertEquals(2, season.episodes.size)
     }
+
+    @Test
+    fun conflictingJellyfinParentIdentityWithinOneLocalShowFolderFallsBackToFolderIdentity() =
+        runBlocking {
+            val root = root()
+            val index = InMemoryLocalLibraryIndexRepository()
+            index.replaceRootScan(
+                root,
+                listOf(
+                    episodeRecord(
+                        root = root,
+                        localItemId = "bluey-series-1",
+                        mediaFileId = UUID.fromString("00000000-0000-0000-0000-00000000bc03"),
+                        relativePath = "Shows/Bluey/Season 01/Bluey - S01E01 - One.mkv",
+                        jellyfinSeriesId = firstSeriesId.toString(),
+                        jellyfinSeasonId = firstSeasonId.toString(),
+                    ),
+                    episodeRecord(
+                        root = root,
+                        localItemId = "bluey-series-2",
+                        mediaFileId = UUID.fromString("00000000-0000-0000-0000-00000000bc04"),
+                        relativePath = "Shows/Bluey/Season 01/Bluey - S01E02 - Two.mkv",
+                        jellyfinSeriesId = secondSeriesId.toString(),
+                        jellyfinSeasonId = secondSeasonId.toString(),
+                    ),
+                ),
+            )
+
+            val shows =
+                LocalLibraryMediaRepository(
+                        rootStore = FakeRootStore(root),
+                        indexRepository = index,
+                        userStateRepository = FakeLocalMediaUserStateRepository(emptyMap()),
+                    )
+                    .getVisibleShows(userId)
+
+            val show = shows.single()
+            val season = show.seasons.single()
+            assertTrue(show.id !in setOf(firstSeriesId, secondSeriesId))
+            assertTrue(season.id !in setOf(firstSeasonId, secondSeasonId))
+            assertEquals(2, season.episodes.size)
+        }
 
     @Test
     fun jellyfinParentIdentityRouteTargetsOpenLocalShowAndSeasonContainers() = runBlocking {
@@ -447,6 +610,7 @@ class LocalLibraryMediaRepositoryTest {
     private fun movieRecord(
         root: LocalLibraryRootRecord,
         ownerUserId: String? = null,
+        artwork: LocalMediaArtwork = LocalMediaArtwork(),
     ): LocalMediaFileRecord =
         LocalMediaFileRecord(
             mediaFileId = mediaFileId,
@@ -470,18 +634,21 @@ class LocalLibraryMediaRepositoryTest {
             modifiedAt = 1L,
             container = "mkv",
             runtimeTicks = 100_000_000L,
+            artwork = artwork,
         )
 
     private fun episodeRecord(
         root: LocalLibraryRootRecord,
+        mediaFileId: UUID = UUID.fromString("00000000-0000-0000-0000-00000000bb04"),
         localItemId: String = "local-episode",
         ownerUserId: String? = null,
         relativePath: String = "Shows/Bluey/Season 01/Bluey - S01E03 - Keepy Uppy.mkv",
         jellyfinSeriesId: String? = null,
         jellyfinSeasonId: String? = null,
+        artwork: LocalMediaArtwork = LocalMediaArtwork(),
     ): LocalMediaFileRecord =
         LocalMediaFileRecord(
-            mediaFileId = UUID.fromString("00000000-0000-0000-0000-00000000bb04"),
+            mediaFileId = mediaFileId,
             rootRegistryId = root.registryId,
             stableRootId = root.stableRootId,
             relativePath = relativePath,
@@ -510,6 +677,7 @@ class LocalLibraryMediaRepositoryTest {
             modifiedAt = 1L,
             container = "mkv",
             runtimeTicks = 100_000_000L,
+            artwork = artwork,
         )
 
     private class FakeRootStore(private vararg val roots: LocalLibraryRootRecord) :

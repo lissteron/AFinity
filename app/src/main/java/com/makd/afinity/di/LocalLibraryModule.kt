@@ -3,8 +3,11 @@ package com.makd.afinity.di
 import android.content.Context
 import com.makd.afinity.data.local.AndroidLocalLibraryFileSystem
 import com.makd.afinity.data.local.DataStoreLocalLibraryRootStore
+import com.makd.afinity.data.local.DownloadStorageArtworkSourceRootProvider
+import com.makd.afinity.data.local.LocalLibraryArtworkSourceRootProvider
 import com.makd.afinity.data.local.LocalLibraryFileSystem
 import com.makd.afinity.data.local.LocalLibraryIndexRepository
+import com.makd.afinity.data.local.LocalLibraryRemoteArtworkResolver
 import com.makd.afinity.data.local.LocalLibraryPathPolicy
 import com.makd.afinity.data.local.LocalLibraryRootStore
 import com.makd.afinity.data.local.LocalLibraryScanner
@@ -12,6 +15,7 @@ import com.makd.afinity.data.local.LocalLibrarySidecarReader
 import com.makd.afinity.data.local.LocalLibraryVisibilityPolicy
 import com.makd.afinity.data.local.LocalMediaUserStateRepository
 import com.makd.afinity.data.local.LocalMediaVisibilityRepository
+import com.makd.afinity.data.local.JellyfinLocalLibraryRemoteArtworkResolver
 import com.makd.afinity.data.local.RoomLocalLibraryIndexRepository
 import com.makd.afinity.data.local.RoomLocalMediaUserStateRepository
 import com.makd.afinity.data.local.RoomLocalMediaVisibilityRepository
@@ -47,6 +51,18 @@ abstract class LocalLibraryModule {
     abstract fun bindVisibilityRepository(
         impl: RoomLocalMediaVisibilityRepository
     ): LocalMediaVisibilityRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindArtworkSourceRootProvider(
+        impl: DownloadStorageArtworkSourceRootProvider
+    ): LocalLibraryArtworkSourceRootProvider
+
+    @Binds
+    @Singleton
+    abstract fun bindRemoteArtworkResolver(
+        impl: JellyfinLocalLibraryRemoteArtworkResolver
+    ): LocalLibraryRemoteArtworkResolver
 
     companion object {
         @Provides

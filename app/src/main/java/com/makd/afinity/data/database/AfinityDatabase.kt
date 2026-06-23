@@ -120,7 +120,7 @@ import com.makd.afinity.data.models.user.User
             LocalLibraryScanRunEntity::class,
             LocalMediaVisibilityEntity::class,
         ],
-    version = 45,
+    version = 46,
     exportSchema = false,
 )
 @TypeConverters(AfinityTypeConverters::class)

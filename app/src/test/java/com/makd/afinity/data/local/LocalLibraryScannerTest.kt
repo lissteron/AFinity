@@ -109,6 +109,54 @@ class LocalLibraryScannerTest {
     }
 
     @Test
+    fun scannerIndexesPortableArtworkFilesNextToLocalMedia() {
+        val rootDir = temporaryFolder.newFolder("library")
+        writeMovie(rootDir)
+        writeEpisode(rootDir)
+        writeBytes(File(rootDir, "Movies/WALL-E (2008)/images/primary.jpg"), 20)
+        writeBytes(File(rootDir, "Movies/WALL-E (2008)/images/backdrop.webp"), 20)
+        writeBytes(File(rootDir, "Shows/Bluey/images/primary.png"), 20)
+        writeBytes(File(rootDir, "Shows/Bluey/Season 01/images/primary.jpg"), 20)
+        writeBytes(
+            File(
+                rootDir,
+                "Shows/Bluey/Season 01/images/Bluey - S01E01 - The Magic Xylophone/primary.jpg",
+            ),
+            20,
+        )
+        val index = InMemoryLocalLibraryIndexRepository()
+
+        scanner(index).scanRoot(root(rootDir))
+
+        val movie = index.visibleMediaFiles().single { it.mediaKind == LocalMediaKind.MOVIE }
+        val episode = index.visibleMediaFiles().single { it.mediaKind == LocalMediaKind.EPISODE }
+        assertTrue(movie.artwork.primaryUri!!.contains("/Movies/WALL-E%20(2008)/images/primary.jpg"))
+        assertTrue(movie.artwork.backdropUri!!.contains("/Movies/WALL-E%20(2008)/images/backdrop.webp"))
+        assertTrue(
+            episode.artwork.primaryUri!!.contains(
+                "/Shows/Bluey/Season%2001/images/Bluey%20-%20S01E01%20-%20The%20Magic%20Xylophone/primary.jpg"
+            )
+        )
+        assertTrue(episode.artwork.showPrimaryUri!!.contains("/Shows/Bluey/images/primary.png"))
+    }
+
+    @Test
+    fun scannerKeepsSeasonArtworkSeparateWhenEpisodeScopedArtworkIsMissing() {
+        val rootDir = temporaryFolder.newFolder("library-season-separate")
+        writeEpisode(rootDir)
+        writeBytes(File(rootDir, "Shows/Bluey/Season 01/images/primary.jpg"), 20)
+        val index = InMemoryLocalLibraryIndexRepository()
+
+        scanner(index).scanRoot(root(rootDir))
+
+        val episode = index.visibleMediaFiles().single { it.mediaKind == LocalMediaKind.EPISODE }
+        assertEquals(null, episode.artwork.primaryUri)
+        assertTrue(
+            episode.artwork.seasonPrimaryUri!!.contains("/Shows/Bluey/Season%2001/images/primary.jpg")
+        )
+    }
+
+    @Test
     fun scannerDoesNotPersistProfileVisibilityFromScanContext() {
         val rootDir = temporaryFolder.newFolder("library")
         writeOwnedMovie(rootDir, ownerUserId = "user-1")

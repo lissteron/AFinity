@@ -483,6 +483,22 @@ constructor(
             if (!isStillCompleted(claimedDownload.id)) {
                 return TransferResult.Completed(claimedDownload.id, completedFile.path)
             }
+            failureStage = "refreshing local library sidecar assets"
+            val artworkBackfill =
+                localLibraryScanService.backfillDownloadedArtwork(listOf(completedDownload))
+            if (artworkBackfill.writtenFiles > 0) {
+                localLibraryScanService.scanRoot(
+                    localLibraryRoot,
+                    LocalLibraryVisibilityContext(
+                        currentUserId = userId.toString(),
+                        kidModeEnabled = false,
+                        parentUnlocked = false,
+                    ),
+                )
+            }
+            if (!isStillCompleted(claimedDownload.id)) {
+                return TransferResult.Completed(claimedDownload.id, completedFile.path)
+            }
             failureStage = "creating local media source"
             createLocalSource(
                 downloadId = claimedDownload.id,

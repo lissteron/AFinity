@@ -27,6 +27,7 @@ class LocalLibraryScanner(
         val warnings = mutableListOf<String>()
         val files = mutableListOf<LocalMediaFileRecord>()
         val importJobs = mutableListOf<LocalMediaImportJobRecord>()
+        val artworkDirectoryListings = mutableMapOf<String, List<LocalLibraryNode>>()
         walk(root).forEach { node ->
             if (shouldCancel()) {
                 return LocalLibraryScanSummary(
@@ -50,7 +51,14 @@ class LocalLibraryScanner(
             val sidecarResult =
                 fileSystem.readText(root, sidecarPath)?.let(sidecarReader::readMediaSidecar)
             sidecarResult?.warnings?.let(warnings::addAll)
-            val record = buildRecord(root, node, sidecarPath.takeIf { sidecarResult?.sidecar != null }, sidecarResult?.sidecar)
+            val record =
+                buildRecord(
+                    root,
+                    node,
+                    sidecarPath.takeIf { sidecarResult?.sidecar != null },
+                    sidecarResult?.sidecar,
+                    artworkDirectoryListings,
+                )
             if (record != null) {
                 files += record.copy(visibleByDefault = true)
             } else {
@@ -112,6 +120,7 @@ class LocalLibraryScanner(
         node: LocalLibraryNode,
         sidecarPath: String?,
         sidecar: AfinityMediaSidecar?,
+        artworkDirectoryListings: MutableMap<String, List<LocalLibraryNode>>,
     ): LocalMediaFileRecord? {
         val mediaKind = sidecar?.mediaKind?.toMediaKind() ?: parseMediaKind(node.relativePath) ?: return null
         val title =
@@ -159,8 +168,174 @@ class LocalLibraryScanner(
             modifiedAt = node.modifiedAt,
             container = sidecar?.mediaFile?.container ?: node.relativePath.substringAfterLast('.', ""),
             runtimeTicks = sidecar?.mediaFile?.runtimeTicks,
+            artwork = discoverArtwork(root, node.relativePath, mediaKind, artworkDirectoryListings),
         )
     }
+
+    private fun discoverArtwork(
+        root: LocalLibraryRootRecord,
+        relativePath: String,
+        mediaKind: LocalMediaKind,
+        directoryListings: MutableMap<String, List<LocalLibraryNode>>,
+    ): LocalMediaArtwork {
+        val mediaDir = relativePath.substringBeforeLast('/', "")
+        val mediaImagesDir = listOf(mediaDir, "images").joinRelativePath()
+        val itemArtwork =
+            when (mediaKind) {
+                LocalMediaKind.MOVIE ->
+                    imageDirectoryArtwork(root, mediaImagesDir, directoryListings)
+                        .mergeMissing(fileArtwork(root, mediaDir, directoryListings))
+
+                LocalMediaKind.EPISODE -> {
+                    val baseName = LocalLibraryArtworkPaths.mediaBaseName(relativePath)
+                    imageDirectoryArtwork(
+                            root,
+                            LocalLibraryArtworkPaths.itemImagesDirectory(relativePath, mediaKind),
+                            directoryListings,
+                        )
+                        .mergeMissing(prefixedFileArtwork(root, mediaImagesDir, baseName, directoryListings))
+                        .mergeMissing(prefixedFileArtwork(root, mediaDir, baseName, directoryListings))
+                }
+            }
+        if (mediaKind == LocalMediaKind.MOVIE) return itemArtwork
+
+        val showDir = mediaDir.substringBeforeLast('/', "")
+        val seasonArtwork = imageDirectoryArtwork(root, mediaImagesDir, directoryListings)
+        val showArtwork =
+            imageDirectoryArtwork(
+                root,
+                listOf(showDir, "images").joinRelativePath(),
+                directoryListings,
+            )
+        return itemArtwork.copy(
+            seasonPrimaryUri = seasonArtwork.primaryUri,
+            seasonBackdropUri = seasonArtwork.backdropUri,
+            seasonThumbUri = seasonArtwork.thumbUri,
+            seasonLogoUri = seasonArtwork.logoUri,
+            showPrimaryUri = showArtwork.primaryUri,
+            showBackdropUri = showArtwork.backdropUri,
+            showThumbUri = showArtwork.thumbUri,
+            showLogoUri = showArtwork.logoUri,
+        )
+    }
+
+    private fun imageDirectoryArtwork(
+        root: LocalLibraryRootRecord,
+        directory: String,
+        directoryListings: MutableMap<String, List<LocalLibraryNode>>,
+    ): LocalMediaArtwork =
+        LocalMediaArtwork(
+            primaryUri =
+                firstImageUri(
+                    root,
+                    directory,
+                    directoryListings,
+                    "primary",
+                    "poster",
+                    "folder",
+                    "cover",
+                ),
+            backdropUri =
+                firstImageUri(root, directory, directoryListings, "backdrop", "fanart", "landscape"),
+            thumbUri = firstImageUri(root, directory, directoryListings, "thumb", "thumbnail"),
+            logoUri = firstImageUri(root, directory, directoryListings, "logo", "clearlogo"),
+        )
+
+    private fun prefixedFileArtwork(
+        root: LocalLibraryRootRecord,
+        directory: String,
+        baseName: String,
+        directoryListings: MutableMap<String, List<LocalLibraryNode>>,
+    ): LocalMediaArtwork {
+        if (baseName.isBlank()) return LocalMediaArtwork()
+        return LocalMediaArtwork(
+            primaryUri =
+                firstImageUri(
+                    root,
+                    directory,
+                    directoryListings,
+                    "$baseName-primary",
+                    "$baseName-poster",
+                    "$baseName-folder",
+                    "$baseName-cover",
+                ),
+            backdropUri =
+                firstImageUri(
+                    root,
+                    directory,
+                    directoryListings,
+                    "$baseName-backdrop",
+                    "$baseName-fanart",
+                    "$baseName-landscape",
+                ),
+            thumbUri =
+                firstImageUri(
+                    root,
+                    directory,
+                    directoryListings,
+                    "$baseName-thumb",
+                    "$baseName-thumbnail",
+                ),
+            logoUri =
+                firstImageUri(
+                    root,
+                    directory,
+                    directoryListings,
+                    "$baseName-logo",
+                    "$baseName-clearlogo",
+                ),
+        )
+    }
+
+    private fun fileArtwork(
+        root: LocalLibraryRootRecord,
+        directory: String,
+        directoryListings: MutableMap<String, List<LocalLibraryNode>>,
+    ): LocalMediaArtwork =
+        LocalMediaArtwork(
+            primaryUri =
+                firstImageUri(root, directory, directoryListings, "poster", "folder", "cover"),
+            backdropUri =
+                firstImageUri(
+                    root,
+                    directory,
+                    directoryListings,
+                    "fanart",
+                    "backdrop",
+                    "landscape",
+                ),
+        )
+
+    private fun firstImageUri(
+        root: LocalLibraryRootRecord,
+        directory: String,
+        directoryListings: MutableMap<String, List<LocalLibraryNode>>,
+        vararg baseNames: String,
+    ): String? {
+        if (directory.isBlank()) return null
+        val wanted = baseNames.toSet()
+        return directoryListings
+            .getOrPut(directory) { fileSystem.list(root, directory) }
+            .asSequence()
+            .filter { !it.isDirectory && it.name.isImageFile() }
+            .sortedBy { it.name }
+            .firstOrNull { it.name.substringBeforeLast('.').lowercase() in wanted }
+            ?.relativePath
+            ?.let { fileSystem.assetUri(root, it) }
+    }
+
+    private fun LocalMediaArtwork.mergeMissing(fallback: LocalMediaArtwork): LocalMediaArtwork =
+        copy(
+            primaryUri = primaryUri ?: fallback.primaryUri,
+            backdropUri = backdropUri ?: fallback.backdropUri,
+            thumbUri = thumbUri ?: fallback.thumbUri,
+            logoUri = logoUri ?: fallback.logoUri,
+        )
+
+    private fun List<String>.joinRelativePath(): String = filter { it.isNotBlank() }.joinToString("/")
+
+    private fun String.isImageFile(): Boolean =
+        substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS
 
     private fun LocalLibraryNode.isMediaFile(): Boolean {
         if (name.isStagingFile()) return false
@@ -258,6 +433,7 @@ class LocalLibraryScanner(
 
     private companion object {
         val VIDEO_EXTENSIONS = setOf("mkv", "mp4", "m4v", "avi", "mov", "webm")
+        val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "gif")
         val EPISODE_FILE_REGEX = Regex("""(.+) - S(\d{1,2})E(\d{1,3}) - (.+)""")
         val MOVIE_FILE_REGEX = Regex("""(.+) \((\d{4})\)""")
     }

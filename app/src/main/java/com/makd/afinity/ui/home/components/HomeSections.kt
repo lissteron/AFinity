@@ -46,12 +46,6 @@ import com.makd.afinity.data.models.extensions.backdropBlurHash
 import com.makd.afinity.data.models.extensions.backdropImageUrl
 import com.makd.afinity.data.models.extensions.primaryBlurHash
 import com.makd.afinity.data.models.extensions.primaryImageUrl
-import com.makd.afinity.data.models.extensions.showBackdropBlurHash
-import com.makd.afinity.data.models.extensions.showBackdropImageUrl
-import com.makd.afinity.data.models.extensions.showPrimaryBlurHash
-import com.makd.afinity.data.models.extensions.showPrimaryImageUrl
-import com.makd.afinity.data.models.extensions.showThumbBlurHash
-import com.makd.afinity.data.models.extensions.showThumbImageUrl
 import com.makd.afinity.data.models.extensions.thumbBlurHash
 import com.makd.afinity.data.models.extensions.thumbImageUrl
 import com.makd.afinity.data.models.media.AfinityCollection
@@ -337,17 +331,13 @@ fun UpcomingEpisodeCard(
             Box(modifier = Modifier.fillMaxSize()) {
                 val blurHash =
                     episode.images.thumbBlurHash
-                        ?: episode.images.showThumbBlurHash
-                        ?: episode.images.showBackdropBlurHash
-                        ?: episode.images.showPrimaryBlurHash
                         ?: episode.images.primaryBlurHash
+                        ?: episode.images.backdropBlurHash
 
                 val imageUrl =
                     episode.images.thumbImageUrl
-                        ?: episode.images.showThumbImageUrl
-                        ?: episode.images.showBackdropImageUrl
-                        ?: episode.images.showPrimaryImageUrl
                         ?: episode.images.primaryImageUrl
+                        ?: episode.images.backdropImageUrl
 
                 AsyncImage(
                     imageUrl = imageUrl,

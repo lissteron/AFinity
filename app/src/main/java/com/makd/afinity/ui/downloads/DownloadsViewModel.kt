@@ -59,6 +59,7 @@ constructor(
         observeLocalLibraryRoots()
         loadStorageInfo()
         loadDownloadPreferences()
+        loadLocalArtworkRefreshCount()
     }
 
     private fun loadDownloadPreferences() {
@@ -286,13 +287,14 @@ constructor(
     }
 
     private suspend fun rescanLocalLibraryRootsInternal() {
-        localLibraryScanService.scanEnabledRoots(
+        localLibraryScanService.scanEnabledRootsWithArtworkBackfill(
             LocalLibraryVisibilityContext(
                 currentUserId = null,
                 kidModeEnabled = kidModeRepository.policy.value.isKidModeEnabled,
                 parentUnlocked = kidModeRepository.policy.value.isParentUnlocked,
             )
         )
+        updateLocalArtworkRefreshCount()
     }
 
     private fun observeDownloads() {
@@ -360,6 +362,7 @@ constructor(
                     .collect { roots ->
                         _uiState.value =
                             _uiState.value.copy(localLibraryRoots = roots.sortedBy { it.priority })
+                        updateLocalArtworkRefreshCount()
                     }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to observe local library roots")
@@ -390,6 +393,21 @@ constructor(
                 Timber.e(e, "Failed to load storage info")
             }
         }
+    }
+
+    private fun loadLocalArtworkRefreshCount() {
+        viewModelScope.launch {
+            try {
+                updateLocalArtworkRefreshCount()
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to load local artwork refresh count")
+            }
+        }
+    }
+
+    private suspend fun updateLocalArtworkRefreshCount() {
+        val count = localLibraryScanService.refreshableLocalLibraryArtworkCount()
+        _uiState.value = _uiState.value.copy(localArtworkRefreshCount = count)
     }
 
     fun pauseDownload(downloadId: UUID) {
@@ -508,56 +526,90 @@ constructor(
     fun refreshDownloadedArtwork() {
         if (!kidModeRepository.policy.value.canManageDownloads) return
         if (artworkRefreshJob?.isActive == true) return
-        val completedVideoCount =
-            uiState.value.completedDownloads.count { download ->
-                download.itemType.uppercase() in setOf("MOVIE", "EPISODE")
-            }
-        if (completedVideoCount == 0) {
-            _uiState.value = _uiState.value.copy(error = "No downloaded videos to refresh")
-            return
-        }
 
         artworkRefreshJob =
             viewModelScope.launch {
+                val completedVideoCount =
+                    uiState.value.completedDownloads.count { download ->
+                        download.itemType.uppercase() in setOf("MOVIE", "EPISODE")
+                    }
+                val localArtworkCount = localLibraryScanService.refreshableLocalLibraryArtworkCount()
+                _uiState.value = _uiState.value.copy(localArtworkRefreshCount = localArtworkCount)
+                val totalRefreshCount = completedVideoCount + localArtworkCount
+                if (totalRefreshCount == 0) {
+                    _uiState.value = _uiState.value.copy(error = "No downloaded videos or local artwork to refresh")
+                    return@launch
+                }
                 _uiState.value =
                     _uiState.value.copy(
                         artworkRefresh =
                             ArtworkRefreshUiState(
                                 isRunning = true,
                                 completed = 0,
-                                total = completedVideoCount,
+                                total = totalRefreshCount,
                             )
                     )
                 try {
-                    val result =
-                        downloadRepository.refreshCompletedArtwork { progress ->
-                            _uiState.value =
-                                _uiState.value.copy(
-                                    artworkRefresh =
-                                        ArtworkRefreshUiState(
-                                            isRunning = true,
-                                            completed = progress.completed,
-                                            total = progress.total,
-                                            currentItemName = progress.currentItemName,
-                                        )
-                                )
-                        }
-                    result
-                        .onSuccess { summary ->
-                            _uiState.value =
-                                _uiState.value.copy(
-                                    error =
-                                        "Artwork refreshed: ${summary.refreshed}, failed: ${summary.failed}"
-                                )
-                        }
-                        .onFailure { error ->
-                            _uiState.value =
-                                _uiState.value.copy(
-                                    error = "Failed to refresh artwork: ${error.message}"
-                                )
-                        }
+                    var refreshed = 0
+                    var failed = 0
+                    var skipped = 0
+
+                    if (completedVideoCount > 0) {
+                        downloadRepository
+                            .refreshCompletedArtwork { progress ->
+                                _uiState.value =
+                                    _uiState.value.copy(
+                                        artworkRefresh =
+                                            ArtworkRefreshUiState(
+                                                isRunning = true,
+                                                completed = progress.completed,
+                                                total = totalRefreshCount,
+                                                currentItemName = progress.currentItemName,
+                                            )
+                                    )
+                            }
+                            .onSuccess { summary ->
+                                refreshed += summary.refreshed
+                                failed += summary.failed
+                                skipped += summary.skipped
+                            }
+                            .onFailure { error ->
+                                failed += completedVideoCount
+                                Timber.w(error, "Failed to refresh completed download artwork")
+                            }
+                    }
+
+                    if (localArtworkCount > 0) {
+                        val localSummary =
+                            localLibraryScanService.refreshLocalLibraryArtworkFromOrigins { progress ->
+                                _uiState.value =
+                                    _uiState.value.copy(
+                                        artworkRefresh =
+                                            ArtworkRefreshUiState(
+                                                isRunning = true,
+                                                completed = completedVideoCount + progress.completed,
+                                                total = totalRefreshCount,
+                                                currentItemName = progress.currentItemName,
+                                            )
+                                    )
+                            }
+                        refreshed += localSummary.refreshedItems
+                        failed += localSummary.failedItems
+                        skipped += localSummary.skippedItems
+                    }
+
+                    rescanLocalLibraryRootsInternal()
+                    loadStorageInfo()
+                    _uiState.value =
+                        _uiState.value.copy(
+                            error = "Artwork refreshed: $refreshed, failed: $failed, skipped: $skipped"
+                        )
                 } catch (e: CancellationException) {
                     _uiState.value = _uiState.value.copy(error = "Artwork refresh cancelled")
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to refresh artwork")
+                    _uiState.value =
+                        _uiState.value.copy(error = "Failed to refresh artwork: ${e.message}")
                 } finally {
                     _uiState.value =
                         _uiState.value.copy(
@@ -648,6 +700,7 @@ data class DownloadsUiState(
     val downloadedImageStorageUsed: Long = 0L,
     val storageLocations: List<DownloadStorageLocation> = emptyList(),
     val localLibraryRoots: List<LocalLibraryRootRecord> = emptyList(),
+    val localArtworkRefreshCount: Int = 0,
     val deviceStorageStats: DownloadsViewModel.DeviceStorageStats? = null,
     val artworkRefresh: ArtworkRefreshUiState = ArtworkRefreshUiState(),
     val error: String? = null,

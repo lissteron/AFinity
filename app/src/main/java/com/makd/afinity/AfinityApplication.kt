@@ -16,6 +16,9 @@ import coil3.request.CachePolicy
 import coil3.request.crossfade
 import coil3.svg.SvgDecoder
 import com.makd.afinity.cast.CastManager
+import com.makd.afinity.data.local.LocalLibraryMediaRepository
+import com.makd.afinity.data.local.LocalLibraryScanService
+import com.makd.afinity.data.local.LocalLibraryVisibilityContext
 import com.makd.afinity.data.repository.download.DownloadQueuePolicyCoordinator
 import com.makd.afinity.data.repository.download.DownloadQueueMigration
 import com.makd.afinity.data.repository.download.SchedulerLivenessCoordinator
@@ -52,6 +55,10 @@ class AfinityApplication : Application(), Configuration.Provider, SingletonImage
     @Inject lateinit var downloadQueuePolicyCoordinator: DownloadQueuePolicyCoordinator
 
     @Inject lateinit var schedulerLivenessCoordinator: SchedulerLivenessCoordinator
+
+    @Inject lateinit var localLibraryMediaRepository: LocalLibraryMediaRepository
+
+    @Inject lateinit var localLibraryScanService: LocalLibraryScanService
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     var ringBufferTree: RingBufferTree? = null
@@ -92,6 +99,25 @@ class AfinityApplication : Application(), Configuration.Provider, SingletonImage
             downloadQueueMigration.run()
             downloadQueuePolicyCoordinator.start()
             schedulerLivenessCoordinator.start()
+        }
+
+        applicationScope.launch(Dispatchers.IO) {
+            try {
+                val hasIndexedMedia = localLibraryMediaRepository.hasIndexedMedia()
+                val hasMissingArtwork = localLibraryMediaRepository.hasIndexedMediaMissingArtwork()
+                val needsIndexRebuild = !hasIndexedMedia
+                if (!needsIndexRebuild && !hasMissingArtwork) return@launch
+                Timber.d("Repairing local library index in background")
+                localLibraryScanService.scanEnabledRootsWithArtworkBackfill(
+                    LocalLibraryVisibilityContext(
+                        currentUserId = preferencesRepository.getCurrentUserId(),
+                        kidModeEnabled = false,
+                        parentUnlocked = false,
+                    )
+                )
+            } catch (error: Exception) {
+                Timber.w(error, "Failed to backfill local library artwork index")
+            }
         }
     }
 
