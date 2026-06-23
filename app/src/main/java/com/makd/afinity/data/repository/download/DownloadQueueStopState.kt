@@ -21,6 +21,7 @@ class DownloadQueueStopState {
                 disposition = DownloadQueueStopDisposition.PAUSE,
                 scheduleAfterStop = null,
                 allowScheduleAfterStop = !force,
+                rescheduleCurrentJob = false,
             ),
             force = force,
         )
@@ -36,11 +37,23 @@ class DownloadQueueStopState {
                     disposition = DownloadQueueStopDisposition.REQUEUE,
                     scheduleAfterStop = scheduleAfterStop,
                     allowScheduleAfterStop = true,
+                    rescheduleCurrentJob = false,
                 )
             )
         if (!accepted) ensureScheduleAfterStop(scheduleAfterStop)
         return accepted
     }
+
+    fun requestSystemRequeue(reason: String): Boolean =
+        requestStop(
+            DownloadQueueStopRequest(
+                reason = reason,
+                disposition = DownloadQueueStopDisposition.REQUEUE,
+                scheduleAfterStop = null,
+                allowScheduleAfterStop = false,
+                rescheduleCurrentJob = true,
+            )
+        )
 
     private fun requestStop(
         next: DownloadQueueStopRequest,
@@ -69,6 +82,7 @@ data class DownloadQueueStopRequest(
     val disposition: DownloadQueueStopDisposition,
     val scheduleAfterStop: DownloadQueueScheduleTrigger?,
     val allowScheduleAfterStop: Boolean,
+    val rescheduleCurrentJob: Boolean,
 )
 
 enum class DownloadQueueStopDisposition {
@@ -76,8 +90,8 @@ enum class DownloadQueueStopDisposition {
     REQUEUE,
 }
 
-enum class DownloadQueuePolicyRequeueRequestResult {
-    RunnerWillRequeueAndReschedule,
+enum class DownloadQueueRequeueRequestResult {
+    RunnerWillHandleRequeue,
     NoRunningRunner,
     ExistingStopRequestWins,
 }

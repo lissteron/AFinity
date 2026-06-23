@@ -48,6 +48,8 @@ data class AfinitySidecarServer(
 data class AfinitySidecarIdentity(
     val itemId: String? = null,
     val sourceId: String? = null,
+    val seriesId: String? = null,
+    val seasonId: String? = null,
     val providerIds: Map<String, String> = emptyMap(),
 )
 

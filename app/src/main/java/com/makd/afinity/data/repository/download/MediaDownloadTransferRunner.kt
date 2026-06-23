@@ -55,6 +55,7 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -62,6 +63,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -129,7 +131,7 @@ constructor(
                                 activeBackendRunId,
                                 message,
                             )
-                            return TransferResult.Paused(message)
+                            return TransferResult.Requeued(message)
                         }
                 } else {
                     null
@@ -161,6 +163,7 @@ constructor(
                                 activeBackendRunId,
                                 result.message,
                             )
+                            return TransferResult.Requeued(result.message)
                         } else {
                             pauseActiveDownload(
                                 claimedDownload.id,
@@ -168,8 +171,8 @@ constructor(
                                 activeBackendRunId,
                                 result.message,
                             )
+                            return TransferResult.Paused(result.message)
                         }
-                        return TransferResult.Paused(result.message)
                     }
                 }
 
@@ -192,7 +195,7 @@ constructor(
                             activeBackendRunId,
                             message,
                         )
-                        return TransferResult.Paused(message)
+                        return TransferResult.Requeued(message)
                     }
                     attempts += 1
                     if (attempts <= 4) {
@@ -206,7 +209,7 @@ constructor(
                         activeBackendRunId,
                         message,
                     )
-                    return TransferResult.Paused(message)
+                    return TransferResult.Requeued(message)
                 }
                 throw e
             }
@@ -326,7 +329,39 @@ constructor(
                 val totalBytes =
                     if (remainingBytes != -1L) existingFileSize + remainingBytes else -1L
                 var downloadedBytes = existingFileSize
+                var networkBytesSinceLastProgress = 0L
                 var lastUpdateTime = 0L
+                suspend fun publishProgress(deltaBytes: Long): Boolean {
+                    val progress =
+                        if (totalBytes > 0) {
+                            downloadedBytes.toFloat() / totalBytes.toFloat()
+                        } else {
+                            0f
+                        }
+                    if (
+                        !stateStore.updateOwnedProgress(
+                            downloadId = claimedDownload.id,
+                            activeClaimId = activeClaimId,
+                            backendRunId = activeBackendRunId,
+                            progress = progress,
+                            bytesDownloaded = downloadedBytes,
+                            totalBytes = totalBytes,
+                        )
+                    ) {
+                        return false
+                    }
+                    progressObserver(
+                        DownloadProgress(
+                            downloadId = claimedDownload.id,
+                            itemName = claimedDownload.itemName,
+                            downloadedBytes = downloadedBytes,
+                            totalBytes = totalBytes,
+                            progress = progress,
+                            networkBytesDelta = deltaBytes,
+                        )
+                    )
+                    return true
+                }
 
                 response.body?.byteStream()?.use { input ->
                     failureStage = "opening media output stream"
@@ -352,6 +387,7 @@ constructor(
 
                             output.write(buffer, 0, bytes)
                             downloadedBytes += bytes
+                            networkBytesSinceLastProgress += bytes
 
                             val currentTime = System.currentTimeMillis()
                             if (
@@ -359,36 +395,21 @@ constructor(
                                     (totalBytes > 0 && downloadedBytes == totalBytes)
                             ) {
                                 lastUpdateTime = currentTime
-                                val progress =
-                                    if (totalBytes > 0) {
-                                        downloadedBytes.toFloat() / totalBytes.toFloat()
-                                    } else {
-                                        0f
-                                    }
-                                if (
-                                    !stateStore.updateOwnedProgress(
-                                        downloadId = claimedDownload.id,
-                                        activeClaimId = activeClaimId,
-                                        backendRunId = activeBackendRunId,
-                                        progress = progress,
-                                        bytesDownloaded = downloadedBytes,
-                                        totalBytes = totalBytes,
-                                    )
-                                ) {
+                                if (!publishProgress(networkBytesSinceLastProgress)) {
                                     return TransferResult.Paused(
                                         "Download no longer owns the active claim"
                                     )
                                 }
-                                progressObserver(
-                                    DownloadProgress(
-                                        downloadId = claimedDownload.id,
-                                        itemName = claimedDownload.itemName,
-                                        downloadedBytes = downloadedBytes,
-                                        totalBytes = totalBytes,
-                                        progress = progress,
-                                    )
+                                networkBytesSinceLastProgress = 0L
+                            }
+                        }
+                        if (networkBytesSinceLastProgress > 0L) {
+                            if (!publishProgress(networkBytesSinceLastProgress)) {
+                                return TransferResult.Paused(
+                                    "Download no longer owns the active claim"
                                 )
                             }
+                            networkBytesSinceLastProgress = 0L
                         }
                     }
                 }
@@ -486,27 +507,51 @@ constructor(
             return TransferResult.Failed(message)
         } catch (e: CancellationException) {
             val request = stopRequest()
-            if (request != null) {
-                applyStopRequest(claimedDownload.id, activeClaimId, activeBackendRunId, request)
-            } else {
-                pauseActiveDownload(
-                    claimedDownload.id,
-                    activeClaimId,
-                    activeBackendRunId,
-                    "Download job stopped",
-                )
+            withContext(NonCancellable) {
+                if (request != null) {
+                    applyStopRequest(claimedDownload.id, activeClaimId, activeBackendRunId, request)
+                } else {
+                    requeueActiveDownload(
+                        claimedDownload.id,
+                        activeClaimId,
+                        activeBackendRunId,
+                        "Download job stopped",
+                    )
+                }
             }
             throw e
         } catch (e: IOException) {
+            completedResultIfAlreadyCompleted(claimedDownload.id)?.let { return it }
             if (uidtNetworkSession.hasNetworkChangedSince(session.networkGeneration)) {
                 throw e
             }
+            if (
+                !isActiveOwnedDownload(
+                    claimedDownload.id,
+                    activeClaimId,
+                    activeBackendRunId,
+                )
+            ) {
+                return TransferResult.Paused("Download no longer owns the active claim")
+            }
             val message = e.message ?: "Download interrupted"
-            Timber.w(e, "Media download interrupted; pausing active row")
-            pauseActiveDownload(claimedDownload.id, activeClaimId, activeBackendRunId, message)
-            return TransferResult.Paused(message)
+            Timber.w(e, "Media download interrupted; requeueing active row")
+            requeueActiveDownload(claimedDownload.id, activeClaimId, activeBackendRunId, message)
+            return TransferResult.Requeued(message)
         } catch (e: Exception) {
             val message = e.toDownloadFailureMessage(failureStage)
+            completedResultIfAlreadyCompleted(claimedDownload.id)?.let { return it }
+            val activeOwned =
+                isActiveOwnedDownload(
+                    claimedDownload.id,
+                    activeClaimId,
+                    activeBackendRunId,
+                )
+            if (activeOwned && DownloadQueueTransientFailureClassifier.isTransientFailure(e)) {
+                Timber.w(e, "Media download transient failure at $failureStage; requeueing active row")
+                requeueActiveDownload(claimedDownload.id, activeClaimId, activeBackendRunId, message)
+                return TransferResult.Requeued(message)
+            }
             Timber.e(e, "Media download failed at $failureStage")
             failActiveDownload(
                 claimedDownload.id,
@@ -565,6 +610,23 @@ constructor(
 
     private suspend fun isStillCompleted(downloadId: UUID): Boolean =
         databaseRepository.getDownload(downloadId)?.status == DownloadStatus.COMPLETED
+
+    private suspend fun completedResultIfAlreadyCompleted(downloadId: UUID): TransferResult.Completed? {
+        val download = databaseRepository.getDownload(downloadId) ?: return null
+        if (download.status != DownloadStatus.COMPLETED) return null
+        return TransferResult.Completed(download.id, download.filePath.orEmpty())
+    }
+
+    private suspend fun isActiveOwnedDownload(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+    ): Boolean {
+        val download = databaseRepository.getDownload(downloadId) ?: return false
+        return download.status == DownloadStatus.DOWNLOADING &&
+            download.activeClaimId == activeClaimId &&
+            download.activeBackendRunId == activeBackendRunId
+    }
 
     private fun ensureUidtNetworkFresh(networkGeneration: Long?) {
         if (uidtNetworkSession.hasNetworkChangedSince(networkGeneration)) {
@@ -1749,6 +1811,8 @@ constructor(
                     AfinitySidecarIdentity(
                         itemId = item.id.toString(),
                         sourceId = source.id,
+                        seriesId = (item as? AfinityEpisode)?.seriesId?.toString(),
+                        seasonId = (item as? AfinityEpisode)?.seasonId?.toString(),
                         providerIds = item.providerIds.orEmpty(),
                     ),
                 localIdentity =
@@ -1926,12 +1990,15 @@ constructor(
         val downloadedBytes: Long,
         val totalBytes: Long,
         val progress: Float,
+        val networkBytesDelta: Long,
     )
 
     sealed class TransferResult {
         data class Completed(val downloadId: UUID, val filePath: String) : TransferResult()
 
         data class Paused(val reason: String) : TransferResult()
+
+        data class Requeued(val reason: String) : TransferResult()
 
         data class Failed(val reason: String) : TransferResult()
     }

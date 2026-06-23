@@ -13,6 +13,7 @@ import com.makd.afinity.data.database.entities.LocalMediaImportJobEntity
 import com.makd.afinity.data.database.entities.LocalMediaSidecarEntity
 import com.makd.afinity.data.database.entities.LocalMediaUserStateEntity
 import com.makd.afinity.data.database.entities.LocalMediaVisibilityEntity
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface LocalLibraryDao {
@@ -95,4 +96,18 @@ interface LocalLibraryDao {
 
     @Query("UPDATE local_media_files SET visibleByDefault = 0 WHERE mediaFileId = :mediaFileId")
     fun hideMediaFile(mediaFileId: String): Int
+
+    @Query(
+        """
+        SELECT
+            CAST((SELECT COUNT(*) FROM local_media_files) AS TEXT) || ':' ||
+            CAST(COALESCE((SELECT MAX(updatedAt) FROM local_library_items), 0) AS TEXT) || ':' ||
+            CAST(COALESCE((SELECT MAX(COALESCE(lastScanCompletedAt, 0)) FROM local_library_root_snapshots), 0) AS TEXT) || ':' ||
+            CAST((SELECT COUNT(*) FROM local_media_visibility) AS TEXT) || ':' ||
+            CAST(COALESCE((SELECT MAX(updatedAt) FROM local_media_visibility), 0) AS TEXT) || ':' ||
+            CAST((SELECT COUNT(*) FROM local_media_user_state) AS TEXT) || ':' ||
+            CAST(COALESCE((SELECT MAX(updatedAt) FROM local_media_user_state), 0) AS TEXT)
+        """
+    )
+    fun catalogGenerationFlow(): Flow<String>
 }

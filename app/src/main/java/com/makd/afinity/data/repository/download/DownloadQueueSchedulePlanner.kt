@@ -9,8 +9,10 @@ class DownloadQueueSchedulePlanner {
         trigger: DownloadQueueScheduleTrigger,
         isVisible: Boolean,
         queuedCount: Int,
+        activeDownloadCount: Int = 0,
         notificationsAllowed: Boolean,
     ): Plan {
+        if (activeDownloadCount > 0) return Plan.BackendAlreadyRunning
         if (queuedCount <= 0) return Plan.NoEligibleRows
         if (sdkInt < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return Plan.ScheduleWorkManager
         if (!isVisible) {
@@ -41,6 +43,7 @@ class DownloadQueueSchedulePlanner {
     sealed class Plan {
         data object ScheduleUidt : Plan()
         data object ScheduleWorkManager : Plan()
+        data object BackendAlreadyRunning : Plan()
         data object NoEligibleRows : Plan()
         data class DeferUidt(val reason: String) : Plan()
     }

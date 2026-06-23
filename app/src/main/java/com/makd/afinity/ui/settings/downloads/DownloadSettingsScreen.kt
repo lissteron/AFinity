@@ -1,5 +1,7 @@
 package com.makd.afinity.ui.settings.downloads
 
+import android.content.Context
+import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -61,6 +63,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -89,6 +92,7 @@ import com.makd.afinity.ui.downloads.ArtworkRefreshUiState
 import com.makd.afinity.ui.downloads.DownloadsViewModel
 import java.util.Locale
 import java.util.UUID
+import timber.log.Timber
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -104,13 +108,22 @@ fun DownloadSettingsScreen(
     val isOffline by offlineModeManager.hardOffline.collectAsStateWithLifecycle(initialValue = false)
     val snackbarHostState = remember { SnackbarHostState() }
     val playerOffset = LocalPlayerOffset.current
+    val context = LocalContext.current
     val folderPickerLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-            if (uri != null) viewModel.setCustomDownloadStorageLocation(uri)
+            if (uri != null) {
+                viewModel.setCustomDownloadStorageLocation(uri)
+            } else {
+                viewModel.onFolderPickerCancelled(DOWNLOAD_FOLDER_PICKER_TARGET)
+            }
         }
     val localLibraryFolderPickerLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-            if (uri != null) viewModel.addLocalLibraryFolder(uri)
+            if (uri != null) {
+                viewModel.addLocalLibraryFolder(uri)
+            } else {
+                viewModel.onFolderPickerCancelled(LOCAL_LIBRARY_FOLDER_PICKER_TARGET)
+            }
         }
 
     LaunchedEffect(uiState.error) {
@@ -209,8 +222,24 @@ fun DownloadSettingsScreen(
                     localLibraryRoots = uiState.localLibraryRoots,
                     hasActiveDownloads = uiState.activeDownloads.isNotEmpty(),
                     onLocationSelected = viewModel::setDownloadStorageLocation,
-                    onChooseFolder = { folderPickerLauncher.launch(null) },
-                    onAddLocalLibraryFolder = { localLibraryFolderPickerLauncher.launch(null) },
+                    onChooseFolder = {
+                        launchSystemFolderPicker(
+                            context = context,
+                            target = DOWNLOAD_FOLDER_PICKER_TARGET,
+                            launch = { folderPickerLauncher.launch(null) },
+                            onUnavailable = viewModel::onFolderPickerUnavailable,
+                            onLaunchFailed = viewModel::onFolderPickerLaunchFailed,
+                        )
+                    },
+                    onAddLocalLibraryFolder = {
+                        launchSystemFolderPicker(
+                            context = context,
+                            target = LOCAL_LIBRARY_FOLDER_PICKER_TARGET,
+                            launch = { localLibraryFolderPickerLauncher.launch(null) },
+                            onUnavailable = viewModel::onFolderPickerUnavailable,
+                            onLaunchFailed = viewModel::onFolderPickerLaunchFailed,
+                        )
+                    },
                     onRootEnabledChanged = viewModel::setLocalLibraryRootEnabled,
                     onSetDefaultRoot = viewModel::setDefaultLocalLibraryRoot,
                     onRemoveRoot = viewModel::removeLocalLibraryRoot,
@@ -764,6 +793,31 @@ fun DownloadStorageLocationCard(
             }
         }
     }
+}
+
+private const val DOWNLOAD_FOLDER_PICKER_TARGET = "download storage folder"
+private const val LOCAL_LIBRARY_FOLDER_PICKER_TARGET = "local library folder"
+
+private fun launchSystemFolderPicker(
+    context: Context,
+    target: String,
+    launch: () -> Unit,
+    onUnavailable: (String, String?) -> Unit,
+    onLaunchFailed: (String, Throwable) -> Unit,
+) {
+    if (!canOpenSystemFolderPicker(context)) {
+        val detail = "No visible activity resolves ACTION_OPEN_DOCUMENT_TREE for the current profile"
+        Timber.w("System folder picker unavailable for %s: %s", target, detail)
+        onUnavailable(target, detail)
+        return
+    }
+
+    runCatching { launch() }.onFailure { error -> onLaunchFailed(target, error) }
+}
+
+private fun canOpenSystemFolderPicker(context: Context): Boolean {
+    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+    return intent.resolveActivity(context.packageManager) != null
 }
 
 @Composable

@@ -6,6 +6,7 @@ import com.makd.afinity.data.models.user.User
 import com.makd.afinity.data.repository.AudiobookshelfRepository
 import com.makd.afinity.data.repository.DatabaseRepository
 import com.makd.afinity.data.repository.JellyseerrRepository
+import com.makd.afinity.data.repository.PreferencesRepository
 import com.makd.afinity.data.repository.SecurePreferencesRepository
 import com.makd.afinity.data.repository.server.AddressResolutionResult
 import com.makd.afinity.data.repository.server.ServerAddressResolver
@@ -46,6 +47,7 @@ constructor(
     private val serverRepository: ServerRepository,
     private val databaseRepository: DatabaseRepository,
     private val securePrefsRepository: SecurePreferencesRepository,
+    private val preferencesRepository: PreferencesRepository,
     private val jellyseerrRepository: JellyseerrRepository,
     private val audiobookshelfRepository: AudiobookshelfRepository,
     private val serverAddressResolver: ServerAddressResolver,
@@ -156,6 +158,8 @@ constructor(
                     )
 
                 securePrefsRepository.saveActiveSession(serverId, userId, resolvedUrl)
+                preferencesRepository.setCurrentServerId(serverId)
+                preferencesRepository.setCurrentUserId(userId.toString())
                 sessionScope.launch {
                     try {
                         jellyseerrRepository.setActiveJellyfinSession(serverId, userId)
@@ -237,18 +241,25 @@ constructor(
     suspend fun logout() {
         if (_currentSession.value == null) {
             Timber.w("No session to logout from")
+            clearActiveSessionState()
             return
         }
 
+        clearActiveSessionState()
+        securePrefsRepository.clearAuthenticationData()
+
+        Timber.d("Logged out successfully (token kept for re-login)")
+    }
+
+    suspend fun clearActiveSessionState() {
         securePrefsRepository.clearActiveSession()
+        preferencesRepository.setCurrentServerId(null)
+        preferencesRepository.setCurrentUserId(null)
         jellyseerrRepository.clearActiveSession()
         audiobookshelfRepository.clearActiveSession()
         _currentSession.value = null
         _isServerReachable.value = true
-        securePrefsRepository.clearAuthenticationData()
         apiClients.clear()
-
-        Timber.d("Logged out successfully (token kept for re-login)")
     }
 
     private fun getOrCreateApiClient(serverId: String, serverUrl: String): ApiClient {

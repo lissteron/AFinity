@@ -74,6 +74,8 @@ data class LocalMediaIdentityEntity(
     val serverId: String?,
     val jellyfinItemId: String?,
     val jellyfinSourceId: String?,
+    val jellyfinSeriesId: String?,
+    val jellyfinSeasonId: String?,
     val providerIdsJson: String,
     val stableRootId: String?,
     val fingerprintStrategy: String,

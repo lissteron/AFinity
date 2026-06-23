@@ -143,7 +143,7 @@ class FilePathLibraryFileSystem : LocalLibraryFileSystem {
         root.resolve(relativePath).let { it.exists() && it.isFile && it.canRead() }
 
     override fun playerUri(root: LocalLibraryRootRecord, relativePath: String): String =
-        root.resolve(relativePath).toURI().toString()
+        root.resolve(relativePath).absolutePath
 
     override fun delete(root: LocalLibraryRootRecord, relativePath: String): Boolean {
         val file = root.resolve(relativePath)

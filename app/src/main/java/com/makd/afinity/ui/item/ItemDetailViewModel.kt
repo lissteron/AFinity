@@ -9,6 +9,8 @@ import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import androidx.paging.map
 import com.makd.afinity.data.database.entities.ItemMetadataCacheEntity
+import com.makd.afinity.data.local.LocalLibraryMediaRepository
+import com.makd.afinity.data.local.LocalLibraryVisibilityContext
 import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.PlaybackEvent
 import com.makd.afinity.data.manager.PlaybackStateManager
@@ -81,7 +83,7 @@ import kotlin.coroutines.cancellation.CancellationException
 class ItemDetailViewModel
 @Inject
 constructor(
-    @ApplicationContext private val context: Context,
+    @param:ApplicationContext private val context: Context,
     private val userDataRepository: UserDataRepository,
     private val mediaRepository: MediaRepository,
     private val sessionManager: SessionManager,
@@ -98,6 +100,7 @@ constructor(
     private val preferencesRepository: PreferencesRepository,
     private val networkMonitor: NetworkConnectivityMonitor,
     private val kidModeRepository: KidModeRepository,
+    private val localLibraryMediaRepository: LocalLibraryMediaRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -128,6 +131,9 @@ constructor(
     val capabilityPolicy = kidModeRepository.policy
     val isOffline: StateFlow<Boolean> =
         offlineModeManager.hardOffline
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val isDownloadedOnlyUi: StateFlow<Boolean> =
+        offlineModeManager.isOffline
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     val completedDownloadItemIds: StateFlow<Set<UUID>> =
         downloadRepository
@@ -178,6 +184,7 @@ constructor(
                         }
                     }
                     is PlaybackEvent.Synced -> {
+                        val canLoadRemoteContent = offlineModeManager.canLoadRemoteContentNow()
                         val isNextEpisode = _uiState.value.nextEpisode?.id == event.itemId
                         val isBoxSetItem = _uiState.value.boxSetItems.any { it.id == event.itemId }
                         val isChildUpdate =
@@ -200,7 +207,7 @@ constructor(
                                 belongsToLoadedSeason
                         var syncedEpisode: AfinityEpisode? = null
 
-                        if (!isRelated) {
+                        if (!isRelated && canLoadRemoteContent) {
                             try {
                                 val syncedItem = mediaRepository.getItemById(event.itemId)
                                 if (syncedItem is AfinityEpisode) {
@@ -218,7 +225,7 @@ constructor(
                             } catch (e: Exception) {
                                 Timber.e(e, "Error checking synced item")
                             }
-                        } else {
+                        } else if (canLoadRemoteContent) {
                             try {
                                 val syncedItem = mediaRepository.getItemById(event.itemId)
                                 if (syncedItem is AfinityEpisode) {
@@ -237,7 +244,9 @@ constructor(
                             }
                             refreshFromCacheImmediate()
                         }
-                        updateSimilarItemsOnSync(event.itemId)
+                        if (canLoadRemoteContent) {
+                            updateSimilarItemsOnSync(event.itemId)
+                        }
                     }
                 }
             }
@@ -374,6 +383,7 @@ constructor(
     private fun refreshFromCacheImmediate() {
         viewModelScope.launch {
             try {
+                if (!offlineModeManager.canLoadRemoteContentNow()) return@launch
                 val cachedItem = mediaRepository.getItemById(itemId)
                 if (cachedItem != null) {
                     updateItemUserData(cachedItem)
@@ -416,6 +426,7 @@ constructor(
     private fun updateSimilarItemsOnSync(syncedItemId: UUID) {
         viewModelScope.launch {
             try {
+                if (!offlineModeManager.canLoadRemoteContentNow()) return@launch
                 val targetId =
                     when (val syncedItem = mediaRepository.getItemById(syncedItemId)) {
                         is AfinityEpisode -> syncedItem.seriesId
@@ -600,9 +611,7 @@ constructor(
                 _uiState.value = _uiState.value.copy(isLoading = true, error = null)
                 val canLoadRemoteContent = offlineModeManager.canLoadRemoteContentNow()
                 var loadedFromOfflineCache = false
-                if (canLoadRemoteContent) {
-                    launchParallelFetches()
-                }
+                var loadedFromLocalCatalog = false
 
                 val item =
                     if (canLoadRemoteContent) {
@@ -638,11 +647,13 @@ constructor(
                         }
                             ?: run {
                                 loadedFromOfflineCache = true
-                                loadDownloadedItemFromDatabase()
+                                loadLocalCatalogItem()?.also { loadedFromLocalCatalog = true }
+                                    ?: loadDownloadedItemFromDatabase()
                             }
                     } else {
                         loadedFromOfflineCache = true
-                        loadDownloadedItemFromDatabase()
+                        loadLocalCatalogItem()?.also { loadedFromLocalCatalog = true }
+                            ?: loadDownloadedItemFromDatabase()
                     }
 
                 if (item == null) {
@@ -656,9 +667,15 @@ constructor(
                     return@launch
                 }
 
-                _uiState.value = _uiState.value.copy(item = item, isLoading = false)
+                _uiState.value =
+                    _uiState.value.copy(
+                        item = item,
+                        isLoading = false,
+                        isLocalCatalogItem = loadedFromLocalCatalog,
+                    )
 
                 if (canLoadRemoteContent && !loadedFromOfflineCache) {
+                    launchParallelFetches()
                     if (item is AfinityMovie || item is AfinityShow) {
                         launch { loadReviewsAndRatings(item) }
                     }
@@ -948,6 +965,42 @@ constructor(
     private suspend fun loadDownloadedItemFromDatabase(): AfinityItem? =
         loadItemFromDatabase()?.let { filterOfflineItemToCompletedDownloads(it) }
 
+    private suspend fun loadLocalCatalogItem(): AfinityItem? {
+        val (profileUserId, visibilityContext) = localLibraryVisibility()
+        return localLibraryMediaRepository.findVisibleItemById(
+            itemId = itemId,
+            itemType = itemType,
+            seriesId = seriesId,
+            profileUserId = profileUserId,
+            visibilityContext = visibilityContext,
+        )
+    }
+
+    private suspend fun resolveLocalCatalogEpisode(episode: AfinityEpisode): AfinityEpisode? {
+        val (profileUserId, visibilityContext) = localLibraryVisibility()
+        return localLibraryMediaRepository.findVisibleItemById(
+            itemId = episode.id,
+            itemType = "Episode",
+            seriesId = episode.seriesId,
+            profileUserId = profileUserId,
+            visibilityContext = visibilityContext,
+        ) as? AfinityEpisode
+    }
+
+    private suspend fun localLibraryVisibility(): Pair<String?, LocalLibraryVisibilityContext> {
+        val profileUserId =
+            authRepository.currentUser.value?.id?.toString()
+                ?: sessionManager.currentSession.value?.userId?.toString()
+                ?: preferencesRepository.getCurrentUserId()
+        val capability = kidModeRepository.policy.value
+        return profileUserId to
+            LocalLibraryVisibilityContext(
+                currentUserId = profileUserId,
+                kidModeEnabled = capability.isKidModeEnabled,
+                parentUnlocked = capability.isParentUnlocked,
+            )
+    }
+
     private suspend fun filterOfflineItemToCompletedDownloads(item: AfinityItem): AfinityItem? {
         val downloadedItemIds =
             downloadRepository
@@ -1171,20 +1224,27 @@ constructor(
         }
     }
 
-    suspend fun resolveEpisodeForPlayback(episode: AfinityEpisode): AfinityEpisode? =
-        try {
-            mediaRepository
-                .getItem(episode.id, fields = FieldSets.ITEM_DETAIL)
-                ?.toAfinityEpisode(mediaRepository.getBaseUrl(), null)
-        } catch (_: Exception) {
-            try {
-                authRepository.currentUser.value?.id?.let {
-                    databaseRepository.getEpisode(episode.id, it)
+    suspend fun resolveEpisodeForPlayback(episode: AfinityEpisode): AfinityEpisode? {
+        val remoteOrCachedEpisode =
+            if (!offlineModeManager.isCurrentlyOffline()) {
+                try {
+                    mediaRepository
+                        .getItem(episode.id, fields = FieldSets.ITEM_DETAIL)
+                        ?.toAfinityEpisode(mediaRepository.getBaseUrl(), null)
+                } catch (_: Exception) {
+                    try {
+                        authRepository.currentUser.value?.id?.let {
+                            databaseRepository.getEpisode(episode.id, it)
+                        }
+                    } catch (_: Exception) {
+                        null
+                    }
                 }
-            } catch (_: Exception) {
+            } else {
                 null
             }
-        } ?: episode
+        return remoteOrCachedEpisode ?: resolveLocalCatalogEpisode(episode) ?: episode
+    }
 
     fun clearSelectedEpisode() {
         _selectedEpisode.value = null
@@ -1586,4 +1646,5 @@ data class ItemDetailUiState(
     val mdbRatings: List<MdbListRating> = emptyList(),
     val isRatingsFromCache: Boolean = false,
     val movieParts: List<AfinityItem> = emptyList(),
+    val isLocalCatalogItem: Boolean = false,
 )

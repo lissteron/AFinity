@@ -61,6 +61,7 @@ constructor(
         return withContext(Dispatchers.IO) {
             try {
                 if (!securePreferencesRepository.hasValidAuthData()) {
+                    sessionManager.clearActiveSessionState()
                     Timber.d("No valid encrypted auth data found, user needs to login")
                     return@withContext AuthRepository.RestoreResult.Failed
                 }
@@ -128,6 +129,7 @@ constructor(
 
     override suspend fun clearAllAuthData() {
         try {
+            sessionManager.clearActiveSessionState()
             securePreferencesRepository.clearAuthenticationData()
             Timber.d("Cleared all encrypted authentication data")
         } catch (e: Exception) {

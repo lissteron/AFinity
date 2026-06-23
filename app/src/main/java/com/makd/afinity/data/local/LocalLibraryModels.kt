@@ -65,6 +65,8 @@ data class LocalMediaIdentity(
     val serverId: String?,
     val jellyfinItemId: String?,
     val jellyfinSourceId: String?,
+    val jellyfinSeriesId: String? = null,
+    val jellyfinSeasonId: String? = null,
     val providerIds: Map<String, String> = emptyMap(),
     val stableRootId: UUID?,
     val fingerprint: LocalMediaFingerprint,

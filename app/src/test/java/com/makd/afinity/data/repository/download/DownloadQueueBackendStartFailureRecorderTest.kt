@@ -6,41 +6,41 @@ import org.junit.Test
 
 class DownloadQueueBackendStartFailureRecorderTest {
     @Test
-    fun recordsSchedulerFailureBeforePausingActiveRows() = runBlocking {
+    fun recordsSchedulerFailureBeforeRequeueingActiveRows() = runBlocking {
         val events = mutableListOf<String>()
         val recorder =
             DownloadQueueBackendStartFailureRecorder(
                 recordFailure = { reason -> events += "record:$reason" },
-                pauseActiveRows = { reason ->
-                    events += "pause:$reason"
+                requeueActiveRows = { reason ->
+                    events += "requeue:$reason"
                     2
                 },
             )
 
-        val paused = recorder.record("notification blocked")
+        val requeued = recorder.record("notification blocked")
 
-        assertEquals(2, paused)
-        assertEquals(listOf("record:notification blocked", "pause:notification blocked"), events)
+        assertEquals(2, requeued)
+        assertEquals(listOf("record:notification blocked", "requeue:notification blocked"), events)
     }
 
     @Test
-    fun doesNotHidePauseFailure() = runBlocking {
+    fun doesNotHideRequeueFailure() = runBlocking {
         val events = mutableListOf<String>()
         val recorder =
             DownloadQueueBackendStartFailureRecorder(
                 recordFailure = { reason -> events += "record:$reason" },
-                pauseActiveRows = {
-                    events += "pause"
-                    error("pause failed")
+                requeueActiveRows = {
+                    events += "requeue"
+                    error("requeue failed")
                 },
             )
 
         val thrown =
             runCatching { recorder.record("foreground denied") }
                 .exceptionOrNull()
-                ?: error("Expected pause failure")
+                ?: error("Expected requeue failure")
 
-        assertEquals("pause failed", thrown.message)
-        assertEquals(listOf("record:foreground denied", "pause"), events)
+        assertEquals("requeue failed", thrown.message)
+        assertEquals(listOf("record:foreground denied", "requeue"), events)
     }
 }

@@ -961,6 +961,18 @@ constructor(
         )
     }
 
+    override suspend fun requeueZeroByteFailedDownloadsByErrorPattern(
+        legacyErrorPattern: String,
+        newError: String?,
+        updatedAt: Long,
+    ): Int {
+        return serverDatabaseDao.requeueZeroByteFailedDownloadsByErrorPattern(
+            legacyErrorPattern,
+            newError,
+            updatedAt,
+        )
+    }
+
     override suspend fun insertMovieIfDownloadCompleted(
         downloadId: UUID,
         movie: AfinityMovie,

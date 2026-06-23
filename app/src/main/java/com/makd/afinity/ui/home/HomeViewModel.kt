@@ -1,6 +1,7 @@
 package com.makd.afinity.ui.home
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavController
@@ -13,11 +14,14 @@ import androidx.work.WorkManager
 import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.PlaybackEvent
 import com.makd.afinity.data.manager.PlaybackStateManager
+import com.makd.afinity.data.manager.Session
+import com.makd.afinity.data.manager.SessionManager
+import com.makd.afinity.data.local.LocalLibraryHomeCatalog
 import com.makd.afinity.data.local.LocalLibraryMediaRepository
-import com.makd.afinity.data.local.LocalLibraryScanService
 import com.makd.afinity.data.local.LocalLibraryVisibilityContext
 import com.makd.afinity.data.models.GenreItem
 import com.makd.afinity.data.models.GenreType
+import com.makd.afinity.data.models.download.DownloadStatus
 import com.makd.afinity.data.models.MovieSection
 import com.makd.afinity.data.models.PersonFromMovieSection
 import com.makd.afinity.data.models.PersonSection
@@ -52,15 +56,19 @@ import com.makd.afinity.ui.utils.IntentUtils
 import com.makd.afinity.util.NetworkConnectivityMonitor
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -74,6 +82,7 @@ import org.jellyfin.sdk.model.api.PersonKind.WRITER
 import com.makd.afinity.R
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 
 @HiltViewModel
@@ -89,6 +98,7 @@ constructor(
     private val absDownloadRepository: AbsDownloadRepository,
     private val offlineModeManager: OfflineModeManager,
     private val authRepository: AuthRepository,
+    private val sessionManager: SessionManager,
     private val mediaRepository: MediaRepository,
     private val playbackStateManager: PlaybackStateManager,
     private val itemDownloadDelegate: ItemDownloadDelegate,
@@ -96,7 +106,6 @@ constructor(
     private val preferencesRepository: PreferencesRepository,
     private val networkMonitor: NetworkConnectivityMonitor,
     private val kidModeRepository: KidModeRepository,
-    private val localLibraryScanService: LocalLibraryScanService,
     private val localLibraryMediaRepository: LocalLibraryMediaRepository,
 ) : ViewModel() {
 
@@ -116,6 +125,17 @@ constructor(
     private var cachedShuffledGenres: List<HomeSection.Genre> = emptyList()
 
     private val recommendationMutex = Mutex()
+    private val downloadedContentMutex = Mutex()
+    private val downloadedContentRefreshRequests =
+        MutableSharedFlow<Unit>(
+            replay = 1,
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
+    private val pendingDownloadedContentForce = AtomicBoolean(false)
+    private val downloadedContentRefreshGate = HomeDownloadedContentRefreshGate()
+    private val hardOfflineRefreshTransition = HomeDownloadedOnlyRefreshTransition()
+    private val serverUnavailableRefreshTransition = HomeDownloadedOnlyRefreshTransition()
 
     private var recommendationLoadingJob: kotlinx.coroutines.Job? = null
 
@@ -126,6 +146,31 @@ constructor(
     private val renderedActorNames = mutableSetOf<String>()
 
     init {
+        viewModelScope.launch {
+            downloadedContentRefreshRequests.collect {
+                loadDownloadedContent(force = pendingDownloadedContentForce.getAndSet(false))
+            }
+        }
+        requestDownloadedContentRefresh()
+
+        viewModelScope.launch {
+            combine(authRepository.currentUser, sessionManager.currentSession) { user, session ->
+                    HomeDownloadedContentSessionKey(
+                        serverId = session?.serverId,
+                        userId = user?.id ?: session?.userId,
+                    )
+                }
+                .distinctUntilChanged()
+                .collect { requestDownloadedContentRefresh() }
+        }
+
+        viewModelScope.launch {
+            localLibraryMediaRepository
+                .catalogGenerationFlow()
+                .distinctUntilChanged()
+                .collect { requestDownloadedContentRefresh(force = true) }
+        }
+
         viewModelScope.launch {
             appDataRepository.isInitialDataLoaded.collect { isLoaded ->
                 if (!isLoaded) {
@@ -141,7 +186,8 @@ constructor(
                     renderedStarringWatchedMovies.clear()
                     renderedActorNames.clear()
 
-                    _uiState.value = HomeUiState()
+                    clearRemoteHomeStatePreservingLocalCatalog()
+                    requestDownloadedContentRefresh()
                 } else {
                     Timber.d(
                         "Initial Data Loaded: Triggering secondary content load (Studios, Genres, Recs)"
@@ -159,7 +205,7 @@ constructor(
                         } else {
                             clearDiscoverySections()
                         }
-                        loadDownloadedContent()
+                        requestDownloadedContentRefresh()
                     }
                 }
             }
@@ -282,6 +328,7 @@ constructor(
 
         viewModelScope.launch {
             kidModeRepository.policy.collect { policy ->
+                requestDownloadedContentRefresh()
                 if (!policy.canUseDiscoveryUi) {
                     clearDiscoverySections()
                 } else if (offlineModeManager.canLoadRemoteContentNow()) {
@@ -295,8 +342,9 @@ constructor(
                 Timber.d("Offline mode changed: $isOffline")
                 _uiState.update { it.copy(isOffline = isOffline) }
 
-                if (isOffline) {
-                    loadDownloadedContent()
+                val refreshForce = hardOfflineRefreshTransition.refreshForceFor(isOffline)
+                if (refreshForce != null) {
+                    requestDownloadedContentRefresh(force = refreshForce)
                 } else if (offlineModeManager.canLoadRemoteContentNow()) {
                     scheduleHomeDataReload()
                 }
@@ -306,8 +354,10 @@ constructor(
         viewModelScope.launch {
             offlineModeManager.isServerUnavailable.collect { isServerUnavailable ->
                 _uiState.update { it.copy(isServerUnavailable = isServerUnavailable) }
-                if (isServerUnavailable) {
-                    loadDownloadedContent()
+                val refreshForce =
+                    serverUnavailableRefreshTransition.refreshForceFor(isServerUnavailable)
+                if (refreshForce != null) {
+                    requestDownloadedContentRefresh(force = refreshForce)
                 } else if (offlineModeManager.canLoadRemoteContentNow()) {
                     scheduleHomeDataReload()
                 }
@@ -934,121 +984,264 @@ constructor(
         return adjustedPositions.distinct()
     }
 
-    private suspend fun loadDownloadedContent() {
-        try {
-            val userId = authRepository.currentUser.value?.id ?: return
+    private fun requestDownloadedContentRefresh(force: Boolean = false) {
+        if (force) {
+            pendingDownloadedContentForce.set(true)
+        }
+        downloadedContentRefreshRequests.tryEmit(Unit)
+    }
 
-            Timber.d("Loading downloaded content for user: $userId")
+    private suspend fun loadDownloadedContent(force: Boolean) {
+        downloadedContentMutex.withLock {
+            try {
+                val startedAt = SystemClock.elapsedRealtime()
+                val currentSession = sessionManager.currentSession.value
+                val serverId = currentSession?.serverId ?: preferencesRepository.getCurrentServerId()
+                val userId = currentHomeProfileUserId(currentSession)
+                val capability = kidModeRepository.policy.value
+                val refreshKey =
+                    HomeDownloadedContentRefreshKey(
+                        serverId = serverId,
+                        userId = userId,
+                        kidModeEnabled = capability.isKidModeEnabled,
+                        parentUnlocked = capability.isParentUnlocked,
+                    )
+                if (!downloadedContentRefreshGate.shouldRefresh(refreshKey, force)) {
+                    Timber.d("Skipping duplicate downloaded Home content refresh")
+                    return
+                }
 
-            val capability = kidModeRepository.policy.value
-            val localLibraryContent =
-                withContext(Dispatchers.IO) {
-                    runCatching {
-                            val visibilityContext =
-                                LocalLibraryVisibilityContext(
-                                    currentUserId = userId.toString(),
-                                    kidModeEnabled = capability.isKidModeEnabled,
-                                    parentUnlocked = capability.isParentUnlocked,
-                                )
-                            localLibraryScanService.scanEnabledRoots(visibilityContext)
-                            localLibraryMediaRepository.getVisibleMovies(
+                if (userId == null) {
+                    Timber.d("No profile user available for downloaded content; clearing local Home catalog")
+                    clearDownloadedHomeContent(localCatalogLoaded = true)
+                    downloadedContentRefreshGate.markLoaded(refreshKey)
+                    return
+                }
+
+                Timber.d("Loading downloaded content for user: $userId")
+
+                val visibilityContext =
+                    LocalLibraryVisibilityContext(
+                        currentUserId = userId.toString(),
+                        kidModeEnabled = capability.isKidModeEnabled,
+                        parentUnlocked = capability.isParentUnlocked,
+                    )
+                val localLibraryCatalog =
+                    withContext(Dispatchers.IO) {
+                        try {
+                            localLibraryMediaRepository.getHomeCatalog(
                                 profileUserId = userId.toString(),
                                 visibilityContext = visibilityContext,
-                            ) to
-                                localLibraryMediaRepository.getVisibleShows(
-                                    profileUserId = userId.toString(),
-                                    visibilityContext = visibilityContext,
-                                )
-                        }
-                        .onFailure { Timber.w(it, "Failed to load local library content") }
-                        .getOrDefault(emptyList<AfinityMovie>() to emptyList<AfinityShow>())
-                }
-            val localLibraryMovies = localLibraryContent.first
-            val localLibraryShows = localLibraryContent.second
-
-            val completedDownloads = downloadRepository.getCompletedDownloadsFlow().first()
-            val downloadedItemIds = completedDownloads.map { it.itemId }.toSet()
-
-            val downloadedMoviesFromCache =
-                databaseRepository.getAllMovies(userId).filter { movie ->
-                    movie.id in downloadedItemIds
-                }
-
-            val allShows = databaseRepository.getAllShows(userId)
-            val downloadedShowsFromCache = allShows.filter { show ->
-                show.seasons.any { season ->
-                    season.episodes.any { episode -> episode.id in downloadedItemIds }
-                }
-            }
-            val downloadedMovies =
-                (localLibraryMovies + downloadedMoviesFromCache).distinctBy { it.id }
-            val downloadedShows =
-                (localLibraryShows + downloadedShowsFromCache).distinctBy { it.id }
-
-            Timber.d(
-                "Found ${downloadedMovies.size} movies and ${downloadedShows.size} shows with downloads"
-            )
-
-            val offlineContinueWatching = mutableListOf<AfinityItem>()
-
-            downloadedMovies.forEach { movie ->
-                if (movie.playbackPositionTicks > 0 && !movie.played) {
-                    offlineContinueWatching.add(movie)
-                }
-            }
-
-            allShows.forEach { show ->
-                show.seasons.forEach { season ->
-                    season.episodes.forEach { episode ->
-                        if (
-                            episode.playbackPositionTicks > 0 &&
-                                !episode.played &&
-                                episode.id in downloadedItemIds
-                        ) {
-                            offlineContinueWatching.add(episode)
+                            )
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Timber.w(e, "Failed to load local library content")
+                            LocalLibraryHomeCatalog(
+                                movies = emptyList(),
+                                shows = emptyList(),
+                                continueWatching = emptyList(),
+                            )
                         }
                     }
+                val localLibraryMovies = localLibraryCatalog.movies
+                val localLibraryShows = localLibraryCatalog.shows
+
+                _uiState.update {
+                    it.copy(
+                        downloadedMovies = localLibraryMovies,
+                        downloadedShows = localLibraryShows,
+                        offlineContinueWatching = localLibraryCatalog.continueWatching,
+                        isLocalCatalogLoaded = true,
+                    )
                 }
-            }
-
-            val sortedOfflineContinueWatching = offlineContinueWatching.sortedByDescending { item ->
-                when (item) {
-                    is AfinityMovie -> item.playbackPositionTicks
-                    is AfinityEpisode -> item.playbackPositionTicks
-                    else -> 0L
-                }
-            }
-
-            Timber.d(
-                "Found ${sortedOfflineContinueWatching.size} items to continue watching offline"
-            )
-
-            val absCompleted = absDownloadRepository.getCompletedDownloadsFlow().first()
-            val downloadedAudiobooks = absCompleted.filter { it.mediaType == "book" }
-            val downloadedPodcastEpisodes =
-                absCompleted
-                    .filter { it.mediaType == "podcast" }
-                    .groupBy { it.libraryItemId }
-                    .map { (_, episodes) ->
-                        val rep = episodes.maxByOrNull { it.updatedAt }!!
-                        val count = episodes.size
-                        rep.copy(
-                            title = rep.authorName?.takeIf { it.isNotBlank() } ?: rep.title,
-                            authorName = "$count episode${if (count > 1) "s" else ""} downloaded",
-                        )
-                    }
-
-            _uiState.update {
-                it.copy(
-                    downloadedMovies = downloadedMovies,
-                    downloadedShows = downloadedShows,
-                    offlineContinueWatching = sortedOfflineContinueWatching,
-                    downloadedAudiobooks = downloadedAudiobooks,
-                    downloadedPodcastEpisodes = downloadedPodcastEpisodes,
+                Timber.d(
+                    "Published local Home catalog with ${localLibraryMovies.size} movies and ${localLibraryShows.size} shows"
                 )
+
+                val completedDownloads =
+                    try {
+                        if (serverId == null) {
+                            emptyList()
+                        } else {
+                            databaseRepository
+                                .getDownloadsByStatusFlowScoped(
+                                    listOf(DownloadStatus.COMPLETED),
+                                    serverId,
+                                    userId,
+                                )
+                                .first()
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Timber.w(e, "Failed to load legacy completed downloads")
+                        emptyList()
+                    }
+                val downloadedItemIds = completedDownloads.map { it.itemId }.toSet()
+
+                val legacyDownloadedMoviesFromCache =
+                    try {
+                        databaseRepository.getAllMovies(userId, serverId).filter { movie ->
+                            movie.id in downloadedItemIds
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Timber.w(e, "Failed to load legacy downloaded movies cache")
+                        emptyList()
+                    }
+
+                val allShows =
+                    try {
+                        databaseRepository.getAllShows(userId, serverId)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Timber.w(e, "Failed to load legacy downloaded shows cache")
+                        emptyList()
+                    }
+                val legacyDownloadedShowsFromCache = allShows.filter { show ->
+                    show.seasons.any { season ->
+                        season.episodes.any { episode -> episode.id in downloadedItemIds }
+                    }
+                }
+                val downloadedMovies =
+                    (localLibraryMovies + legacyDownloadedMoviesFromCache).distinctBy { it.id }
+                val downloadedShows =
+                    (localLibraryShows + legacyDownloadedShowsFromCache).distinctBy { it.id }
+
+                Timber.d(
+                    "Found ${downloadedMovies.size} movies and ${downloadedShows.size} shows with downloads"
+                )
+
+                val legacyOfflineContinueWatching = mutableListOf<AfinityItem>()
+
+                legacyDownloadedMoviesFromCache.forEach { movie ->
+                    if (movie.playbackPositionTicks > 0 && !movie.played) {
+                        legacyOfflineContinueWatching.add(movie)
+                    }
+                }
+
+                allShows.forEach { show ->
+                    show.seasons.forEach { season ->
+                        season.episodes.forEach { episode ->
+                            if (
+                                episode.playbackPositionTicks > 0 &&
+                                    !episode.played &&
+                                    episode.id in downloadedItemIds
+                            ) {
+                                legacyOfflineContinueWatching.add(episode)
+                            }
+                        }
+                    }
+                }
+
+                val sortedOfflineContinueWatching =
+                    (localLibraryCatalog.continueWatching + legacyOfflineContinueWatching)
+                        .distinctBy { it.id }
+                        .sortedByDescending { item ->
+                            when (item) {
+                                is AfinityMovie -> item.playbackPositionTicks
+                                is AfinityEpisode -> item.playbackPositionTicks
+                                else -> 0L
+                            }
+                        }
+
+                Timber.d(
+                    "Found ${sortedOfflineContinueWatching.size} items to continue watching offline"
+                )
+
+                val absCompleted =
+                    try {
+                        absDownloadRepository.getCompletedDownloadsFlow().first()
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Timber.w(e, "Failed to load ABS completed downloads")
+                        emptyList()
+                    }
+                val downloadedAudiobooks = absCompleted.filter { it.mediaType == "book" }
+                val downloadedPodcastEpisodes =
+                    absCompleted
+                        .filter { it.mediaType == "podcast" }
+                        .groupBy { it.libraryItemId }
+                        .map { (_, episodes) ->
+                            val rep = episodes.maxByOrNull { it.updatedAt }!!
+                            val count = episodes.size
+                            rep.copy(
+                                title = rep.authorName?.takeIf { it.isNotBlank() } ?: rep.title,
+                                authorName =
+                                    "$count episode${if (count > 1) "s" else ""} downloaded",
+                            )
+                        }
+
+                _uiState.update {
+                    it.copy(
+                        downloadedMovies = downloadedMovies,
+                        downloadedShows = downloadedShows,
+                        offlineContinueWatching = sortedOfflineContinueWatching,
+                        downloadedAudiobooks = downloadedAudiobooks,
+                        downloadedPodcastEpisodes = downloadedPodcastEpisodes,
+                        isLocalCatalogLoaded = true,
+                    )
+                }
+                Timber.d(
+                    "Loaded downloaded Home content in ${SystemClock.elapsedRealtime() - startedAt}ms"
+                )
+                downloadedContentRefreshGate.markLoaded(refreshKey)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to load downloaded content")
             }
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to load downloaded content")
+        }
+    }
+
+    private suspend fun currentHomeProfileUserId(
+        currentSession: Session?
+    ): java.util.UUID? =
+        authRepository.currentUser.value?.id
+            ?: currentSession?.userId
+            ?: preferencesRepository.getCurrentUserId()?.let { storedUserId ->
+                runCatching { java.util.UUID.fromString(storedUserId) }.getOrNull()
+            }
+
+    private fun clearDownloadedHomeContent(localCatalogLoaded: Boolean) {
+        _uiState.update {
+            it.copy(
+                downloadedMovies = emptyList(),
+                downloadedShows = emptyList(),
+                offlineContinueWatching = emptyList(),
+                downloadedAudiobooks = emptyList(),
+                downloadedPodcastEpisodes = emptyList(),
+                isLocalCatalogLoaded = localCatalogLoaded,
+            )
+        }
+    }
+
+    private fun clearRemoteHomeStatePreservingLocalCatalog() {
+        _uiState.update {
+            it.copy(
+                heroCarouselItems = emptyList(),
+                latestMedia = emptyList(),
+                continueWatching = emptyList(),
+                nextUp = emptyList(),
+                upcomingEpisodes = emptyList(),
+                latestMovies = emptyList(),
+                latestTvSeries = emptyList(),
+                highestRated = emptyList(),
+                studios = emptyList(),
+                combinedSections = emptyList(),
+                genreMovies = emptyMap(),
+                genreShows = emptyMap(),
+                genreLoadingStates = emptyMap(),
+                isLoading = false,
+                error = null,
+                libraries = emptyList(),
+                separateMovieLibrarySections = emptyList(),
+                separateTvLibrarySections = emptyList(),
+            )
         }
     }
 
@@ -1303,7 +1496,7 @@ constructor(
         viewModelScope.launch {
             if (!offlineModeManager.canLoadRemoteContentNow()) {
                 offlineModeManager.requestConnectivityProbe("home refresh")
-                loadDownloadedContent()
+                requestDownloadedContentRefresh(force = true)
                 return@launch
             }
 
@@ -1449,6 +1642,7 @@ data class HomeUiState(
     val downloadedShows: List<AfinityShow> = emptyList(),
     val downloadedAudiobooks: List<AbsDownloadInfo> = emptyList(),
     val downloadedPodcastEpisodes: List<AbsDownloadInfo> = emptyList(),
+    val isLocalCatalogLoaded: Boolean = false,
     val isLoading: Boolean = false,
     val error: String? = null,
     val combineLibrarySections: Boolean = false,

@@ -1235,6 +1235,96 @@ object DatabaseMigrations {
             }
         }
 
+    val MIGRATION_44_45 =
+        object : Migration(44, 45) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE local_media_identities ADD COLUMN jellyfinSeriesId TEXT")
+                db.execSQL("ALTER TABLE local_media_identities ADD COLUMN jellyfinSeasonId TEXT")
+                db.execSQL(
+                    """
+                    UPDATE local_media_identities
+                    SET jellyfinSeriesId = (
+                        SELECT episodes.seriesId
+                        FROM episodes
+                        WHERE episodes.id = COALESCE(local_media_identities.jellyfinItemId, local_media_identities.localItemId)
+                          AND (
+                              local_media_identities.serverId IS NULL
+                              OR episodes.serverId = local_media_identities.serverId
+                          )
+                        LIMIT 1
+                    )
+                    WHERE jellyfinSeriesId IS NULL
+                      AND EXISTS (
+                          SELECT 1
+                          FROM episodes
+                          WHERE episodes.id = COALESCE(local_media_identities.jellyfinItemId, local_media_identities.localItemId)
+                            AND (
+                                local_media_identities.serverId IS NULL
+                                OR episodes.serverId = local_media_identities.serverId
+                            )
+                      )
+                    """
+                        .trimIndent()
+                )
+                db.execSQL(
+                    """
+                    UPDATE local_media_identities
+                    SET jellyfinSeasonId = (
+                        SELECT episodes.seasonId
+                        FROM episodes
+                        WHERE episodes.id = COALESCE(local_media_identities.jellyfinItemId, local_media_identities.localItemId)
+                          AND (
+                              local_media_identities.serverId IS NULL
+                              OR episodes.serverId = local_media_identities.serverId
+                          )
+                        LIMIT 1
+                    )
+                    WHERE jellyfinSeasonId IS NULL
+                      AND EXISTS (
+                          SELECT 1
+                          FROM episodes
+                          WHERE episodes.id = COALESCE(local_media_identities.jellyfinItemId, local_media_identities.localItemId)
+                            AND (
+                                local_media_identities.serverId IS NULL
+                                OR episodes.serverId = local_media_identities.serverId
+                            )
+                      )
+                    """
+                        .trimIndent()
+                )
+                db.execSQL(
+                    """
+                    UPDATE local_media_identities
+                    SET jellyfinSeriesId = (
+                        SELECT downloads.seriesId
+                        FROM downloads
+                        WHERE downloads.itemId = COALESCE(local_media_identities.jellyfinItemId, local_media_identities.localItemId)
+                          AND LOWER(downloads.itemType) = 'episode'
+                          AND downloads.seriesId IS NOT NULL
+                          AND (
+                              local_media_identities.serverId IS NULL
+                              OR downloads.serverId = local_media_identities.serverId
+                          )
+                        LIMIT 1
+                    )
+                    WHERE jellyfinSeriesId IS NULL
+                      AND EXISTS (
+                          SELECT 1
+                          FROM downloads
+                          WHERE downloads.itemId = COALESCE(local_media_identities.jellyfinItemId, local_media_identities.localItemId)
+                            AND LOWER(downloads.itemType) = 'episode'
+                            AND downloads.seriesId IS NOT NULL
+                            AND (
+                                local_media_identities.serverId IS NULL
+                                OR downloads.serverId = local_media_identities.serverId
+                            )
+                      )
+                    """
+                        .trimIndent()
+                )
+            }
+        }
+
     val ALL_MIGRATIONS =
         arrayOf(
             MIGRATION_1_2,
@@ -1280,5 +1370,6 @@ object DatabaseMigrations {
             MIGRATION_41_42,
             MIGRATION_42_43,
             MIGRATION_43_44,
+            MIGRATION_44_45,
         )
 }

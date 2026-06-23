@@ -107,9 +107,10 @@ fun HomeScreen(
     val screenHeight = configuration.screenHeightDp.dp
     val lazyListState = rememberLazyListState()
     val continueWatchingScrollState = rememberLazyListState()
-    val showDownloadedContent = uiState.isOffline || uiState.isServerUnavailable
-    val useOfflineContinueWatching =
-        uiState.isOffline || (uiState.isServerUnavailable && uiState.continueWatching.isEmpty())
+    val startupContent = uiState.startupContentFlags()
+    val canShowRemoteContent = startupContent.canShowRemoteContent
+    val showDownloadedSections = startupContent.showDownloadedSections
+    val useOfflineContinueWatching = startupContent.useOfflineContinueWatching
 
     val continueWatchingItems =
         if (useOfflineContinueWatching) uiState.offlineContinueWatching else uiState.continueWatching
@@ -145,7 +146,7 @@ fun HomeScreen(
                     val canUseDiscoveryUi = capabilityPolicy.canUseDiscoveryUi
                     val showCarousel =
                         canUseDiscoveryUi &&
-                            !uiState.isOffline &&
+                            canShowRemoteContent &&
                             uiState.heroCarouselItems.isNotEmpty()
 
                     val continueWatchingItems =
@@ -157,21 +158,21 @@ fun HomeScreen(
 
                     val firstContentKey =
                         when {
-                            !uiState.isOffline && uiState.libraries.isNotEmpty() ->
+                            canShowRemoteContent && uiState.libraries.isNotEmpty() ->
                                 "libraries_section"
                             continueWatchingItems.isNotEmpty() -> "continue_watching"
-                            !uiState.isOffline &&
+                            canShowRemoteContent &&
                                 uiState.isLoading &&
                                 uiState.latestMedia.isNotEmpty() -> "cw_skeleton"
-                            showDownloadedContent && uiState.downloadedMovies.isNotEmpty() ->
+                            showDownloadedSections && uiState.downloadedMovies.isNotEmpty() ->
                                 "downloaded_movies"
-                            showDownloadedContent && uiState.downloadedShows.isNotEmpty() ->
+                            showDownloadedSections && uiState.downloadedShows.isNotEmpty() ->
                                 "downloaded_shows"
-                            showDownloadedContent && uiState.downloadedAudiobooks.isNotEmpty() ->
+                            showDownloadedSections && uiState.downloadedAudiobooks.isNotEmpty() ->
                                 "downloaded_audiobooks"
-                            showDownloadedContent && uiState.downloadedPodcastEpisodes.isNotEmpty() ->
+                            showDownloadedSections && uiState.downloadedPodcastEpisodes.isNotEmpty() ->
                                 "downloaded_podcasts"
-                            !uiState.isOffline && uiState.nextUp.isNotEmpty() -> "next_up"
+                            canShowRemoteContent && uiState.nextUp.isNotEmpty() -> "next_up"
                             else -> null
                         }
 
@@ -210,7 +211,7 @@ fun HomeScreen(
                             }
                         }
 
-                        if (!uiState.isOffline && uiState.libraries.isNotEmpty()) {
+                        if (canShowRemoteContent && uiState.libraries.isNotEmpty()) {
                             item(key = "libraries_section") {
                                 Box(modifier = getItemModifier("libraries_section")) {
                                     Column {
@@ -247,7 +248,7 @@ fun HomeScreen(
                                 }
                             }
                         } else if (
-                            !uiState.isOffline &&
+                            canShowRemoteContent &&
                                 uiState.isLoading &&
                                 uiState.latestMedia.isNotEmpty()
                         ) {
@@ -261,7 +262,7 @@ fun HomeScreen(
                             }
                         }
 
-                        if (showDownloadedContent && uiState.downloadedMovies.isNotEmpty()) {
+                        if (showDownloadedSections && uiState.downloadedMovies.isNotEmpty()) {
                             item(key = "downloaded_movies") {
                                 Box(modifier = getItemModifier("downloaded_movies")) {
                                     Column {
@@ -277,7 +278,7 @@ fun HomeScreen(
                             }
                         }
 
-                        if (showDownloadedContent && uiState.downloadedShows.isNotEmpty()) {
+                        if (showDownloadedSections && uiState.downloadedShows.isNotEmpty()) {
                             item(key = "downloaded_shows") {
                                 Box(modifier = getItemModifier("downloaded_shows")) {
                                     Column {
@@ -293,7 +294,7 @@ fun HomeScreen(
                             }
                         }
 
-                        if (showDownloadedContent && uiState.downloadedAudiobooks.isNotEmpty()) {
+                        if (showDownloadedSections && uiState.downloadedAudiobooks.isNotEmpty()) {
                             item(key = "downloaded_audiobooks") {
                                 Box(modifier = getItemModifier("downloaded_audiobooks")) {
                                     Column {
@@ -309,7 +310,7 @@ fun HomeScreen(
                             }
                         }
 
-                        if (showDownloadedContent && uiState.downloadedPodcastEpisodes.isNotEmpty()) {
+                        if (showDownloadedSections && uiState.downloadedPodcastEpisodes.isNotEmpty()) {
                             item(key = "downloaded_podcasts") {
                                 Box(modifier = getItemModifier("downloaded_podcasts")) {
                                     Column {
@@ -325,7 +326,7 @@ fun HomeScreen(
                             }
                         }
 
-                        if (!uiState.isOffline && uiState.nextUp.isNotEmpty()) {
+                        if (canShowRemoteContent && uiState.nextUp.isNotEmpty()) {
                             item(key = "next_up") {
                                 Box(modifier = getItemModifier("next_up")) {
                                     Column {
@@ -340,7 +341,7 @@ fun HomeScreen(
                             }
                         }
 
-                        if (!uiState.isOffline) {
+                        if (canShowRemoteContent) {
                             if (uiState.combineLibrarySections) {
                                 if (uiState.latestMovies.isNotEmpty()) {
                                     item(key = "latest_movies_combined") {
@@ -379,7 +380,7 @@ fun HomeScreen(
                             }
                         }
 
-                        if (!uiState.isOffline) {
+                        if (canShowRemoteContent) {
                             if (uiState.combineLibrarySections) {
                                 if (uiState.latestTvSeries.isNotEmpty()) {
                                     item(key = "latest_tv_combined") {
@@ -418,7 +419,7 @@ fun HomeScreen(
                             }
                         }
 
-                        if (!uiState.isOffline && uiState.upcomingEpisodes.isNotEmpty()) {
+                        if (canShowRemoteContent && uiState.upcomingEpisodes.isNotEmpty()) {
                             item(key = "upcoming_episodes") {
                                 Box(modifier = getItemModifier("upcoming_episodes")) {
                                     Column {
@@ -441,7 +442,7 @@ fun HomeScreen(
 
                         if (
                             canUseDiscoveryUi &&
-                                !uiState.isOffline &&
+                                canShowRemoteContent &&
                                 uiState.highestRated.isNotEmpty()
                         ) {
                             item(key = "highest_rated") {
@@ -458,7 +459,7 @@ fun HomeScreen(
 
                         if (
                             canUseDiscoveryUi &&
-                                !uiState.isOffline &&
+                                canShowRemoteContent &&
                                 uiState.studios.isNotEmpty()
                         ) {
                             item(key = "popular_studios") {
@@ -477,7 +478,7 @@ fun HomeScreen(
 
                         if (
                             canUseDiscoveryUi &&
-                                !uiState.isOffline &&
+                                canShowRemoteContent &&
                                 uiState.combinedSections.isNotEmpty()
                         ) {
                             items(

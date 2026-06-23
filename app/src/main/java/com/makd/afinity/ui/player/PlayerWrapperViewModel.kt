@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.makd.afinity.R
+import com.makd.afinity.data.local.LocalLibraryMediaRepository
+import com.makd.afinity.data.local.LocalLibraryVisibilityContext
 import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
 import com.makd.afinity.data.models.livetv.AfinityChannel
@@ -11,6 +13,8 @@ import com.makd.afinity.data.models.livetv.ChannelType
 import com.makd.afinity.data.models.media.AfinityImages
 import com.makd.afinity.data.models.media.AfinityItem
 import com.makd.afinity.data.repository.DatabaseRepository
+import com.makd.afinity.data.repository.KidModeRepository
+import com.makd.afinity.data.repository.PreferencesRepository
 import com.makd.afinity.data.repository.media.MediaRepository
 import com.makd.afinity.data.repository.livetv.LiveTvRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -34,6 +38,9 @@ constructor(
     private val sessionManager: SessionManager,
     private val liveTvRepository: LiveTvRepository,
     private val offlineModeManager: OfflineModeManager,
+    private val kidModeRepository: KidModeRepository,
+    private val preferencesRepository: PreferencesRepository,
+    private val localLibraryMediaRepository: LocalLibraryMediaRepository,
 ) : ViewModel() {
 
     private val _item = MutableStateFlow<AfinityItem?>(null)
@@ -111,16 +118,21 @@ constructor(
             try {
                 var loadedItem: AfinityItem? = null
 
+                val profileUserId = currentProfileUserId()
                 val userId =
-                    sessionManager.currentSession.value?.userId
-                        ?: run {
-                            Timber.w(
-                                "No active session found in PlayerWrapperViewModel, trying DB fallback"
-                            )
-                            databaseRepository.getAllUsers().firstOrNull()?.id
-                        }
+                    profileUserId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+                        ?: sessionManager.currentSession.value?.userId
 
-                if (userId != null) {
+                if (offlineModeManager.isCurrentlyOffline()) {
+                    loadedItem = loadLocalCatalogItem(itemId, profileUserId)
+                    if (loadedItem != null) {
+                        Timber.d(
+                            "PlayerWrapperViewModel: Loaded item from local catalog: ${loadedItem.name}"
+                        )
+                    }
+                }
+
+                if (userId != null && loadedItem == null) {
                     Timber.d("PlayerWrapperViewModel: Using userId: $userId")
 
                     try {
@@ -157,8 +169,17 @@ constructor(
                 }
 
                 if (loadedItem == null) {
+                    loadedItem = loadLocalCatalogItem(itemId, profileUserId)
+                    if (loadedItem != null) {
+                        Timber.d(
+                            "PlayerWrapperViewModel: Loaded item from local catalog after cache/API miss: ${loadedItem.name}"
+                        )
+                    }
+                }
+
+                if (loadedItem == null) {
                     Timber.e(
-                        "PlayerWrapperViewModel: Failed to load item from both database and API"
+                        "PlayerWrapperViewModel: Failed to load item from local catalog, database, and API"
                     )
                 }
 
@@ -171,4 +192,25 @@ constructor(
             }
         }
     }
+
+    private suspend fun loadLocalCatalogItem(
+        itemId: UUID,
+        profileUserId: String?,
+    ): AfinityItem? {
+        val capability = kidModeRepository.policy.value
+        return localLibraryMediaRepository.resolvePlayableItem(
+            itemId = itemId,
+            profileUserId = profileUserId,
+            visibilityContext =
+                LocalLibraryVisibilityContext(
+                    currentUserId = profileUserId,
+                    kidModeEnabled = capability.isKidModeEnabled,
+                    parentUnlocked = capability.isParentUnlocked,
+                ),
+        )
+    }
+
+    private suspend fun currentProfileUserId(): String? =
+        sessionManager.currentSession.value?.userId?.toString()
+            ?: preferencesRepository.getCurrentUserId()
 }

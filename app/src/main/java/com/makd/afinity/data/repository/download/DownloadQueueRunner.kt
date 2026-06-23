@@ -34,12 +34,19 @@ constructor(
     ): QueueRunResult {
         if (!running.compareAndSet(false, true)) {
             Timber.d("Download queue runner already active; duplicate start exits")
-            return QueueRunResult(completed = 0, failed = 0, paused = 0, stopped = false)
+            return QueueRunResult(
+                completed = 0,
+                failed = 0,
+                paused = 0,
+                stopped = true,
+                rescheduleCurrentJob = true,
+            )
         }
         stopState.clear()
         var completed = 0
         var failed = 0
         var paused = 0
+        var requeued = 0
         try {
             val reconciled =
                 stateStore.reconcileOrphanedActiveClaims(
@@ -81,17 +88,24 @@ constructor(
                         is MediaDownloadTransferRunner.TransferResult.Completed -> completed += 1
                         is MediaDownloadTransferRunner.TransferResult.Failed -> failed += 1
                         is MediaDownloadTransferRunner.TransferResult.Paused -> paused += 1
+                        is MediaDownloadTransferRunner.TransferResult.Requeued -> {
+                            requeued += 1
+                            break
+                        }
                     }
                 } finally {
                     activeClaim = null
                 }
             }
 
+            val finalStopRequest = stopState.current()
             return QueueRunResult(
                 completed = completed,
                 failed = failed,
                 paused = paused,
-                stopped = stopState.current() != null,
+                requeued = requeued,
+                stopped = finalStopRequest != null,
+                rescheduleCurrentJob = finalStopRequest?.rescheduleCurrentJob == true || requeued > 0,
             )
         } finally {
             val scheduleAfterStop = stopState.current()?.scheduleAfterStop
@@ -115,6 +129,7 @@ constructor(
                     disposition = DownloadQueueStopDisposition.PAUSE,
                     scheduleAfterStop = null,
                     allowScheduleAfterStop = true,
+                    rescheduleCurrentJob = false,
                 )
         activeClaim?.let { claim ->
             when (activeStopRequest.disposition) {
@@ -136,6 +151,18 @@ constructor(
         }
     }
 
+    fun requestSystemRequeue(reason: String): DownloadQueueRequeueRequestResult {
+        val accepted = stopState.requestSystemRequeue(reason)
+        if (!accepted) {
+            return DownloadQueueRequeueRequestResult.ExistingStopRequestWins
+        }
+        return if (running.get()) {
+            DownloadQueueRequeueRequestResult.RunnerWillHandleRequeue
+        } else {
+            DownloadQueueRequeueRequestResult.NoRunningRunner
+        }
+    }
+
     fun requestPauseActive(
         reason: String,
         force: Boolean = false,
@@ -144,15 +171,15 @@ constructor(
     fun requestPolicyRequeue(
         reason: String,
         scheduleAfterStop: DownloadQueueScheduleTrigger,
-    ): DownloadQueuePolicyRequeueRequestResult {
+    ): DownloadQueueRequeueRequestResult {
         val accepted = stopState.requestPolicyRequeue(reason, scheduleAfterStop)
         if (!accepted) {
-            return DownloadQueuePolicyRequeueRequestResult.ExistingStopRequestWins
+            return DownloadQueueRequeueRequestResult.ExistingStopRequestWins
         }
         return if (running.get()) {
-            DownloadQueuePolicyRequeueRequestResult.RunnerWillRequeueAndReschedule
+            DownloadQueueRequeueRequestResult.RunnerWillHandleRequeue
         } else {
-            DownloadQueuePolicyRequeueRequestResult.NoRunningRunner
+            DownloadQueueRequeueRequestResult.NoRunningRunner
         }
     }
 
@@ -161,10 +188,7 @@ constructor(
         val result = uidtNetworkSession.onNetworkChanged(network)
         if (result is UidtNetworkSession.NetworkChangeResult.RequiredNetworkMissing) {
             val reason = "UIDT required network is unavailable"
-            requestPolicyRequeue(
-                reason = reason,
-                scheduleAfterStop = DownloadQueueScheduleTrigger.VISIBLE_LIVENESS,
-            )
+            requestSystemRequeue(reason)
             stopActive(reason)
         }
     }
@@ -173,7 +197,9 @@ constructor(
         val completed: Int,
         val failed: Int,
         val paused: Int,
+        val requeued: Int = 0,
         val stopped: Boolean,
+        val rescheduleCurrentJob: Boolean = false,
     )
 
     private data class ActiveClaim(

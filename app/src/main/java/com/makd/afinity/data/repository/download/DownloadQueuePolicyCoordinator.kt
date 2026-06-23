@@ -143,9 +143,9 @@ constructor(
         val requestResult = queueRunner.requestPolicyRequeue(reason, trigger)
         scheduler.cancelQueue()
         when (requestResult) {
-            DownloadQueuePolicyRequeueRequestResult.RunnerWillRequeueAndReschedule,
-            DownloadQueuePolicyRequeueRequestResult.ExistingStopRequestWins -> return
-            DownloadQueuePolicyRequeueRequestResult.NoRunningRunner -> Unit
+            DownloadQueueRequeueRequestResult.RunnerWillHandleRequeue,
+            DownloadQueueRequeueRequestResult.ExistingStopRequestWins -> return
+            DownloadQueueRequeueRequestResult.NoRunningRunner -> Unit
         }
 
         val now = System.currentTimeMillis()

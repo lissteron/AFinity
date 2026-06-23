@@ -7,7 +7,6 @@ import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
-import androidx.work.workDataOf
 import com.makd.afinity.data.repository.download.DownloadQueueBackendStartFailureHandler
 import com.makd.afinity.data.repository.download.DownloadQueueBackends
 import com.makd.afinity.data.repository.download.DownloadQueueNotificationFactory
@@ -48,7 +47,7 @@ constructor(
                 backendStartFailureHandler.record(
                     e.message ?: "Foreground service start was not allowed"
                 )
-                return@withContext Result.failure(workDataOf("error" to e.message))
+                return@withContext Result.retry()
             }
 
             val backendRunId = UUID.randomUUID()
@@ -66,17 +65,21 @@ constructor(
                                 notificationFactory.buildQueueNotification(progress = progress)
                             )
                         } catch (e: ForegroundUnavailableException) {
-                            queueRunner.stopActive(
-                                e.message ?: "Foreground notification update failed"
-                            )
+                            val reason = e.message ?: "Foreground notification update failed"
+                            queueRunner.requestSystemRequeue(reason)
+                            queueRunner.stopActive(reason)
                         }
                     }
                 }
 
             Timber.i(
                 "Download queue worker finished: completed=${runResult.completed}, " +
-                    "failed=${runResult.failed}, paused=${runResult.paused}, stopped=${runResult.stopped}"
+                    "failed=${runResult.failed}, paused=${runResult.paused}, " +
+                    "requeued=${runResult.requeued}, stopped=${runResult.stopped}"
             )
+            if (runResult.rescheduleCurrentJob) {
+                return@withContext Result.retry()
+            }
             Result.success()
         }
 

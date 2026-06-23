@@ -124,20 +124,25 @@ fun ItemDetailScreen(
         viewModel.selectedEpisodeDownloadInfo.collectAsStateWithLifecycle()
     val canDownload by viewModel.canDownload.collectAsStateWithLifecycle()
     val capabilityPolicy by viewModel.capabilityPolicy.collectAsStateWithLifecycle()
-    val isOffline by viewModel.isOffline.collectAsStateWithLifecycle()
+    val isDownloadedOnlyUi by viewModel.isDownloadedOnlyUi.collectAsStateWithLifecycle()
     val completedDownloadItemIds by viewModel.completedDownloadItemIds.collectAsStateWithLifecycle()
-    val isDownloadReadOnly = isOffline || !capabilityPolicy.canManageDownloads
+    val isDownloadReadOnly = isDownloadedOnlyUi || !capabilityPolicy.canManageDownloads
+    val isLocalCatalogItem = uiState.isLocalCatalogItem
     val shouldDirectPlayEpisodeClicks =
         capabilityPolicy.isKidModeEnabled && !capabilityPolicy.isParentUnlocked
     val displayItem =
-        remember(uiState.item, isOffline, completedDownloadItemIds) {
+        remember(uiState.item, isDownloadedOnlyUi, isLocalCatalogItem, completedDownloadItemIds) {
             uiState.item?.let { item ->
-                if (isOffline) filterItemToDownloadedContent(item, completedDownloadItemIds) else item
+                if (shouldFilterToDownloadedContent(isDownloadedOnlyUi, isLocalCatalogItem)) {
+                    filterItemToDownloadedContent(item, completedDownloadItemIds)
+                } else {
+                    item
+                }
             }
         }
     val displaySeasons =
-        remember(uiState.seasons, isOffline, completedDownloadItemIds) {
-            if (isOffline) {
+        remember(uiState.seasons, isDownloadedOnlyUi, isLocalCatalogItem, completedDownloadItemIds) {
+            if (shouldFilterToDownloadedContent(isDownloadedOnlyUi, isLocalCatalogItem)) {
                 uiState.seasons.mapNotNull {
                     filterSeasonToDownloadedContent(it, completedDownloadItemIds)
                 }
@@ -146,8 +151,12 @@ fun ItemDetailScreen(
             }
         }
     val displayNextEpisode =
-        remember(nextEpisode, isOffline, completedDownloadItemIds) {
-            if (isOffline) nextEpisode?.takeIf { it.id in completedDownloadItemIds } else nextEpisode
+        remember(nextEpisode, isDownloadedOnlyUi, isLocalCatalogItem, completedDownloadItemIds) {
+            if (shouldFilterToDownloadedContent(isDownloadedOnlyUi, isLocalCatalogItem)) {
+                nextEpisode?.takeIf { it.id in completedDownloadItemIds }
+            } else {
+                nextEpisode
+            }
         }
 
     var pendingPlayItem by remember { mutableStateOf<AfinityItem?>(null) }
@@ -291,7 +300,7 @@ fun ItemDetailScreen(
                     shouldDirectPlayEpisodeClicks = shouldDirectPlayEpisodeClicks,
                 )
             }
-            isOffline -> {
+            isDownloadedOnlyUi -> {
                 Column(
                     modifier = Modifier.align(Alignment.Center).padding(32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,

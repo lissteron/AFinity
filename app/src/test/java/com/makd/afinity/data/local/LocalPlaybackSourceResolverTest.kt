@@ -50,8 +50,10 @@ class LocalPlaybackSourceResolverTest {
 
         assertTrue(result is LocalPlaybackResolution.Resolved)
         result as LocalPlaybackResolution.Resolved
-        assertTrue(result.playerUri.endsWith("Movie%20(2026).mkv"))
+        assertTrue(result.playerUri.endsWith("Movie (2026).mkv"))
+        assertTrue(result.playerUri.startsWith(rootDir.absolutePath))
         assertEquals(1, result.subtitles.size)
+        assertTrue(result.subtitles.single().endsWith("Movie (2026).en.srt"))
     }
 
     @Test
@@ -154,7 +156,8 @@ class LocalPlaybackSourceResolverTest {
         assertTrue(result is LocalPlaybackResolution.Resolved)
         result as LocalPlaybackResolution.Resolved
         assertEquals(rebuiltRecord.mediaFileId, result.mediaFile.mediaFileId)
-        assertTrue(result.playerUri.endsWith("Rebuilt%20(2026).mkv"))
+        assertTrue(result.playerUri.endsWith("Rebuilt (2026).mkv"))
+        assertTrue(result.playerUri.startsWith(rootDir.absolutePath))
     }
 
     private fun root(rootDir: File, available: Boolean = true): LocalLibraryRootRecord =

@@ -45,6 +45,7 @@ constructor(
     private val preferencesRepository: PreferencesRepository,
     private val downloadQueueScheduler: DownloadQueueScheduler,
     private val stateStore: DownloadQueueStateStore,
+    private val queueRunner: DownloadQueueRunner,
     private val downloadStorageManager: DownloadStorageManager,
     private val offlineModeManager: OfflineModeManager,
     private val downloadedArtworkRefresher: DownloadedArtworkRefresher,
@@ -205,7 +206,7 @@ constructor(
             status = DownloadStatus.QUEUED,
             progress = 0f,
             bytesDownloaded = 0L,
-            totalBytes = if (qualityMode.requiresTranscode) 0L else source.size,
+            totalBytes = source.size,
             filePath = null,
             error = null,
             createdAt = existingDownload?.createdAt ?: now,
@@ -231,8 +232,10 @@ constructor(
                 if (download != null) {
                     when (download.status) {
                         DownloadStatus.DOWNLOADING -> {
+                            val reason = "Paused by user"
+                            queueRunner.requestPauseActive(reason = reason, force = true)
                             downloadQueueScheduler.cancelQueue()
-                            stateStore.pauseActiveDownload(downloadId, "Paused by user")
+                            stateStore.pauseActiveDownload(downloadId, reason)
                         }
                         DownloadStatus.QUEUED -> databaseRepository.pauseQueuedDownload(downloadId, null)
                         DownloadStatus.PAUSED -> Unit
@@ -521,6 +524,9 @@ constructor(
     override suspend fun startSeasonDownload(seasonId: UUID, seriesId: UUID?): Result<Int> =
         withContext(Dispatchers.IO) {
             return@withContext try {
+                if (offlineModeManager.isHardOffline()) {
+                    return@withContext Result.failure(Exception("Offline mode is enabled"))
+                }
                 val session =
                     sessionManager.currentSession.value
                         ?: return@withContext Result.failure(Exception("No active session"))
@@ -560,6 +566,9 @@ constructor(
     override suspend fun startSeriesDownload(showId: UUID): Result<Int> =
         withContext(Dispatchers.IO) {
             return@withContext try {
+                if (offlineModeManager.isHardOffline()) {
+                    return@withContext Result.failure(Exception("Offline mode is enabled"))
+                }
                 val session =
                     sessionManager.currentSession.value
                         ?: return@withContext Result.failure(Exception("No active session"))

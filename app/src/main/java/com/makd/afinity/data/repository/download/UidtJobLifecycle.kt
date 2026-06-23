@@ -5,7 +5,7 @@ internal class UidtJobLifecycle(
 ) {
     @Volatile private var workKind: UidtJobWorkKind = UidtJobWorkKind.NONE
 
-    fun start(): Long = runGate.start()
+    fun startIfIdle(): UidtJobRunStart = runGate.startIfIdle()
 
     fun markRunnerWork() {
         workKind = UidtJobWorkKind.RUNNER
@@ -17,10 +17,10 @@ internal class UidtJobLifecycle(
 
     fun hasActiveRun(): Boolean = runGate.hasActiveRun()
 
-    fun stop(): UidtJobStopDecision {
+    fun stop(): UidtJobLifecycleStopDecision {
         val shouldStopRunner = workKind == UidtJobWorkKind.RUNNER
         runGate.stop()
-        return UidtJobStopDecision(shouldStopRunner = shouldStopRunner)
+        return UidtJobLifecycleStopDecision(shouldStopRunner = shouldStopRunner)
     }
 
     fun finishIfCurrent(
@@ -44,4 +44,4 @@ internal class UidtJobLifecycle(
     }
 }
 
-internal data class UidtJobStopDecision(val shouldStopRunner: Boolean)
+internal data class UidtJobLifecycleStopDecision(val shouldStopRunner: Boolean)

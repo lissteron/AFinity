@@ -13,12 +13,15 @@ import kotlinx.serialization.json.Json
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.flow.Flow
 
 @Singleton
 class RoomLocalLibraryIndexRepository
 @Inject
 constructor(private val dao: LocalLibraryDao) : LocalLibraryIndexRepository {
     private val json = Json { encodeDefaults = true }
+
+    override fun catalogGenerationFlow(): Flow<String> = dao.catalogGenerationFlow()
 
     override fun replaceRootScan(
         root: LocalLibraryRootRecord,
@@ -42,7 +45,10 @@ constructor(private val dao: LocalLibraryDao) : LocalLibraryIndexRepository {
                 lastError = null,
             )
         )
-        dao.upsertIdentities(files.map { it.toIdentityEntity() })
+        val existingIdentitiesByLocalItemId = dao.getIdentities().associateBy { it.localItemId }
+        dao.upsertIdentities(
+            files.map { it.toIdentityEntity().mergeParentIdentity(existingIdentitiesByLocalItemId[it.identity.localItemId]) }
+        )
         dao.upsertItems(files.map { it.toItemEntity() })
         dao.upsertMediaFiles(files.map { it.toFileEntity() })
         dao.upsertSidecars(files.mapNotNull { it.toSidecarEntity() })
@@ -134,10 +140,20 @@ constructor(private val dao: LocalLibraryDao) : LocalLibraryIndexRepository {
             serverId = identity.serverId,
             jellyfinItemId = identity.jellyfinItemId,
             jellyfinSourceId = identity.jellyfinSourceId,
+            jellyfinSeriesId = identity.jellyfinSeriesId,
+            jellyfinSeasonId = identity.jellyfinSeasonId,
             providerIdsJson = json.encodeToString(identity.providerIds),
             stableRootId = identity.stableRootId?.toString(),
             fingerprintStrategy = identity.fingerprint.strategy,
             fingerprintValue = identity.fingerprint.value,
+        )
+
+    private fun LocalMediaIdentityEntity.mergeParentIdentity(
+        existing: LocalMediaIdentityEntity?
+    ): LocalMediaIdentityEntity =
+        copy(
+            jellyfinSeriesId = jellyfinSeriesId ?: existing?.jellyfinSeriesId,
+            jellyfinSeasonId = jellyfinSeasonId ?: existing?.jellyfinSeasonId,
         )
 
     private fun LocalMediaFileRecord.toItemEntity(): LocalLibraryItemEntity =
@@ -249,6 +265,8 @@ constructor(private val dao: LocalLibraryDao) : LocalLibraryIndexRepository {
                     serverId = identityEntity?.serverId,
                     jellyfinItemId = identityEntity?.jellyfinItemId,
                     jellyfinSourceId = identityEntity?.jellyfinSourceId,
+                    jellyfinSeriesId = identityEntity?.jellyfinSeriesId,
+                    jellyfinSeasonId = identityEntity?.jellyfinSeasonId,
                     providerIds = providerIds,
                     stableRootId = stableRootUuid,
                     fingerprint = fingerprint,

@@ -2,14 +2,19 @@ package com.makd.afinity.data.repository.download
 
 import java.util.concurrent.atomic.AtomicLong
 
-class UidtJobRunGate {
+internal class UidtJobRunGate {
     private val runIds = AtomicLong(0L)
     private val lock = Any()
     @Volatile private var activeRunId: Long = 0L
 
-    fun start(): Long =
+    fun startIfIdle(): UidtJobRunStart =
         synchronized(lock) {
-            runIds.incrementAndGet().also { activeRunId = it }
+            if (activeRunId != 0L) {
+                return@synchronized UidtJobRunStart.AlreadyRunning(activeRunId)
+            }
+            val runId = runIds.incrementAndGet()
+            activeRunId = runId
+            UidtJobRunStart.Started(runId)
         }
 
     fun stop() {
@@ -28,4 +33,9 @@ class UidtJobRunGate {
         finish()
         return true
     }
+}
+
+internal sealed class UidtJobRunStart {
+    data class Started(val runId: Long) : UidtJobRunStart()
+    data class AlreadyRunning(val activeRunId: Long) : UidtJobRunStart()
 }

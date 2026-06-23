@@ -8,7 +8,7 @@ class UidtJobRunGateTest {
     @Test
     fun stoppedRunCannotFinish() {
         val gate = UidtJobRunGate()
-        val runId = gate.start()
+        val runId = (gate.startIfIdle() as UidtJobRunStart.Started).runId
         assertTrue(gate.hasActiveRun())
 
         gate.stop()
@@ -20,18 +20,16 @@ class UidtJobRunGateTest {
     }
 
     @Test
-    fun restartedRunInvalidatesPreviousRun() {
+    fun duplicateStartDoesNotInvalidateCurrentRun() {
         val gate = UidtJobRunGate()
-        val firstRunId = gate.start()
-        val secondRunId = gate.start()
+        val firstRunId = (gate.startIfIdle() as UidtJobRunStart.Started).runId
+        val secondStart = gate.startIfIdle()
 
         var firstFinished = false
-        var secondFinished = false
-        assertFalse(gate.finishIfCurrent(firstRunId) { firstFinished = true })
-        assertTrue(gate.finishIfCurrent(secondRunId) { secondFinished = true })
+        assertTrue(secondStart is UidtJobRunStart.AlreadyRunning)
+        assertTrue(gate.finishIfCurrent(firstRunId) { firstFinished = true })
 
-        assertFalse(firstFinished)
-        assertTrue(secondFinished)
+        assertTrue(firstFinished)
         assertFalse(gate.hasActiveRun())
     }
 }

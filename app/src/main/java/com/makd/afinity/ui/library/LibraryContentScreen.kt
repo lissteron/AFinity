@@ -106,6 +106,7 @@ fun LibraryContentScreen(
             targetValue = if (isMiniPlayerVisible) 112.dp else 0.dp,
             label = "playerOffset",
         )
+    val refreshLoadState = lazyPagingItems.loadState.refresh
 
     LaunchedEffect(scrollToIndex) {
         if (scrollToIndex >= 0) {
@@ -163,12 +164,36 @@ fun LibraryContentScreen(
                             }
                         }
 
+                        refreshLoadState is LoadState.Loading && lazyPagingItems.itemCount == 0 -> {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                FullScreenLoading()
+                            }
+                        }
+
                         uiState.error != null -> {
                             Box(
                                 modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 FullScreenError(message = uiState.error)
+                            }
+                        }
+
+                        refreshLoadState is LoadState.Error && lazyPagingItems.itemCount == 0 -> {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                FullScreenError(
+                                    message =
+                                        refreshLoadState.error.message
+                                            ?: stringResource(
+                                                R.string.error_content_unavailable_server
+                                            )
+                                )
                             }
                         }
 

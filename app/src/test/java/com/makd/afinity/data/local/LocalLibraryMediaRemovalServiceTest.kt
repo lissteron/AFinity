@@ -43,7 +43,6 @@ class LocalLibraryMediaRemovalServiceTest {
             LocalLibraryMediaRepository(
                     rootStore = FakeRootStore(root),
                     indexRepository = index,
-                    fileSystem = FilePathLibraryFileSystem(),
                     userStateRepository = NoopLocalMediaUserStateRepository,
                     visibilityRepository = visibilityRepository,
                 )

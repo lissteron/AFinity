@@ -52,6 +52,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.models.media.AfinityEpisode
+import com.makd.afinity.data.models.media.AfinityFolder
 import com.makd.afinity.data.models.media.AfinityItem
 import com.makd.afinity.data.models.media.AfinityMovie
 import com.makd.afinity.data.models.media.AfinitySeason
@@ -124,9 +125,9 @@ fun MainNavigation(
     val hasLiveTvAccess by viewModel.hasLiveTvAccess.collectAsStateWithLifecycle()
     val appLoadingState by viewModel.appLoadingState.collectAsStateWithLifecycle()
     val capabilityPolicy by viewModel.capabilityPolicy.collectAsStateWithLifecycle()
-    val isOffline by offlineModeManager.hardOffline.collectAsStateWithLifecycle(initialValue = false)
     val canLoadRemoteContent by
         offlineModeManager.canLoadRemoteContent.collectAsStateWithLifecycle(initialValue = true)
+    val isDownloadedOnlyMode = !canLoadRemoteContent
     val canUseAnySearchBackend =
         canLoadRemoteContent || isJellyseerrAuthenticated || isAudiobookshelfAuthenticated
     val audiobookshelfPlaybackState by
@@ -166,6 +167,7 @@ fun MainNavigation(
         return route == Destination.HOME.route ||
             route == Destination.SETTINGS_ROUTE ||
             route == Destination.DOWNLOAD_SETTINGS_ROUTE ||
+            route.startsWith("library_content/") ||
             route.startsWith("item_detail/") ||
             route.startsWith("player/") ||
             route.startsWith("audiobookshelf/item/") ||
@@ -186,6 +188,15 @@ fun MainNavigation(
 
     fun navigateToItemDetail(item: AfinityItem) {
         navController.navigate(createItemDetailRoute(item))
+    }
+
+    fun navigateToFolderContent(folder: AfinityFolder) {
+        navController.navigate(
+            Destination.createLibraryContentRoute(
+                libraryId = folder.id.toString(),
+                libraryName = folder.name,
+            )
+        )
     }
 
     fun launchPlayableItem(item: AfinityItem, fallbackToDetail: Boolean = true) {
@@ -230,20 +241,31 @@ fun MainNavigation(
     }
 
     fun handleItemClick(item: AfinityItem) {
-        val shouldDirectPlay =
-            capabilityPolicy.isKidModeEnabled &&
-                !capabilityPolicy.isParentUnlocked &&
-                when (item) {
-                    is AfinityEpisode,
-                    is AfinityMovie,
-                    is AfinityVideo -> true
-                    else -> false
-                }
+        when (val target = homeItemNavigationTarget(item)) {
+            is HomeItemNavigationTarget.Container ->
+                navController.navigate(
+                    Destination.createLibraryContentRoute(
+                        libraryId = target.id,
+                        libraryName = target.name,
+                    )
+                )
+            HomeItemNavigationTarget.Detail -> {
+                val shouldDirectPlay =
+                    capabilityPolicy.isKidModeEnabled &&
+                        !capabilityPolicy.isParentUnlocked &&
+                        when (item) {
+                            is AfinityEpisode,
+                            is AfinityMovie,
+                            is AfinityVideo -> true
+                            else -> false
+                        }
 
-        if (shouldDirectPlay) {
-            launchPlayableItem(item)
-        } else {
-            navigateToItemDetail(item)
+                if (shouldDirectPlay) {
+                    launchPlayableItem(item)
+                } else {
+                    navigateToItemDetail(item)
+                }
+            }
         }
     }
 
@@ -275,8 +297,8 @@ fun MainNavigation(
 
     val useNavRail = widthSizeClass != WindowWidthSizeClass.Compact
 
-    LaunchedEffect(isOffline, currentDestination) {
-        if (isOffline && currentDestination != null) {
+    LaunchedEffect(isDownloadedOnlyMode, currentDestination) {
+        if (isDownloadedOnlyMode && currentDestination != null) {
             val currentRoute = currentDestination.route
             if (!isOfflineAllowedRoute(currentRoute)) {
                 Timber.d("Offline mode blocked route $currentRoute, navigating to HOME")
@@ -313,14 +335,24 @@ fun MainNavigation(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(capabilityPolicy, currentDestination, isOffline, canUseAnySearchBackend) {
+    LaunchedEffect(
+        capabilityPolicy,
+        currentDestination,
+        isDownloadedOnlyMode,
+        canUseAnySearchBackend,
+    ) {
         val currentRoute = currentDestination?.route ?: return@LaunchedEffect
-        val isSettingsRoute = isParentProtectedRoute(currentRoute) && currentRoute != Destination.SEARCH_ROUTE && currentRoute != Destination.REQUESTS.route
+        val isSettingsRoute =
+            isParentProtectedRoute(currentRoute) &&
+                currentRoute != Destination.SEARCH_ROUTE &&
+                currentRoute != Destination.REQUESTS.route
         val shouldBlockRoute =
             (isSettingsRoute && !capabilityPolicy.canOpenSettings) ||
                 (currentRoute == Destination.REQUESTS.route && !capabilityPolicy.canManageRequests) ||
                 (currentRoute == Destination.SEARCH_ROUTE &&
-                    (isOffline || !capabilityPolicy.canUseSearch || !canUseAnySearchBackend))
+                    (isDownloadedOnlyMode ||
+                        !capabilityPolicy.canUseSearch ||
+                        !canUseAnySearchBackend))
 
         if (shouldBlockRoute) {
             Timber.d("Blocked protected route: $currentRoute")
@@ -390,7 +422,7 @@ fun MainNavigation(
                     },
                 navigationSuiteItems = {
                     Destination.entries.forEach { destination ->
-                        if (isOffline && destination != Destination.HOME) {
+                        if (isDownloadedOnlyMode && destination != Destination.HOME) {
                             return@forEach
                         }
 

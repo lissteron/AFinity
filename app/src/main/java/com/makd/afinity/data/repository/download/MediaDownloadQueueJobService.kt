@@ -35,7 +35,16 @@ class MediaDownloadQueueJobService : JobService() {
     private val lifecycle = UidtJobLifecycle()
 
     override fun onStartJob(params: JobParameters): Boolean {
-        val runId = lifecycle.start()
+        val runId =
+            when (val start = lifecycle.startIfIdle()) {
+                is UidtJobRunStart.Started -> start.runId
+                is UidtJobRunStart.AlreadyRunning -> {
+                    Timber.w(
+                        "Ignoring duplicate UIDT onStartJob while run ${start.activeRunId} is active"
+                    )
+                    return false
+                }
+            }
         val notification =
             try {
                 notificationFactory.buildQueueNotification()
@@ -79,6 +88,20 @@ class MediaDownloadQueueJobService : JobService() {
             serviceScope?.launch {
                 try {
                     val backendRunId = UUID.randomUUID()
+                    val uidtProgress =
+                        UidtJobProgressAccumulator(
+                            initialEstimatedDownloadBytes =
+                                stateStore.estimatePendingDownloadBytes()
+                        )
+                    uidtProgress.snapshot().let { snapshot ->
+                        if (snapshot.hasKnownEstimate) {
+                            updateEstimatedNetworkBytes(
+                                params,
+                                snapshot.estimatedDownloadBytes,
+                                0L,
+                            )
+                        }
+                    }
                     val result =
                         queueRunner.run(
                             requiredNetwork = network,
@@ -86,7 +109,19 @@ class MediaDownloadQueueJobService : JobService() {
                             backendKind = DownloadQueueBackends.UIDT,
                         ) { progress ->
                             try {
-                                updateTransferredNetworkBytes(params, progress.downloadedBytes, 0L)
+                                val jobProgress = uidtProgress.record(progress)
+                                if (jobProgress.hasKnownEstimate) {
+                                    updateEstimatedNetworkBytes(
+                                        params,
+                                        jobProgress.estimatedDownloadBytes,
+                                        0L,
+                                    )
+                                }
+                                updateTransferredNetworkBytes(
+                                    params,
+                                    jobProgress.transferredDownloadBytes,
+                                    0L,
+                                )
                                 setNotification(
                                     params,
                                     DownloadQueueNotificationFactory.NOTIFICATION_ID,
@@ -104,7 +139,11 @@ class MediaDownloadQueueJobService : JobService() {
                         "UIDT download queue finished: completed=${result.completed}, " +
                             "failed=${result.failed}, paused=${result.paused}, stopped=${result.stopped}"
                     )
-                    finishIfCurrent(runId, params, wantsReschedule = false)
+                    finishIfCurrent(
+                        runId,
+                        params,
+                        wantsReschedule = result.rescheduleCurrentJob,
+                    )
                 } catch (e: CancellationException) {
                     Timber.i("UIDT download queue coroutine cancelled")
                     queueRunner.stopActive("UIDT job stopped")
@@ -118,20 +157,24 @@ class MediaDownloadQueueJobService : JobService() {
     }
 
     override fun onStopJob(params: JobParameters): Boolean {
-        val userStopped = params.stopReason == JobParameters.STOP_REASON_USER
+        val stopPolicy = UidtJobStopPolicy.decide(params.stopReason)
         val reason = "UIDT job stopped: ${params.stopReason}"
         val stopDecision = lifecycle.stop()
         if (stopDecision.shouldStopRunner) {
-            if (userStopped) {
-                queueRunner.requestPauseActive(
-                    reason = reason,
-                    force = true,
-                )
-            } else {
-                queueRunner.requestPolicyRequeue(
-                    reason = reason,
-                    scheduleAfterStop = DownloadQueueScheduleTrigger.VISIBLE_LIVENESS,
-                )
+            when (stopPolicy.disposition) {
+                UidtJobStopDisposition.PAUSE_ACTIVE ->
+                    queueRunner.requestPauseActive(
+                        reason = reason,
+                        force = true,
+                    )
+                UidtJobStopDisposition.APP_OWNED_REQUEUE ->
+                    queueRunner.requestPolicyRequeue(
+                        reason = reason,
+                        scheduleAfterStop =
+                            stopPolicy.scheduleAfterStop
+                                ?: DownloadQueueScheduleTrigger.VISIBLE_LIVENESS,
+                    )
+                UidtJobStopDisposition.SYSTEM_OWNED_REQUEUE -> queueRunner.requestSystemRequeue(reason)
             }
             serviceScope?.launch(start = CoroutineStart.UNDISPATCHED) {
                 queueRunner.stopActive(reason)
@@ -139,7 +182,7 @@ class MediaDownloadQueueJobService : JobService() {
             runningJob?.cancel()
         }
         uidtNetworkSession.clearJob()
-        return !userStopped
+        return stopPolicy.shouldAskJobSchedulerToReschedule
     }
 
     override fun onNetworkChanged(params: JobParameters) {

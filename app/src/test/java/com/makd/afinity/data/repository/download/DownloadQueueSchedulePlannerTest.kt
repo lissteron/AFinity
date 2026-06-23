@@ -53,6 +53,21 @@ class DownloadQueueSchedulePlannerTest {
     }
 
     @Test
+    fun activeDownloadNeverSchedulesSecondBackend() {
+        val plan =
+            planner.plan(
+                sdkInt = 34,
+                trigger = DownloadQueueScheduleTrigger.VISIBLE_LIVENESS,
+                isVisible = true,
+                queuedCount = 39,
+                activeDownloadCount = 1,
+                notificationsAllowed = true,
+            )
+
+        assertEquals(DownloadQueueSchedulePlanner.Plan.BackendAlreadyRunning, plan)
+    }
+
+    @Test
     fun api34PassiveBackgroundDefersUidtWhenNotVisible() {
         val plan =
             planner.plan(

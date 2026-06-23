@@ -138,6 +138,8 @@ class LocalLibraryScanner(
                 serverId = sidecar?.server?.serverId,
                 jellyfinItemId = sidecar?.identity?.itemId,
                 jellyfinSourceId = sidecar?.identity?.sourceId,
+                jellyfinSeriesId = sidecar?.identity?.seriesId,
+                jellyfinSeasonId = sidecar?.identity?.seasonId,
                 providerIds = sidecar?.identity?.providerIds.orEmpty(),
                 stableRootId = stableRootId,
                 fingerprint = fingerprint,

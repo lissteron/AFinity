@@ -28,7 +28,10 @@ class LocalLibraryScannerTest {
         assertEquals(2, summary.importedItems)
         assertEquals(2, index.visibleMediaFiles().size)
         assertTrue(index.visibleMediaFiles().any { it.mediaKind == LocalMediaKind.MOVIE && it.title.name == "WALL-E" })
-        assertTrue(index.visibleMediaFiles().any { it.mediaKind == LocalMediaKind.EPISODE && it.title.showName == "Bluey" })
+        val episode = index.visibleMediaFiles().single { it.mediaKind == LocalMediaKind.EPISODE }
+        assertEquals("Bluey", episode.title.showName)
+        assertEquals("series-1", episode.identity.jellyfinSeriesId)
+        assertEquals("season-1", episode.identity.jellyfinSeasonId)
     }
 
     @Test
@@ -296,7 +299,12 @@ class LocalLibraryScannerTest {
               "schemaVersion": 1,
               "mediaKind": "episode",
               "server": { "serverId": "server" },
-              "identity": { "itemId": "episode-1", "sourceId": "source-1" },
+              "identity": {
+                "itemId": "episode-1",
+                "sourceId": "source-1",
+                "seriesId": "series-1",
+                "seasonId": "season-1"
+              },
               "localIdentity": {
                 "localItemId": "local-episode",
                 "relativePathAtWrite": "Shows/Bluey/Season 01/Bluey - S01E01 - The Magic Xylophone.mkv"

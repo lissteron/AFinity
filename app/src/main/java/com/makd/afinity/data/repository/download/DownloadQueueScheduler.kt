@@ -11,7 +11,6 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
-import com.makd.afinity.data.repository.DatabaseRepository
 import com.makd.afinity.data.repository.PreferencesRepository
 import com.makd.afinity.data.workers.MediaDownloadQueueWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -27,7 +26,6 @@ constructor(
     @param:ApplicationContext private val context: Context,
     private val workManager: WorkManager,
     private val preferencesRepository: PreferencesRepository,
-    private val databaseRepository: DatabaseRepository,
     private val stateStore: DownloadQueueStateStore,
     private val visibilityTracker: AppVisibilityTracker,
     private val notificationFactory: DownloadQueueNotificationFactory,
@@ -47,6 +45,10 @@ constructor(
     suspend fun scheduleQueue(
         trigger: DownloadQueueScheduleTrigger = DownloadQueueScheduleTrigger.USER_ACTION
     ): ScheduleResult {
+        val recovered = stateStore.requeueRecoverableInterruptedDownloads()
+        if (recovered > 0) {
+            Timber.w("Recovered $recovered interrupted media download rows before scheduling")
+        }
         val snapshot = stateStore.snapshot()
         val notificationsAllowed =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -62,11 +64,17 @@ constructor(
                     trigger = trigger,
                     isVisible = visibilityTracker.isVisibleNow(),
                     queuedCount = snapshot.queuedCount,
+                    activeDownloadCount = snapshot.activeDownloadCount,
                     notificationsAllowed = notificationsAllowed,
                 )
         ) {
             DownloadQueueSchedulePlanner.Plan.ScheduleUidt -> scheduleUidtQueueJob()
             DownloadQueueSchedulePlanner.Plan.ScheduleWorkManager -> scheduleWorkManagerQueueWorker()
+            DownloadQueueSchedulePlanner.Plan.BackendAlreadyRunning -> {
+                schedulerState.clear()
+                Timber.d("Download queue backend is already active; skipping duplicate schedule")
+                ScheduleResult.AlreadyRunning
+            }
             DownloadQueueSchedulePlanner.Plan.NoEligibleRows -> {
                 schedulerState.clear()
                 ScheduleResult.NoEligibleRows
@@ -148,15 +156,7 @@ constructor(
     }
 
     private suspend fun estimatePendingDownloadBytes(): Long {
-        val pending = databaseRepository.getPendingQueueDownloads()
-        return planner.estimateBytes(
-            pending.map { download ->
-                QueueByteEstimate(
-                    bytesDownloaded = download.bytesDownloaded,
-                    totalBytes = download.totalBytes,
-                )
-            }
-        )
+        return stateStore.estimatePendingDownloadBytes()
     }
 
     private suspend fun scheduleWorkManagerQueueWorker(): ScheduleResult {
@@ -188,6 +188,7 @@ constructor(
     sealed class ScheduleResult {
         data object ScheduledUidt : ScheduleResult()
         data object ScheduledWorkManager : ScheduleResult()
+        data object AlreadyRunning : ScheduleResult()
         data object NoEligibleRows : ScheduleResult()
         data class Deferred(val reason: String) : ScheduleResult()
         data class Failed(val reason: String) : ScheduleResult()

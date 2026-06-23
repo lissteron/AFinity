@@ -1,8 +1,13 @@
 package com.makd.afinity.data.local
 
 import java.util.UUID
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 
 interface LocalLibraryIndexRepository {
+    fun catalogGenerationFlow(): Flow<String>
+
     fun replaceRootScan(
         root: LocalLibraryRootRecord,
         files: List<LocalMediaFileRecord>,
@@ -32,8 +37,11 @@ class InMemoryLocalLibraryIndexRepository : LocalLibraryIndexRepository {
     private val filesByRootAndPath = linkedMapOf<Pair<UUID, String>, LocalMediaFileRecord>()
     private val unavailableRoots = mutableSetOf<UUID>()
     private val rootPriorities = mutableMapOf<UUID, Int>()
+    private val catalogGeneration = MutableStateFlow("0")
 
     private val importJobsByRootAndPath = linkedMapOf<Pair<UUID, String>, LocalMediaImportJobRecord>()
+
+    override fun catalogGenerationFlow(): Flow<String> = catalogGeneration
 
     override fun replaceRootScan(
         root: LocalLibraryRootRecord,
@@ -46,11 +54,13 @@ class InMemoryLocalLibraryIndexRepository : LocalLibraryIndexRepository {
         importJobs.forEach { job -> importJobsByRootAndPath[root.registryId to job.relativePath] = job }
         unavailableRoots.remove(root.registryId)
         rootPriorities[root.registryId] = root.priority
+        bumpCatalogGeneration()
     }
 
     override fun markRootUnavailable(root: LocalLibraryRootRecord) {
         unavailableRoots += root.registryId
         rootPriorities[root.registryId] = root.priority
+        bumpCatalogGeneration()
     }
 
     override fun allMediaFiles(): List<LocalMediaFileRecord> = filesByRootAndPath.values.toList()
@@ -100,4 +110,8 @@ class InMemoryLocalLibraryIndexRepository : LocalLibraryIndexRepository {
     }
 
     override fun importJobs(): List<LocalMediaImportJobRecord> = importJobsByRootAndPath.values.toList()
+
+    private fun bumpCatalogGeneration() {
+        catalogGeneration.update { current -> (current.toLongOrNull() ?: 0L).inc().toString() }
+    }
 }

@@ -207,6 +207,30 @@ constructor(
         }
     }
 
+    fun onFolderPickerUnavailable(target: String, detail: String? = null) {
+        val message =
+            "System folder picker is unavailable in this profile. Use Device storage or enable Files/DocumentsUI for this child profile."
+        if (detail != null) {
+            Timber.w("Folder picker unavailable for %s: %s", target, detail)
+        } else {
+            Timber.w("Folder picker unavailable for %s", target)
+        }
+        _uiState.value = _uiState.value.copy(error = message)
+    }
+
+    fun onFolderPickerLaunchFailed(target: String, error: Throwable) {
+        Timber.e(error, "Failed to launch folder picker for %s", target)
+        _uiState.value =
+            _uiState.value.copy(
+                error =
+                    "System folder picker could not open in this profile: ${error.message ?: error::class.simpleName}"
+            )
+    }
+
+    fun onFolderPickerCancelled(target: String) {
+        Timber.i("Folder picker dismissed for %s", target)
+    }
+
     fun setLocalLibraryRootEnabled(rootId: UUID, enabled: Boolean) {
         if (!kidModeRepository.policy.value.canManageDownloads) return
         viewModelScope.launch {

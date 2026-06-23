@@ -511,6 +511,29 @@ abstract class ServerDatabaseDao {
         updatedAt: Long,
     ): Int
 
+    @Query(
+        """
+        UPDATE downloads
+        SET status = 'QUEUED',
+            activeClaimId = NULL,
+            activeBackendRunId = NULL,
+            activeBackendKind = NULL,
+            claimStartedAt = NULL,
+            claimHeartbeatAt = NULL,
+            error = :newError,
+            updatedAt = :updatedAt
+        WHERE status = 'FAILED'
+            AND error LIKE :legacyErrorPattern
+            AND bytesDownloaded = 0
+            AND totalBytes = 0
+        """
+    )
+    abstract suspend fun requeueZeroByteFailedDownloadsByErrorPattern(
+        legacyErrorPattern: String,
+        newError: String?,
+        updatedAt: Long,
+    ): Int
+
     @Transaction
     open suspend fun insertMovieIfDownloadCompleted(
         downloadId: UUID,

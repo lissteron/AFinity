@@ -10,6 +10,8 @@ import com.makd.afinity.data.database.entities.LocalMediaImportJobEntity
 import com.makd.afinity.data.database.entities.LocalMediaSidecarEntity
 import com.makd.afinity.data.database.entities.LocalMediaUserStateEntity
 import com.makd.afinity.data.database.entities.LocalMediaVisibilityEntity
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -33,6 +35,8 @@ class RoomLocalLibraryIndexRepositoryTest {
         assertEquals(record.identity.serverId, restored.identity.serverId)
         assertEquals(record.identity.jellyfinItemId, restored.identity.jellyfinItemId)
         assertEquals(record.identity.jellyfinSourceId, restored.identity.jellyfinSourceId)
+        assertEquals(record.identity.jellyfinSeriesId, restored.identity.jellyfinSeriesId)
+        assertEquals(record.identity.jellyfinSeasonId, restored.identity.jellyfinSeasonId)
         assertEquals(record.identity.providerIds, restored.identity.providerIds)
         assertEquals(record.identity.fingerprint, restored.identity.fingerprint)
         assertEquals(record.identity.durableKey, restored.identity.durableKey)
@@ -61,6 +65,28 @@ class RoomLocalLibraryIndexRepositoryTest {
         assertEquals(emptyList<LocalMediaFileRecord>(), repository.visibleMediaFiles())
     }
 
+    @Test
+    fun rootRescanPreservesBackfilledParentIdentityWhenOldSidecarLacksIt() {
+        val dao = FakeLocalLibraryDao()
+        val repository = RoomLocalLibraryIndexRepository(dao)
+        val indexedRecord = record()
+        val scannedFromOldSidecar =
+            indexedRecord.copy(
+                identity =
+                    indexedRecord.identity.copy(
+                        jellyfinSeriesId = null,
+                        jellyfinSeasonId = null,
+                    )
+            )
+
+        repository.replaceRootScan(root(), listOf(indexedRecord))
+        repository.replaceRootScan(root(), listOf(scannedFromOldSidecar))
+
+        val restored = repository.allMediaFiles().single()
+        assertEquals(indexedRecord.identity.jellyfinSeriesId, restored.identity.jellyfinSeriesId)
+        assertEquals(indexedRecord.identity.jellyfinSeasonId, restored.identity.jellyfinSeasonId)
+    }
+
     private fun root(enabled: Boolean = true): LocalLibraryRootRecord =
         LocalLibraryRootRecord(
             registryId = rootId,
@@ -85,6 +111,8 @@ class RoomLocalLibraryIndexRepositoryTest {
                     serverId = "server-1",
                     jellyfinItemId = "movie-1",
                     jellyfinSourceId = "source-1",
+                    jellyfinSeriesId = "series-1",
+                    jellyfinSeasonId = "season-1",
                     providerIds = mapOf("Imdb" to "tt0910970"),
                     stableRootId = stableRootId,
                     fingerprint = LocalMediaFingerprint("sha256-v1", "abc123"),
@@ -106,6 +134,8 @@ class RoomLocalLibraryIndexRepositoryTest {
         private val userStates = linkedMapOf<Pair<String, String>, LocalMediaUserStateEntity>()
         private val visibilities =
             linkedMapOf<Pair<String, String>, LocalMediaVisibilityEntity>()
+
+        override fun catalogGenerationFlow(): Flow<String> = flowOf("fake")
 
         override fun upsertRootSnapshot(snapshot: LocalLibraryRootSnapshotEntity) {
             roots[snapshot.registryId] = snapshot

@@ -343,6 +343,12 @@ interface DatabaseRepository {
         updatedAt: Long = System.currentTimeMillis(),
     ): Int
 
+    suspend fun requeueZeroByteFailedDownloadsByErrorPattern(
+        legacyErrorPattern: String,
+        newError: String?,
+        updatedAt: Long = System.currentTimeMillis(),
+    ): Int
+
     suspend fun insertMovieIfDownloadCompleted(
         downloadId: UUID,
         movie: AfinityMovie,

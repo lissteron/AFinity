@@ -69,6 +69,8 @@ class DownloadQueueContractSourceTest {
         assertTrue(runnerIndex > setNotificationIndex)
         assertTrue(source.contains("lifecycle.finishIfCurrent(runId)"))
         assertTrue(source.contains("jobFinished(params, wantsReschedule)"))
+        assertTrue(source.contains("lifecycle.startIfIdle()"))
+        assertTrue(source.contains("UidtJobRunStart.AlreadyRunning"))
         assertTrue(source.contains("launch(start = CoroutineStart.UNDISPATCHED)"))
         assertTrue(source.contains("return startBackendStartFailureCleanup("))
         assertTrue(source.contains("backendStartFailureHandler.record(reason)"))
@@ -88,10 +90,26 @@ class DownloadQueueContractSourceTest {
         assertTrue(finishLogIndex > progressObserverIndex)
 
         val progressObserverSource = source.substring(progressObserverIndex, finishLogIndex)
+        assertTrue(source.contains("UidtJobProgressAccumulator("))
         assertTrue(progressObserverSource.contains("setNotification("))
         assertTrue(progressObserverSource.contains("JOB_END_NOTIFICATION_POLICY_REMOVE"))
+        assertTrue(progressObserverSource.contains("uidtProgress.record(progress)"))
+        assertTrue(progressObserverSource.contains("updateEstimatedNetworkBytes("))
         assertTrue(!progressObserverSource.contains("NotificationManagerCompat.from"))
+        assertTrue(!progressObserverSource.contains("updateTransferredNetworkBytes(params, progress.downloadedBytes"))
         assertTrue(!source.contains("import androidx.core.app.NotificationManagerCompat"))
+    }
+
+    @Test
+    fun transferProgressReportsNetworkDeltaForUidtJobAccounting() {
+        val source =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/MediaDownloadTransferRunner.kt"
+            )
+
+        assertTrue(source.contains("networkBytesSinceLastProgress += bytes"))
+        assertTrue(source.contains("networkBytesDelta = deltaBytes"))
+        assertTrue(source.contains("if (networkBytesSinceLastProgress > 0L)"))
     }
 
     @Test
@@ -123,6 +141,22 @@ class DownloadQueueContractSourceTest {
         assertTrue(!source.contains("OneTimeWorkRequestBuilder<ImageDownloadWorker>"))
         assertTrue(!source.contains("OneTimeWorkRequestBuilder<SubtitleDownloadWorker>"))
         assertTrue(!source.contains("OneTimeWorkRequestBuilder<TrickplayDownloadWorker>"))
+    }
+
+    @Test
+    fun queuedTranscodeRowsKeepSourceSizeForUidtEstimate() {
+        val source =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/JellyfinDownloadRepository.kt"
+            )
+        val buildQueuedDownloadSource =
+            source.substring(
+                source.indexOf("private fun buildQueuedDownload"),
+                source.indexOf("override suspend fun pauseDownload"),
+            )
+
+        assertTrue(buildQueuedDownloadSource.contains("totalBytes = source.size"))
+        assertTrue(!buildQueuedDownloadSource.contains("qualityMode.requiresTranscode) 0L"))
     }
 
     @Test
@@ -158,6 +192,20 @@ class DownloadQueueContractSourceTest {
                 repository.indexOf("override suspend fun cancelDownload"),
             )
         assertTrue(resumeDownloadSource.contains("offlineModeManager.isHardOffline()"))
+
+        val seasonDownloadSource =
+            repository.substring(
+                repository.indexOf("override suspend fun startSeasonDownload"),
+                repository.indexOf("override suspend fun startSeriesDownload"),
+            )
+        assertTrue(seasonDownloadSource.contains("offlineModeManager.isHardOffline()"))
+
+        val seriesDownloadSource =
+            repository.substring(
+                repository.indexOf("override suspend fun startSeriesDownload"),
+                repository.indexOf("private suspend fun buildEpisodeQueueRows"),
+            )
+        assertTrue(seriesDownloadSource.contains("offlineModeManager.isHardOffline()"))
     }
 
     @Test
@@ -173,9 +221,31 @@ class DownloadQueueContractSourceTest {
         assertTrue(runnerRequestIndex >= 0)
         assertTrue(fallbackRequeueIndex > runnerRequestIndex)
         assertTrue(
-            source.contains("DownloadQueuePolicyRequeueRequestResult.RunnerWillRequeueAndReschedule")
+            source.contains("DownloadQueueRequeueRequestResult.RunnerWillHandleRequeue")
         )
-        assertTrue(source.contains("DownloadQueuePolicyRequeueRequestResult.ExistingStopRequestWins"))
+        assertTrue(source.contains("DownloadQueueRequeueRequestResult.ExistingStopRequestWins"))
+    }
+
+    @Test
+    fun userPauseOwnsActiveStopRequestBeforeCancellingBackend() {
+        val repository =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/JellyfinDownloadRepository.kt"
+            )
+        val pauseSource =
+            repository.substring(
+                repository.indexOf("override suspend fun pauseDownload"),
+                repository.indexOf("override suspend fun resumeDownload"),
+            )
+        val requestPauseIndex = pauseSource.indexOf("queueRunner.requestPauseActive")
+        val cancelIndex = pauseSource.indexOf("downloadQueueScheduler.cancelQueue()")
+        val fallbackPauseIndex = pauseSource.indexOf("stateStore.pauseActiveDownload")
+
+        assertTrue(requestPauseIndex >= 0)
+        assertTrue(cancelIndex > requestPauseIndex)
+        assertTrue(fallbackPauseIndex > cancelIndex)
+        assertTrue(pauseSource.contains("force = true"))
+        assertTrue(pauseSource.contains("val reason = \"Paused by user\""))
     }
 
     @Test
@@ -243,11 +313,13 @@ class DownloadQueueContractSourceTest {
         assertTrue(stateStore.contains("databaseRepository.requeuePausedDownloadsByError"))
         assertTrue(stateStore.contains("databaseRepository.requeuePausedDownloadsByErrorPattern"))
         assertTrue(stateStore.contains("databaseRepository.requeueZeroByteFailedDownloadsByError"))
+        assertTrue(stateStore.contains("databaseRepository.requeueZeroByteFailedDownloadsByErrorPattern"))
+        assertTrue(stateStore.contains("suspend fun requeueRecoverableInterruptedDownloads"))
         assertTrue(stateStore.contains("LEGACY_INTERRUPTED_PAUSED_REASON"))
         assertTrue(stateStore.contains("UIDT_STOPPED_PAUSED_REASON_PATTERN"))
-        assertTrue(stateStore.contains("TRANSIENT_ZERO_BYTE_FAILED_REASONS"))
-        assertTrue(stateStore.contains("\"Unknown IO error occurred!\""))
-        assertTrue(stateStore.contains("\"HTTP host unreachable\""))
+        assertTrue(stateStore.contains("TRANSIENT_PAUSED_REASON_PATTERNS"))
+        assertTrue(stateStore.contains("TRANSIENT_FAILED_REASON_PATTERNS"))
+        assertTrue(stateStore.contains("DownloadQueueTransientFailureClassifier.sqlLikePatterns"))
         assertTrue(!stateStore.contains("databaseRepository.pauseOrphanedActiveDownloads"))
         assertTrue(
             !stateStore
@@ -259,13 +331,16 @@ class DownloadQueueContractSourceTest {
         assertTrue(dao.contains("abstract suspend fun requeuePausedDownloadsByError"))
         assertTrue(dao.contains("abstract suspend fun requeuePausedDownloadsByErrorPattern"))
         assertTrue(dao.contains("abstract suspend fun requeueZeroByteFailedDownloadsByError"))
+        assertTrue(dao.contains("abstract suspend fun requeueZeroByteFailedDownloadsByErrorPattern"))
         assertTrue(dao.contains("status = 'FAILED'"))
         assertTrue(dao.contains("bytesDownloaded = 0"))
         assertTrue(dao.contains("totalBytes = 0"))
+        assertTrue(dao.contains("error LIKE :legacyErrorPattern"))
         assertTrue(dao.contains("SET status = 'QUEUED'"))
         assertTrue(migration.contains("Interrupted download recovered to queued state"))
         assertTrue(migration.contains("stateStore.requeuePausedInterruptedDownloads()"))
         assertTrue(migration.contains("stateStore.requeuePausedUidtStoppedDownloads()"))
+        assertTrue(migration.contains("stateStore.requeuePausedTransientInterruptedDownloads()"))
         assertTrue(migration.contains("stateStore.requeueZeroByteTransientFailedDownloads()"))
         assertTrue(migration.contains("Requeued ${'$'}"))
         assertTrue(runner.contains("orphaned DOWNLOADING media rows to QUEUED"))
@@ -280,23 +355,47 @@ class DownloadQueueContractSourceTest {
         val runner =
             readSource(
                 "src/main/java/com/makd/afinity/data/repository/download/DownloadQueueRunner.kt"
-            )
+        )
 
-        assertTrue(jobService.contains("queueRunner.requestPolicyRequeue("))
-        assertTrue(jobService.contains("DownloadQueueScheduleTrigger.VISIBLE_LIVENESS"))
+        assertTrue(jobService.contains("val stopPolicy = UidtJobStopPolicy.decide(params.stopReason)"))
         assertTrue(jobService.contains("queueRunner.requestPauseActive("))
+        assertTrue(jobService.contains("queueRunner.requestPolicyRequeue("))
+        assertTrue(jobService.contains("queueRunner.requestSystemRequeue(reason)"))
+        assertTrue(jobService.contains("return stopPolicy.shouldAskJobSchedulerToReschedule"))
+        assertTrue(jobService.contains("UidtJobStopDisposition.APP_OWNED_REQUEUE"))
+        assertTrue(jobService.contains("UidtJobStopDisposition.SYSTEM_OWNED_REQUEUE"))
+        assertTrue(jobService.contains("DownloadQueueScheduleTrigger.VISIBLE_LIVENESS"))
         assertTrue(jobService.contains("return startRequeueAllActiveCleanup("))
         assertTrue(!jobService.contains("startPauseAllActiveCleanup"))
         assertTrue(jobService.contains("stateStore.requeueAllActiveForTransientStop(reason = reason)"))
         assertTrue(jobService.contains("finishIfCurrent(runId, params, wantsReschedule = true)"))
         assertTrue(runner.contains("DownloadQueueStopDisposition.REQUEUE"))
-        assertTrue(runner.contains("requestPolicyRequeue(\n                reason = reason"))
+        assertTrue(runner.contains("fun requestSystemRequeue(reason: String)"))
+        assertTrue(runner.contains("rescheduleCurrentJob = finalStopRequest?.rescheduleCurrentJob == true"))
         assertTrue(!runner.contains("stopActive(\"UIDT required network is unavailable\")"))
+        assertTrue(!runner.contains("scheduleAfterStop = DownloadQueueScheduleTrigger.VISIBLE_LIVENESS,\n            )\n            stopActive(reason)"))
         assertTrue(
             runner.contains(
                 "stateStore.requeueOwned(\n                        downloadId = claim.downloadId"
             )
         )
+    }
+
+    @Test
+    fun timeoutAndAppCancelledUidtStopsAreAppOwnedRequeues() {
+        val policy =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/UidtJobStopPolicy.kt"
+            )
+
+        assertTrue(policy.contains("JobParameters.STOP_REASON_TIMEOUT"))
+        assertTrue(policy.contains("JobParameters.STOP_REASON_TIMEOUT_ABANDONED"))
+        assertTrue(policy.contains("JobParameters.STOP_REASON_CANCELLED_BY_APP"))
+        assertTrue(policy.contains("UidtJobStopDisposition.APP_OWNED_REQUEUE"))
+        assertTrue(policy.contains("shouldAskJobSchedulerToReschedule = false"))
+        assertTrue(policy.contains("DownloadQueueScheduleTrigger.VISIBLE_LIVENESS"))
+        assertTrue(policy.contains("UidtJobStopDisposition.SYSTEM_OWNED_REQUEUE"))
+        assertTrue(policy.contains("shouldAskJobSchedulerToReschedule = true"))
     }
 
     @Test
@@ -345,10 +444,106 @@ class DownloadQueueContractSourceTest {
         assertTrue(worker.contains("backendStartFailureHandler.record"))
         assertTrue(jobService.contains("backendStartFailureHandler.record(reason)"))
         assertTrue(scheduler.contains("val snapshot = stateStore.snapshot()"))
+        assertTrue(scheduler.contains("stateStore.requeueRecoverableInterruptedDownloads()"))
         assertTrue(stateStore.contains("requeueOrphanedActiveDownloads"))
         assertTrue(stateStore.contains("reconcileStartupActiveClaims"))
         assertTrue(!stateStore.contains("hasRowsToNormalize"))
         assertTrue(dao.contains("activeBackendRunId IS NULL OR activeBackendRunId != :activeBackendRunId"))
+    }
+
+    @Test
+    fun schedulerDoesNotReplaceAnAlreadyActiveBackendJob() {
+        val scheduler =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/DownloadQueueScheduler.kt"
+            )
+        val planner =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/DownloadQueueSchedulePlanner.kt"
+            )
+
+        assertTrue(scheduler.contains("activeDownloadCount = snapshot.activeDownloadCount"))
+        assertTrue(
+            scheduler.contains(
+                "DownloadQueueSchedulePlanner.Plan.BackendAlreadyRunning ->"
+            )
+        )
+        assertTrue(scheduler.contains("ScheduleResult.AlreadyRunning"))
+        assertTrue(planner.contains("if (activeDownloadCount > 0) return Plan.BackendAlreadyRunning"))
+    }
+
+    @Test
+    fun duplicateRunnerStartRetriesInsteadOfReportingSuccessfulCompletion() {
+        val runner =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/DownloadQueueRunner.kt"
+            )
+        val duplicateStartSource =
+            runner.substring(
+                runner.indexOf("if (!running.compareAndSet(false, true))"),
+                runner.indexOf("stopState.clear()"),
+            )
+
+        assertTrue(duplicateStartSource.contains("stopped = true"))
+        assertTrue(duplicateStartSource.contains("rescheduleCurrentJob = true"))
+        assertTrue(!duplicateStartSource.contains("stopped = false"))
+
+        val lifecycle =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/UidtJobLifecycle.kt"
+            )
+        val gate =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/UidtJobRunGate.kt"
+            )
+        val jobService =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/MediaDownloadQueueJobService.kt"
+            )
+
+        assertTrue(lifecycle.contains("fun startIfIdle(): UidtJobRunStart"))
+        assertTrue(gate.contains("if (activeRunId != 0L)"))
+        assertTrue(gate.contains("UidtJobRunStart.AlreadyRunning(activeRunId)"))
+        assertTrue(jobService.contains("Ignoring duplicate UIDT onStartJob"))
+        assertTrue(jobService.contains("return false"))
+    }
+
+    @Test
+    fun workManagerFallbackRetriesSystemInterruptedQueueInsteadOfEndingDurableWork() {
+        val worker = readSource("src/main/java/com/makd/afinity/data/workers/MediaDownloadQueueWorker.kt")
+        val runner =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/DownloadQueueRunner.kt"
+            )
+
+        assertTrue(worker.contains("Result.retry()"))
+        assertTrue(worker.contains("runResult.rescheduleCurrentJob"))
+        assertTrue(worker.contains("queueRunner.requestSystemRequeue("))
+        assertTrue(worker.contains("backendStartFailureHandler.record("))
+        assertTrue(!worker.contains("Result.failure(workDataOf"))
+        assertTrue(runner.contains("rescheduleCurrentJob = finalStopRequest?.rescheduleCurrentJob == true || requeued > 0"))
+    }
+
+    @Test
+    fun transientTransferInterruptionsRequeueAndAskBackendRetry() {
+        val transferRunner =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/MediaDownloadTransferRunner.kt"
+            )
+        val runner =
+            readSource(
+                "src/main/java/com/makd/afinity/data/repository/download/DownloadQueueRunner.kt"
+            )
+
+        assertTrue(transferRunner.contains("TransferResult.Requeued"))
+        assertTrue(transferRunner.contains("withContext(NonCancellable)"))
+        assertTrue(transferRunner.contains("Media download interrupted; requeueing active row"))
+        assertTrue(transferRunner.contains("DownloadQueueTransientFailureClassifier.isTransientFailure"))
+        assertTrue(transferRunner.contains("completedResultIfAlreadyCompleted"))
+        assertTrue(transferRunner.contains("isActiveOwnedDownload"))
+        assertTrue(!transferRunner.contains("Media download interrupted; pausing active row"))
+        assertTrue(runner.contains("is MediaDownloadTransferRunner.TransferResult.Requeued"))
+        assertTrue(runner.contains("break"))
     }
 
     private fun readSource(relativePath: String): String {

@@ -35,6 +35,7 @@ import com.makd.afinity.data.local.LocalPlaybackSourceRepository
 import com.makd.afinity.data.local.LocalMediaUserStateRepository
 import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.PlaybackStateManager
+import com.makd.afinity.data.manager.SessionManager
 import com.makd.afinity.data.models.livetv.AfinityChannel
 import com.makd.afinity.data.models.livetv.ChannelType
 import com.makd.afinity.data.models.media.AfinityChapter
@@ -103,6 +104,7 @@ constructor(
     private val apiClient: ApiClient,
     private val audiobookshelfPlayer: AudiobookshelfPlayer,
     private val offlineModeManager: OfflineModeManager,
+    private val sessionManager: SessionManager,
     private val localPlaybackSourceRepository: LocalPlaybackSourceRepository,
     private val localMediaUserStateRepository: LocalMediaUserStateRepository,
     kidModeRepository: KidModeRepository,
@@ -1695,7 +1697,7 @@ constructor(
             val capability = capabilityPolicy.value
             val visibilityContext =
                 LocalLibraryVisibilityContext(
-                    currentUserId = preferencesRepository.getCurrentUserId(),
+                    currentUserId = currentProfileUserId(),
                     kidModeEnabled = capability.isKidModeEnabled,
                     parentUnlocked = capability.isParentUnlocked,
                 )
@@ -1733,7 +1735,7 @@ constructor(
         if (mediaSource?.type != AfinitySourceType.LOCAL) return
         val mediaFileId = runCatching { UUID.fromString(mediaSource.id) }.getOrNull() ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            val profileUserId = preferencesRepository.getCurrentUserId()
+            val profileUserId = currentProfileUserId()
             if (profileUserId.isNullOrBlank()) {
                 Timber.w("Cannot save local playback progress without current user id")
                 return@launch
@@ -1749,6 +1751,10 @@ constructor(
             }
         }
     }
+
+    private suspend fun currentProfileUserId(): String? =
+        sessionManager.currentSession.value?.userId?.toString()
+            ?: preferencesRepository.getCurrentUserId()
 
     /**
      * Given a list of [candidates] (sources of the next episode), returns the one that best matches

@@ -2,6 +2,7 @@ package com.makd.afinity.data.local
 
 import com.makd.afinity.data.models.media.AfinityChapter
 import com.makd.afinity.data.models.media.AfinityEpisode
+import com.makd.afinity.data.models.media.AfinityItem
 import com.makd.afinity.data.models.media.AfinityImages
 import com.makd.afinity.data.models.media.AfinityMediaStream
 import com.makd.afinity.data.models.media.AfinityMovie
@@ -9,9 +10,19 @@ import com.makd.afinity.data.models.media.AfinitySeason
 import com.makd.afinity.data.models.media.AfinityShow
 import com.makd.afinity.data.models.media.AfinitySource
 import com.makd.afinity.data.models.media.AfinitySourceType
+import com.makd.afinity.data.models.media.offlinePlaybackEpisode
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
+
+data class LocalLibraryHomeCatalog(
+    val movies: List<AfinityMovie>,
+    val shows: List<AfinityShow>,
+    val continueWatching: List<AfinityItem>,
+)
 
 @Singleton
 class LocalLibraryMediaRepository
@@ -19,11 +30,12 @@ class LocalLibraryMediaRepository
 constructor(
     private val rootStore: LocalLibraryRootStore,
     private val indexRepository: LocalLibraryIndexRepository,
-    private val fileSystem: LocalLibraryFileSystem,
     private val userStateRepository: LocalMediaUserStateRepository,
     private val visibilityRepository: LocalMediaVisibilityRepository =
         NoopLocalMediaVisibilityRepository,
 ) {
+    fun catalogGenerationFlow(): Flow<String> = indexRepository.catalogGenerationFlow()
+
     suspend fun getVisibleMovies(
         profileUserId: String? = null,
         visibilityContext: LocalLibraryVisibilityContext =
@@ -32,21 +44,7 @@ constructor(
                 kidModeEnabled = false,
                 parentUnlocked = false,
             ),
-    ): List<AfinityMovie> {
-        val rootsById = rootStore.getRoots().associateBy { it.registryId }
-        val states = profileUserId?.let(userStateRepository::getStates).orEmpty()
-        val hidden = profileUserId?.let(visibilityRepository::hiddenLocalItemIds).orEmpty()
-        return indexRepository
-            .visibleMediaFiles(visibilityContext)
-            .filter { it.identity.localItemId !in hidden }
-            .filter { it.mediaKind == LocalMediaKind.MOVIE }
-            .mapNotNull { file ->
-                file.toMovie(
-                    rootsById[file.rootRegistryId]?.takeIf { it.isVisibleRoot() },
-                    states[file.identity.localItemId],
-                )
-            }
-    }
+    ): List<AfinityMovie> = visibleSnapshot(profileUserId, visibilityContext).movies
 
     suspend fun getVisibleShows(
         profileUserId: String? = null,
@@ -56,22 +54,171 @@ constructor(
                 kidModeEnabled = false,
                 parentUnlocked = false,
             ),
-    ): List<AfinityShow> {
+    ): List<AfinityShow> = visibleSnapshot(profileUserId, visibilityContext).shows
+
+    suspend fun getHomeCatalog(
+        profileUserId: String? = null,
+        visibilityContext: LocalLibraryVisibilityContext =
+            LocalLibraryVisibilityContext(
+                currentUserId = profileUserId,
+                kidModeEnabled = false,
+                parentUnlocked = false,
+            ),
+    ): LocalLibraryHomeCatalog {
+        val snapshot = visibleSnapshot(profileUserId, visibilityContext)
+        return LocalLibraryHomeCatalog(
+            movies = snapshot.movies,
+            shows = snapshot.shows,
+            continueWatching = snapshot.continueWatching,
+        )
+    }
+
+    suspend fun getContentForContainer(
+        containerId: UUID?,
+        containerName: String? = null,
+        profileUserId: String? = null,
+        visibilityContext: LocalLibraryVisibilityContext =
+            LocalLibraryVisibilityContext(
+                currentUserId = profileUserId,
+                kidModeEnabled = false,
+                parentUnlocked = false,
+            ),
+    ): List<AfinityItem> {
+        val snapshot = visibleSnapshot(profileUserId, visibilityContext)
+        val seasons = snapshot.shows.flatMap { it.seasons }
+
+        val show =
+            snapshot.shows.firstOrNull { show ->
+                show.id == containerId || show.name.matchesLocalContainerName(containerName)
+            }
+        if (show != null) {
+            val showSeasons = show.seasons.sortedBy { it.indexNumber }
+            return if (showSeasons.size == 1) {
+                showSeasons.single().episodes.sortedBy { it.indexNumber }
+            } else {
+                showSeasons
+            }
+        }
+
+        val season =
+            seasons.firstOrNull { season ->
+                season.id == containerId || season.name.matchesLocalContainerName(containerName)
+            }
+        if (season != null) {
+            return season.episodes.sortedBy { it.indexNumber }
+        }
+
+        snapshot.movies.firstOrNull { it.id == containerId }?.let { return listOf(it) }
+        return snapshot.movies + snapshot.shows
+    }
+
+    suspend fun findVisibleItemById(
+        itemId: UUID,
+        itemType: String? = null,
+        seriesId: UUID? = null,
+        profileUserId: String? = null,
+        visibilityContext: LocalLibraryVisibilityContext =
+            LocalLibraryVisibilityContext(
+                currentUserId = profileUserId,
+                kidModeEnabled = false,
+                parentUnlocked = false,
+            ),
+    ): AfinityItem? {
+        val snapshot = visibleSnapshot(profileUserId, visibilityContext)
+        val episodes = snapshot.shows.flatMap { show -> show.seasons.flatMap { it.episodes } }
+        val seasons = snapshot.shows.flatMap { it.seasons }
+        return when (itemType?.uppercase()) {
+            "MOVIE" -> snapshot.movies.firstOrNull { it.id == itemId }
+            "EPISODE" -> episodes.firstOrNull { it.id == itemId }
+            "SERIES", "SHOW" -> snapshot.shows.firstOrNull { it.id == itemId }
+            "SEASON" ->
+                seasons.firstOrNull { season ->
+                    season.id == itemId && (seriesId == null || season.seriesId == seriesId)
+                }
+            else ->
+                snapshot.movies.firstOrNull { it.id == itemId }
+                    ?: episodes.firstOrNull { it.id == itemId }
+                    ?: snapshot.shows.firstOrNull { it.id == itemId }
+                    ?: seasons.firstOrNull { it.id == itemId }
+        }
+    }
+
+    suspend fun resolvePlayableItem(
+        itemId: UUID,
+        itemType: String? = null,
+        seriesId: UUID? = null,
+        profileUserId: String? = null,
+        visibilityContext: LocalLibraryVisibilityContext =
+            LocalLibraryVisibilityContext(
+                currentUserId = profileUserId,
+                kidModeEnabled = false,
+                parentUnlocked = false,
+            ),
+    ): AfinityItem? =
+        when (
+            val item =
+                findVisibleItemById(
+                    itemId = itemId,
+                    itemType = itemType,
+                    seriesId = seriesId,
+                    profileUserId = profileUserId,
+                    visibilityContext = visibilityContext,
+                )
+        ) {
+            is AfinityShow -> item.offlinePlaybackEpisode()
+            is AfinitySeason -> item.offlinePlaybackEpisode()
+            else -> item
+        }
+
+    private fun LocalMediaFileRecord.toVisibleMovieOrNull(
+        rootsById: Map<UUID, LocalLibraryRootRecord>,
+        states: Map<String, LocalMediaUserStateRecord>,
+    ): AfinityMovie? =
+        takeIf { it.mediaKind == LocalMediaKind.MOVIE }
+            ?.toMovie(
+                rootsById[rootRegistryId]?.takeIf { root -> root.isVisibleRoot() },
+                states[identity.localItemId],
+            )
+
+    private fun LocalMediaFileRecord.toVisibleEpisodeOrNull(
+        rootsById: Map<UUID, LocalLibraryRootRecord>,
+        states: Map<String, LocalMediaUserStateRecord>,
+    ): AfinityEpisode? =
+        takeIf { it.mediaKind == LocalMediaKind.EPISODE }
+            ?.toEpisode(
+                rootsById[rootRegistryId]?.takeIf { root -> root.isVisibleRoot() },
+                states[identity.localItemId],
+            )
+
+    private suspend fun visibleSnapshot(
+        profileUserId: String?,
+        visibilityContext: LocalLibraryVisibilityContext,
+    ): LocalLibraryMediaSnapshot = withContext(Dispatchers.IO) {
         val rootsById = rootStore.getRoots().associateBy { it.registryId }
         val states = profileUserId?.let(userStateRepository::getStates).orEmpty()
         val hidden = profileUserId?.let(visibilityRepository::hiddenLocalItemIds).orEmpty()
-        val episodes =
+        val visibleFiles =
             indexRepository
                 .visibleMediaFiles(visibilityContext)
                 .filter { it.identity.localItemId !in hidden }
-                .filter { it.mediaKind == LocalMediaKind.EPISODE }
-                .mapNotNull { file ->
-                    file.toEpisode(
-                        rootsById[file.rootRegistryId]?.takeIf { it.isVisibleRoot() },
-                        states[file.identity.localItemId],
-                    )
-                }
-        return episodes
+        val episodes =
+            visibleFiles.mapNotNull { file -> file.toVisibleEpisodeOrNull(rootsById, states) }
+        val movies =
+            visibleFiles.mapNotNull { file -> file.toVisibleMovieOrNull(rootsById, states) }
+        val shows = episodes.toShows()
+        val continueWatching =
+            (movies + episodes)
+                .filter { item -> item.playbackPositionTicks > 0L && !item.played }
+                .sortedByDescending { item -> item.playbackPositionTicks }
+        LocalLibraryMediaSnapshot(
+            movies = movies,
+            shows = shows,
+            continueWatching = continueWatching,
+        )
+    }
+
+    private fun List<AfinityEpisode>.toShows(): List<AfinityShow> =
+        this
             .groupBy { it.seriesId }
             .map { (seriesId, seriesEpisodes) ->
                 val seriesName = seriesEpisodes.firstOrNull()?.seriesName ?: "Local Show"
@@ -140,7 +287,12 @@ constructor(
                 )
             }
             .sortedBy { it.name }
-    }
+
+    private data class LocalLibraryMediaSnapshot(
+        val movies: List<AfinityMovie>,
+        val shows: List<AfinityShow>,
+        val continueWatching: List<AfinityItem>,
+    )
 
     private fun LocalMediaFileRecord.toMovie(
         root: LocalLibraryRootRecord?,
@@ -188,8 +340,10 @@ constructor(
         val showName = title.showName ?: return null
         val seasonNumber = title.seasonNumber ?: 0
         val episodeNumber = title.episodeNumber ?: 0
-        val seriesId = UUID.nameUUIDFromBytes("local-show:$showName".toByteArray())
-        val seasonId = UUID.nameUUIDFromBytes("local-show:$showName:season:$seasonNumber".toByteArray())
+        val seriesId = localSeriesUuid(showName)
+        val seasonId =
+            identity.jellyfinSeasonId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+                ?: UUID.nameUUIDFromBytes("local-season:$seriesId:$seasonNumber".toByteArray())
         return AfinityEpisode(
             id = itemUuid(),
             name = title.name,
@@ -227,7 +381,7 @@ constructor(
             id = mediaFileId.toString(),
             name = "Local file",
             type = AfinitySourceType.LOCAL,
-            path = fileSystem.playerUri(root, relativePath),
+            path = localCatalogPath(),
             size = sizeBytes,
             mediaStreams = emptyList<AfinityMediaStream>(),
             bitrate = null,
@@ -238,10 +392,37 @@ constructor(
             height = null,
         )
 
+    private fun LocalMediaFileRecord.localCatalogPath(): String = "local://$mediaFileId"
+
     private fun LocalLibraryRootRecord.isVisibleRoot(): Boolean = enabled && lastKnownAvailable
+
+    private fun String.matchesLocalContainerName(containerName: String?): Boolean =
+        containerName?.takeIf { it.isNotBlank() }?.let { equals(it, ignoreCase = true) } == true
 
     private fun LocalMediaFileRecord.itemUuid(): UUID =
         identity.jellyfinItemId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
             ?: runCatching { UUID.fromString(identity.localItemId) }.getOrNull()
             ?: UUID.nameUUIDFromBytes(identity.localItemId.toByteArray())
+
+    private fun LocalMediaFileRecord.localSeriesUuid(showName: String): UUID =
+        identity.jellyfinSeriesId?.let { runCatching { UUID.fromString(it) }.getOrNull() }
+            ?: UUID.nameUUIDFromBytes("local-show:${localSeriesIdentityKey(showName)}".toByteArray())
+
+    private fun LocalMediaFileRecord.localSeriesIdentityKey(showName: String): String {
+        val rootIdentity = stableRootId ?: rootRegistryId
+        val showFolder =
+            relativePath
+                .split('/')
+                .let { segments ->
+                    val showsIndex = segments.indexOf("Shows")
+                    segments.getOrNull(showsIndex + 1)
+                }
+                ?.takeIf { it.isNotBlank() }
+                ?: showName
+        return buildString {
+            identity.serverId?.takeIf { it.isNotBlank() }?.let { append("server:").append(it).append('|') }
+            append("root:").append(rootIdentity).append('|')
+            append("show:").append(showFolder)
+        }
+    }
 }

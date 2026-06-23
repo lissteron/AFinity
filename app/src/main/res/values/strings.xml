@@ -1036,6 +1036,7 @@
     <string name="error_failed_check_livetv">Failed to check Live TV access</string>
     <string name="error_content_unavailable_server">Content not available on this server</string>
     <string name="error_item_unavailable_offline">Item not available offline</string>
+    <string name="error_folder_unavailable_offline">This folder is not available offline.</string>
     <string name="error_item_not_found">Item not found</string>
     <string name="error_invalid_person_id">Invalid or missing Person ID</string>
     <string name="error_person_not_found">Person not found</string>

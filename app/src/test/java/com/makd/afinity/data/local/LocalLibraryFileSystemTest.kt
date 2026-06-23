@@ -12,6 +12,30 @@ class LocalLibraryFileSystemTest {
     @get:Rule val temporaryFolder = TemporaryFolder()
 
     @Test
+    fun filePathPlayerUriReturnsPlainReadablePathWithoutUrlEncoding() {
+        val rootDir = temporaryFolder.newFolder("library")
+        val root =
+            LocalLibraryRootRecord(
+                registryId = UUID.fromString("00000000-0000-0000-0000-00000000fc05"),
+                stableRootId = UUID.fromString("00000000-0000-0000-0000-00000000fc06"),
+                displayName = "Library",
+                kind = LocalLibraryRootKind.APP_PRIVATE,
+                uriOrPath = rootDir.absolutePath,
+            )
+        val relativePath = "Shows/Зарубежные/Season 20/Зарубежные - S20E00 - Дикий робот.mp4"
+        val media = rootDir.resolve(relativePath)
+        media.parentFile?.mkdirs()
+        media.writeBytes(ByteArray(7))
+        val fileSystem = FilePathLibraryFileSystem()
+
+        val playerUri = fileSystem.playerUri(root, relativePath)
+
+        assertTrue(fileSystem.isReadable(root, relativePath))
+        assertEquals(media.absolutePath, playerUri)
+        assertFalse(playerUri.contains("%20"))
+    }
+
+    @Test
     fun filePathMediaWriteTargetStagesPartFileAndFinalizesCanonicalMedia() {
         val rootDir = temporaryFolder.newFolder("library")
         val root =

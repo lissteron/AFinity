@@ -149,6 +149,10 @@ constructor(
                     AfinitySidecarIdentity(
                         itemId = download.itemId.toString(),
                         sourceId = download.sourceId,
+                        seriesId =
+                            download.seriesId.takeIf {
+                                download.itemType.equals("episode", ignoreCase = true)
+                            },
                     ),
                 localIdentity =
                     AfinitySidecarLocalIdentity(

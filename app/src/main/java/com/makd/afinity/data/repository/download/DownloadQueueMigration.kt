@@ -37,6 +37,12 @@ constructor(
         if (repairedUidtStopped > 0) {
             Timber.w("Requeued $repairedUidtStopped UIDT-stopped PAUSED rows during startup")
         }
+        val repairedTransientPaused = stateStore.requeuePausedTransientInterruptedDownloads()
+        if (repairedTransientPaused > 0) {
+            Timber.w(
+                "Requeued $repairedTransientPaused transient interrupted PAUSED rows during startup"
+            )
+        }
         val repairedTransientFailed = stateStore.requeueZeroByteTransientFailedDownloads()
         if (repairedTransientFailed > 0) {
             Timber.w(

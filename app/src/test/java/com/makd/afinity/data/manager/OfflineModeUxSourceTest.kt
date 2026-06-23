@@ -31,12 +31,16 @@ class OfflineModeUxSourceTest {
     }
 
     @Test
-    fun downloadedOnlyUiUsesHardOfflineAndServerUnavailableKeepsDegradedContentVisible() {
+    fun downloadedOnlyUiUsesRemoteContentAvailabilityAndHidesRemoteHomeSections() {
         val navigation = readSource("src/main/java/com/makd/afinity/navigation/MainNavigation.kt")
         val homeViewModel = readSource("src/main/java/com/makd/afinity/ui/home/HomeViewModel.kt")
         val homeScreen = readSource("src/main/java/com/makd/afinity/ui/home/HomeScreen.kt")
         val detailViewModel = readSource("src/main/java/com/makd/afinity/ui/item/ItemDetailViewModel.kt")
         val homeReloadWorker = readSource("src/main/java/com/makd/afinity/data/workers/HomeDataReloadWorker.kt")
+        val libraryContentViewModel =
+            readSource("src/main/java/com/makd/afinity/ui/library/LibraryContentViewModel.kt")
+        val libraryContentScreen =
+            readSource("src/main/java/com/makd/afinity/ui/library/LibraryContentScreen.kt")
         val sessionManager = readSource("src/main/java/com/makd/afinity/data/manager/SessionManager.kt")
         val logoutBlock =
             sessionManager.substring(
@@ -44,19 +48,32 @@ class OfflineModeUxSourceTest {
                 sessionManager.indexOf("private fun getOrCreateApiClient"),
             )
 
-        assertTrue(navigation.contains("offlineModeManager.hardOffline"))
+        assertTrue(navigation.contains("val isDownloadedOnlyMode = !canLoadRemoteContent"))
+        assertTrue(navigation.contains("LaunchedEffect(isDownloadedOnlyMode, currentDestination)"))
+        assertTrue(navigation.contains("if (isDownloadedOnlyMode && destination != Destination.HOME)"))
         assertTrue(navigation.contains("requestConnectivityProbe(\"app foreground\")"))
         assertTrue(homeViewModel.contains("offlineModeManager.hardOffline.collect"))
         assertTrue(homeViewModel.contains("offlineModeManager.isServerUnavailable.collect"))
         assertTrue(homeViewModel.contains("offlineModeManager.canLoadRemoteContentNow()"))
         assertTrue(homeReloadWorker.contains("!offlineModeManager.canLoadRemoteContentNow()"))
-        assertTrue(homeScreen.contains("val showDownloadedContent = uiState.isOffline || uiState.isServerUnavailable"))
+        assertTrue(homeScreen.contains("val startupContent = uiState.startupContentFlags()"))
+        assertTrue(homeScreen.contains("val canShowRemoteContent = startupContent.canShowRemoteContent"))
+        assertTrue(homeScreen.contains("val showDownloadedSections = startupContent.showDownloadedSections"))
+        assertTrue(homeScreen.contains("val useOfflineContinueWatching = startupContent.useOfflineContinueWatching"))
+        assertTrue(homeScreen.contains("canShowRemoteContent && uiState.libraries.isNotEmpty()"))
+        assertTrue(!homeScreen.contains("!uiState.isOffline && uiState.latestTvSeries"))
         assertTrue(detailViewModel.contains("offlineModeManager.hardOffline"))
         assertTrue(detailViewModel.contains("val canLoadRemoteContent = offlineModeManager.canLoadRemoteContentNow()"))
         assertTrue(detailViewModel.contains("loadDownloadedItemFromDatabase()"))
         assertTrue(detailViewModel.contains("canLoadRemoteContent && !loadedFromOfflineCache"))
         assertTrue(detailViewModel.contains("downloadRepository"))
         assertTrue(detailViewModel.contains(".getCompletedDownloadsFlow()"))
+        assertTrue(libraryContentViewModel.contains("private val offlineModeManager: OfflineModeManager"))
+        assertTrue(libraryContentViewModel.contains("offlineModeManager.canLoadRemoteContent"))
+        assertTrue(libraryContentViewModel.contains("offlineModeManager.canLoadRemoteContentNow()"))
+        assertTrue(libraryContentViewModel.contains("showRemoteUnavailable()"))
+        assertTrue(libraryContentScreen.contains("lazyPagingItems.loadState.refresh"))
+        assertTrue(libraryContentScreen.contains("LoadState.Error"))
         assertTrue(logoutBlock.contains("_isServerReachable.value = true"))
     }
 
@@ -102,9 +119,12 @@ class OfflineModeUxSourceTest {
         assertTrue(navigationViewModel.contains("offlineModeManager.canLoadRemoteContent.drop(1).collect"))
         assertTrue(navigationViewModel.contains("checkLiveTvAccess()"))
         assertTrue(navigation.contains("val canLoadRemoteContent by"))
+        assertTrue(navigation.contains("val isDownloadedOnlyMode = !canLoadRemoteContent"))
         assertTrue(navigation.contains("val canUseAnySearchBackend"))
         assertTrue(navigation.contains("canLoadRemoteContent || isJellyseerrAuthenticated || isAudiobookshelfAuthenticated"))
-        assertTrue(navigation.contains("isOffline || !capabilityPolicy.canUseSearch || !canUseAnySearchBackend"))
+        assertTrue(navigation.contains("isDownloadedOnlyMode ||"))
+        assertTrue(navigation.contains("!capabilityPolicy.canUseSearch"))
+        assertTrue(navigation.contains("!canUseAnySearchBackend"))
         assertTrue(topAppBar.contains("offlineModeManager.hardOffline"))
         assertTrue(topAppBar.contains("canLoadRemoteContent || isJellyseerrAuthenticated || isAudiobookshelfAuthenticated"))
         assertTrue(searchViewModel.contains("val canLoadJellyfinContent"))

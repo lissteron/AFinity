@@ -22,6 +22,7 @@ class DownloadQueueStopStateTest {
         val request = state.current()
         assertEquals(DownloadQueueStopDisposition.REQUEUE, request?.disposition)
         assertEquals(DownloadQueueScheduleTrigger.VISIBLE_LIVENESS, request?.scheduleAfterStop)
+        assertFalse(request?.rescheduleCurrentJob ?: true)
     }
 
     @Test
@@ -37,6 +38,7 @@ class DownloadQueueStopStateTest {
         val request = state.current()
         assertEquals(DownloadQueueStopDisposition.PAUSE, request?.disposition)
         assertNull(request?.scheduleAfterStop)
+        assertFalse(request?.rescheduleCurrentJob ?: true)
     }
 
     @Test
@@ -53,6 +55,7 @@ class DownloadQueueStopStateTest {
 
         assertEquals(DownloadQueueStopDisposition.PAUSE, state.current()?.disposition)
         assertEquals(DownloadQueueScheduleTrigger.VISIBLE_LIVENESS, state.current()?.scheduleAfterStop)
+        assertFalse(state.current()?.rescheduleCurrentJob ?: true)
     }
 
     @Test
@@ -69,6 +72,32 @@ class DownloadQueueStopStateTest {
 
         assertEquals(DownloadQueueStopDisposition.PAUSE, state.current()?.disposition)
         assertNull(state.current()?.scheduleAfterStop)
+        assertFalse(state.current()?.rescheduleCurrentJob ?: true)
+    }
+
+    @Test
+    fun systemRequeueRequestsCurrentJobRetryWithoutSchedulingNewBackend() {
+        val state = DownloadQueueStopState()
+
+        assertTrue(state.requestSystemRequeue(reason = "UIDT job stopped by system"))
+
+        val request = state.current()
+        assertEquals(DownloadQueueStopDisposition.REQUEUE, request?.disposition)
+        assertNull(request?.scheduleAfterStop)
+        assertTrue(request?.rescheduleCurrentJob ?: false)
+    }
+
+    @Test
+    fun systemRequeueDoesNotOverrideExistingUserPause() {
+        val state = DownloadQueueStopState()
+
+        assertTrue(state.requestPause(reason = "User stopped UIDT job", force = true))
+        assertFalse(state.requestSystemRequeue(reason = "UIDT job stopped by system"))
+
+        val request = state.current()
+        assertEquals(DownloadQueueStopDisposition.PAUSE, request?.disposition)
+        assertNull(request?.scheduleAfterStop)
+        assertFalse(request?.rescheduleCurrentJob ?: true)
     }
 
     @Test
@@ -86,5 +115,6 @@ class DownloadQueueStopStateTest {
             )
         )
         assertEquals(DownloadQueueStopDisposition.REQUEUE, state.current()?.disposition)
+        assertFalse(state.current()?.rescheduleCurrentJob ?: true)
     }
 }

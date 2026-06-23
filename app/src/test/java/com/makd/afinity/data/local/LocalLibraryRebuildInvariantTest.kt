@@ -50,7 +50,6 @@ class LocalLibraryRebuildInvariantTest {
             LocalLibraryMediaRepository(
                     rootStore = FakeRootStore(root),
                     indexRepository = rebuiltIndex,
-                    fileSystem = fileSystem,
                     userStateRepository = EmptyLocalMediaUserStateRepository,
                 )
                 .getVisibleMovies(userId)

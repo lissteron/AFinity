@@ -8,7 +8,7 @@ class UidtJobLifecycleTest {
     @Test
     fun stopDuringCleanupDoesNotStopRunnerAndPreventsFinish() {
         val lifecycle = UidtJobLifecycle()
-        val runId = lifecycle.start()
+        val runId = (lifecycle.startIfIdle() as UidtJobRunStart.Started).runId
         lifecycle.markCleanupWork()
 
         val stopDecision = lifecycle.stop()
@@ -23,7 +23,7 @@ class UidtJobLifecycleTest {
     @Test
     fun stopDuringRunnerStopsRunnerAndPreventsFinish() {
         val lifecycle = UidtJobLifecycle()
-        val runId = lifecycle.start()
+        val runId = (lifecycle.startIfIdle() as UidtJobRunStart.Started).runId
         lifecycle.markRunnerWork()
 
         val stopDecision = lifecycle.stop()
@@ -38,7 +38,7 @@ class UidtJobLifecycleTest {
     @Test
     fun currentRunCanFinishOnceAndClearsRunnerStopDecision() {
         val lifecycle = UidtJobLifecycle()
-        val runId = lifecycle.start()
+        val runId = (lifecycle.startIfIdle() as UidtJobRunStart.Started).runId
         lifecycle.markRunnerWork()
 
         var finished = false
@@ -47,5 +47,20 @@ class UidtJobLifecycleTest {
         assertTrue(finished)
         assertFalse(lifecycle.hasActiveRun())
         assertFalse(lifecycle.stop().shouldStopRunner)
+    }
+
+    @Test
+    fun duplicateStartDoesNotBecomeCurrentJobOwner() {
+        val lifecycle = UidtJobLifecycle()
+        val runId = (lifecycle.startIfIdle() as UidtJobRunStart.Started).runId
+        lifecycle.markRunnerWork()
+
+        val duplicateStart = lifecycle.startIfIdle()
+
+        assertTrue(duplicateStart is UidtJobRunStart.AlreadyRunning)
+        var finished = false
+        assertTrue(lifecycle.finishIfCurrent(runId) { finished = true })
+        assertTrue(finished)
+        assertFalse(lifecycle.hasActiveRun())
     }
 }

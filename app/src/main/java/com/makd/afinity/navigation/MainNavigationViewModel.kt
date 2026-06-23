@@ -2,6 +2,8 @@ package com.makd.afinity.navigation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.makd.afinity.data.local.LocalLibraryMediaRepository
+import com.makd.afinity.data.local.LocalLibraryVisibilityContext
 import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.SessionManager
 import com.makd.afinity.data.models.media.AfinityItem
@@ -13,6 +15,7 @@ import com.makd.afinity.data.repository.AudiobookshelfRepository
 import com.makd.afinity.data.repository.JellyfinRepository
 import com.makd.afinity.data.repository.JellyseerrRepository
 import com.makd.afinity.data.repository.KidModeRepository
+import com.makd.afinity.data.repository.PreferencesRepository
 import com.makd.afinity.data.repository.auth.AuthRepository
 import com.makd.afinity.data.repository.media.MediaRepository
 import com.makd.afinity.data.repository.livetv.LiveTvRepository
@@ -46,7 +49,9 @@ constructor(
     private val liveTvRepository: LiveTvRepository,
     private val offlineModeManager: OfflineModeManager,
     private val sessionManager: SessionManager,
+    private val preferencesRepository: PreferencesRepository,
     val kidModeRepository: KidModeRepository,
+    private val localLibraryMediaRepository: LocalLibraryMediaRepository,
 ) : ViewModel() {
     private val _hasLiveTvAccess = MutableStateFlow(true)
     val hasLiveTvAccess = _hasLiveTvAccess.asStateFlow()
@@ -58,7 +63,8 @@ constructor(
                 appDataRepository.loadingPhase,
             ) { isLoaded, progress, phase ->
                 AppLoadingState(
-                    isLoading = !isLoaded,
+                    isLoading = false,
+                    isRemoteBootstrapLoading = !isLoaded,
                     loadingProgress = progress,
                     loadingPhase = phase,
                 )
@@ -66,7 +72,11 @@ constructor(
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5000),
-                initialValue = AppLoadingState(isLoading = true),
+                initialValue =
+                    AppLoadingState(
+                        isLoading = false,
+                        isRemoteBootstrapLoading = true,
+                    ),
             )
 
     val capabilityPolicy = kidModeRepository.policy
@@ -222,7 +232,7 @@ constructor(
         return try {
             if (item is AfinityShow) {
                 if (offlineModeManager.isCurrentlyOffline()) {
-                    item.offlinePlaybackEpisode()
+                    resolveLocalPlayableItem(item) ?: item.offlinePlaybackEpisode()
                 } else {
                     val episode = mediaRepository.getEpisodeToPlay(item.id)
                     if (episode == null) {
@@ -232,7 +242,7 @@ constructor(
                 }
             } else if (item is AfinitySeason) {
                 if (offlineModeManager.isCurrentlyOffline()) {
-                    item.offlinePlaybackEpisode()
+                    resolveLocalPlayableItem(item) ?: item.offlinePlaybackEpisode()
                 } else {
                     val episode = mediaRepository.getEpisodeToPlayForSeason(item.id, item.seriesId)
                     if (episode == null) {
@@ -248,10 +258,36 @@ constructor(
             null
         }
     }
+
+    private suspend fun resolveLocalPlayableItem(item: AfinityItem): AfinityItem? {
+        val profileUserId =
+            authRepository.currentUser.value?.id?.toString()
+                ?: sessionManager.currentSession.value?.userId?.toString()
+                ?: preferencesRepository.getCurrentUserId()
+        val capability = kidModeRepository.policy.value
+        return localLibraryMediaRepository.resolvePlayableItem(
+            itemId = item.id,
+            itemType =
+                when (item) {
+                    is AfinityShow -> "Series"
+                    is AfinitySeason -> "Season"
+                    else -> null
+                },
+            seriesId = (item as? AfinitySeason)?.seriesId,
+            profileUserId = profileUserId,
+            visibilityContext =
+                LocalLibraryVisibilityContext(
+                    currentUserId = profileUserId,
+                    kidModeEnabled = capability.isKidModeEnabled,
+                    parentUnlocked = capability.isParentUnlocked,
+                ),
+        )
+    }
 }
 
 data class AppLoadingState(
     val isLoading: Boolean = false,
+    val isRemoteBootstrapLoading: Boolean = false,
     val loadingProgress: Float = 0f,
     val loadingPhase: String = "",
     val error: String? = null,

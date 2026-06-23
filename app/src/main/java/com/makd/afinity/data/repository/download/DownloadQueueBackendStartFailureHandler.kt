@@ -13,7 +13,7 @@ constructor(
     private val recorder =
         DownloadQueueBackendStartFailureRecorder(
             recordFailure = scheduler::recordBackendStartFailure,
-            pauseActiveRows = { reason -> stateStore.pauseAllActiveForSchedulerFailure(reason) },
+            requeueActiveRows = { reason -> stateStore.requeueAllActiveForTransientStop(reason) },
         )
 
     suspend fun record(reason: String): Int = recorder.record(reason)
@@ -21,10 +21,10 @@ constructor(
 
 internal class DownloadQueueBackendStartFailureRecorder(
     private val recordFailure: (String) -> Unit,
-    private val pauseActiveRows: suspend (String) -> Int,
+    private val requeueActiveRows: suspend (String) -> Int,
 ) {
     suspend fun record(reason: String): Int {
         recordFailure(reason)
-        return pauseActiveRows(reason)
+        return requeueActiveRows(reason)
     }
 }
