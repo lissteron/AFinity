@@ -456,7 +456,7 @@ constructor(
                         BaseItemKind.SERIES ->
                             baseItemDto.toAfinityShow(mediaRepository.getBaseUrl())
                         BaseItemKind.EPISODE ->
-                            baseItemDto.toAfinityEpisode(mediaRepository.getBaseUrl(), null)
+                            mediaRepository.getItemById(itemId) as? AfinityEpisode
                         BaseItemKind.BOX_SET ->
                             baseItemDto.toAfinityBoxSet(mediaRepository.getBaseUrl())
                         BaseItemKind.SEASON -> {
@@ -623,7 +623,7 @@ constructor(
                                 BaseItemKind.SERIES ->
                                     baseItemDto.toAfinityShow(mediaRepository.getBaseUrl())
                                 BaseItemKind.EPISODE ->
-                                    baseItemDto.toAfinityEpisode(mediaRepository.getBaseUrl(), null)
+                                    mediaRepository.getItemById(itemId) as? AfinityEpisode
                                 BaseItemKind.BOX_SET ->
                                     baseItemDto.toAfinityBoxSet(mediaRepository.getBaseUrl())
                                 BaseItemKind.SEASON -> {
@@ -1230,7 +1230,12 @@ constructor(
                 try {
                     mediaRepository
                         .getItem(episode.id, fields = FieldSets.ITEM_DETAIL)
-                        ?.toAfinityEpisode(mediaRepository.getBaseUrl(), null)
+                        ?.toAfinityEpisode(
+                            baseUrl = mediaRepository.getBaseUrl(),
+                            database = null,
+                            fallbackSeriesId = episode.seriesId,
+                            fallbackSeasonId = episode.seasonId,
+                        )
                 } catch (_: Exception) {
                     try {
                         authRepository.currentUser.value?.id?.let {

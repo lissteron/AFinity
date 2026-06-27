@@ -145,8 +145,10 @@ class MediaDownloadQueueJobService : JobService() {
                         wantsReschedule = result.rescheduleCurrentJob,
                     )
                 } catch (e: CancellationException) {
-                    Timber.i("UIDT download queue coroutine cancelled")
-                    queueRunner.stopActive("UIDT job stopped")
+                    val reason = "UIDT job cancelled"
+                    Timber.i("UIDT download queue coroutine cancelled; requeueing active download")
+                    queueRunner.requestSystemRequeue(reason)
+                    queueRunner.stopActive(reason)
                 } catch (e: Exception) {
                     Timber.e(e, "UIDT download queue failed")
                     queueRunner.stopActive(e.message ?: "UIDT queue interrupted")

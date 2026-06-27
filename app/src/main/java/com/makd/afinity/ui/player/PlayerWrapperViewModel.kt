@@ -12,9 +12,12 @@ import com.makd.afinity.data.models.livetv.AfinityChannel
 import com.makd.afinity.data.models.livetv.ChannelType
 import com.makd.afinity.data.models.media.AfinityImages
 import com.makd.afinity.data.models.media.AfinityItem
+import com.makd.afinity.data.models.media.toAfinityEpisode
 import com.makd.afinity.data.repository.DatabaseRepository
+import com.makd.afinity.data.repository.FieldSets
 import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.data.repository.PreferencesRepository
+import com.makd.afinity.data.models.extensions.toAfinityItem
 import com.makd.afinity.data.repository.media.MediaRepository
 import com.makd.afinity.data.repository.livetv.LiveTvRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -27,6 +30,7 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.UUID
 import javax.inject.Inject
+import org.jellyfin.sdk.model.api.BaseItemKind
 
 @HiltViewModel
 class PlayerWrapperViewModel
@@ -111,10 +115,16 @@ constructor(
         }
     }
 
-    fun loadItem(itemId: UUID) {
+    fun loadItem(
+        itemId: UUID,
+        fallbackSeriesId: UUID? = null,
+        fallbackSeasonId: UUID? = null,
+    ) {
         viewModelScope.launch {
             _isLoading.value = true
-            Timber.d("PlayerWrapperViewModel: Loading item $itemId")
+            Timber.d(
+                "PlayerWrapperViewModel: Loading item $itemId, fallbackSeriesId=$fallbackSeriesId, fallbackSeasonId=$fallbackSeasonId"
+            )
             try {
                 var loadedItem: AfinityItem? = null
 
@@ -155,7 +165,12 @@ constructor(
                 if (loadedItem == null && !offlineModeManager.isCurrentlyOffline()) {
                     Timber.d("PlayerWrapperViewModel: Trying to load from API")
                     try {
-                        loadedItem = mediaRepository.getItemById(itemId)
+                        loadedItem =
+                            loadRemoteItem(
+                                itemId = itemId,
+                                fallbackSeriesId = fallbackSeriesId,
+                                fallbackSeasonId = fallbackSeasonId,
+                            )
                         if (loadedItem != null) {
                             Timber.d(
                                 "PlayerWrapperViewModel: Loaded item from API: ${loadedItem.name}"
@@ -190,6 +205,24 @@ constructor(
             } finally {
                 _isLoading.value = false
             }
+        }
+    }
+
+    private suspend fun loadRemoteItem(
+        itemId: UUID,
+        fallbackSeriesId: UUID?,
+        fallbackSeasonId: UUID?,
+    ): AfinityItem? {
+        val baseItem = mediaRepository.getItem(itemId, fields = FieldSets.ITEM_DETAIL) ?: return null
+        return when (baseItem.type) {
+            BaseItemKind.EPISODE ->
+                baseItem.toAfinityEpisode(
+                    baseUrl = mediaRepository.getBaseUrl(),
+                    database = null,
+                    fallbackSeriesId = fallbackSeriesId,
+                    fallbackSeasonId = fallbackSeasonId,
+                )
+            else -> baseItem.toAfinityItem(mediaRepository.getBaseUrl())
         }
     }
 

@@ -10,6 +10,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 
 @Singleton
 class LocalLibraryScanService
@@ -30,9 +31,15 @@ class LocalLibraryScanService
         withContext(Dispatchers.IO) {
             val scanContext = currentCoroutineContext()
             rootBootstrapper.ensureDefaultRoot()
-            rootStore
-                .getRoots()
-                .filter { it.enabled }
+            val roots = rootStore.getRoots().filter { it.enabled }
+            Timber.i(
+                "Local library scan starting: roots=%d currentUser=%s kidMode=%s parentUnlocked=%s",
+                roots.size,
+                visibilityContext.currentUserId,
+                visibilityContext.kidModeEnabled,
+                visibilityContext.parentUnlocked,
+            )
+            roots
                 .map { root ->
                     scanner.scanRoot(
                         root,
@@ -40,30 +47,39 @@ class LocalLibraryScanService
                         shouldCancel = { !scanContext.isActive },
                     )
                 }
+                .also { summaries ->
+                    Timber.i(
+                        "Local library scan completed: %s",
+                        summaries.joinToString(separator = "; ") { summary ->
+                            "root=${summary.rootId} files=${summary.discoveredFiles} unavailable=${summary.unavailableItems} cancelled=${summary.cancelled} errors=${summary.errors.size}"
+                        },
+                    )
+                }
         }
 
     suspend fun scanEnabledRootsWithArtworkBackfill(
         visibilityContext: LocalLibraryVisibilityContext
-    ): List<LocalLibraryScanSummary> {
-        if (indexRepository.allMediaFiles().isNotEmpty()) {
+    ): List<LocalLibraryScanSummary> =
+        withContext(Dispatchers.IO) {
+            if (indexRepository.allMediaFiles().isNotEmpty()) {
+                val artworkBackfill = backfillDownloadedArtwork()
+                val originRefresh = refreshLocalLibraryArtworkFromOrigins()
+                val localScan = scanEnabledRoots(visibilityContext)
+                return@withContext if (artworkBackfill.writtenFiles > 0 || originRefresh.changedFiles()) {
+                    scanEnabledRoots(visibilityContext)
+                } else {
+                    localScan
+                }
+            }
+            val initialScan = scanEnabledRoots(visibilityContext)
             val artworkBackfill = backfillDownloadedArtwork()
-            val localScan = scanEnabledRoots(visibilityContext)
             val originRefresh = refreshLocalLibraryArtworkFromOrigins()
-            return if (artworkBackfill.writtenFiles > 0 || originRefresh.changedFiles()) {
+            return@withContext if (artworkBackfill.writtenFiles > 0 || originRefresh.changedFiles()) {
                 scanEnabledRoots(visibilityContext)
             } else {
-                localScan
+                initialScan
             }
         }
-        val initialScan = scanEnabledRoots(visibilityContext)
-        val artworkBackfill = backfillDownloadedArtwork()
-        val originRefresh = refreshLocalLibraryArtworkFromOrigins()
-        return if (artworkBackfill.writtenFiles > 0 || originRefresh.changedFiles()) {
-            scanEnabledRoots(visibilityContext)
-        } else {
-            initialScan
-        }
-    }
 
     suspend fun scanRoot(
         root: LocalLibraryRootRecord,
@@ -81,13 +97,17 @@ class LocalLibraryScanService
     ): LocalLibraryArtworkBackfillSummary =
         withContext(Dispatchers.IO) { artworkBackfillService.backfillDownloads(downloads) }
 
-    suspend fun refreshableLocalLibraryArtworkCount(): Int =
-        originArtworkRefresher.refreshCandidateCount()
+    suspend fun refreshableLocalLibraryArtworkCount(forceRefreshItemArtwork: Boolean = false): Int =
+        originArtworkRefresher.refreshCandidateCount(forceRefreshItemArtwork)
 
     suspend fun refreshLocalLibraryArtworkFromOrigins(
+        forceRefreshItemArtwork: Boolean = false,
         progress: suspend (LocalLibraryOriginArtworkProgress) -> Unit = {}
     ): LocalLibraryOriginArtworkSummary =
-        originArtworkRefresher.refreshMissingArtwork(progress)
+        originArtworkRefresher.refreshMissingArtwork(
+            progress = progress,
+            overwriteExistingItemArtwork = forceRefreshItemArtwork,
+        )
 
     suspend fun migrateLegacyDownloads(
         root: LocalLibraryRootRecord,
@@ -105,7 +125,7 @@ class LocalLibraryScanService
         databaseRepository.getDownloadsByStatusFlow(listOf(DownloadStatus.COMPLETED)).first()
 
     private fun LocalLibraryOriginArtworkSummary.changedFiles(): Boolean =
-        writtenFiles > 0 || updatedSidecars > 0
+        writtenFiles > 0 || removedFiles > 0 || updatedSidecars > 0
 }
 
 data class LocalLibraryLegacyMigrationResult(

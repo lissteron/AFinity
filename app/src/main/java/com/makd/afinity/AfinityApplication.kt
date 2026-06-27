@@ -1,6 +1,7 @@
 package com.makd.afinity
 
 import android.app.Application
+import android.os.Process
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import coil3.ImageLoader
@@ -81,7 +82,13 @@ class AfinityApplication : Application(), Configuration.Provider, SingletonImage
         Timber.plant(ringBufferTree!!)
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
-            Timber.d("Afinity Application started")
+            Timber.i(
+                "Afinity Application started: uid=%d user=%s version=%s/%d",
+                Process.myUid(),
+                Process.myUserHandle(),
+                BuildConfig.VERSION_NAME,
+                BuildConfig.VERSION_CODE,
+            )
         }
 
         Thread.setDefaultUncaughtExceptionHandler(
@@ -105,9 +112,22 @@ class AfinityApplication : Application(), Configuration.Provider, SingletonImage
             try {
                 val hasIndexedMedia = localLibraryMediaRepository.hasIndexedMedia()
                 val hasMissingArtwork = localLibraryMediaRepository.hasIndexedMediaMissingArtwork()
+                val refreshableArtworkCount =
+                    if (hasIndexedMedia) {
+                        localLibraryScanService.refreshableLocalLibraryArtworkCount()
+                    } else {
+                        0
+                    }
                 val needsIndexRebuild = !hasIndexedMedia
-                if (!needsIndexRebuild && !hasMissingArtwork) return@launch
-                Timber.d("Repairing local library index in background")
+                if (!needsIndexRebuild && !hasMissingArtwork && refreshableArtworkCount == 0) {
+                    return@launch
+                }
+                Timber.d(
+                    "Repairing local library index in background: rebuild=%s, missingArtwork=%s, refreshableArtwork=%d",
+                    needsIndexRebuild,
+                    hasMissingArtwork,
+                    refreshableArtworkCount,
+                )
                 localLibraryScanService.scanEnabledRootsWithArtworkBackfill(
                     LocalLibraryVisibilityContext(
                         currentUserId = preferencesRepository.getCurrentUserId(),

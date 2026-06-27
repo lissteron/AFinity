@@ -10,6 +10,7 @@ import androidx.paging.filter
 import androidx.paging.map
 import com.makd.afinity.R
 import com.makd.afinity.data.local.LocalLibraryMediaRepository
+import com.makd.afinity.data.local.LocalLibraryScanService
 import com.makd.afinity.data.local.LocalLibraryVisibilityContext
 import com.makd.afinity.data.manager.OfflineModeManager
 import com.makd.afinity.data.manager.PlaybackEvent
@@ -64,6 +65,7 @@ constructor(
     private val sessionManager: SessionManager,
     private val kidModeRepository: KidModeRepository,
     private val localLibraryMediaRepository: LocalLibraryMediaRepository,
+    private val localLibraryScanService: LocalLibraryScanService,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -117,6 +119,8 @@ constructor(
     private var libraryType: CollectionType? = null
 
     private var currentFilter = FilterType.ALL
+
+    private var localLibrarySyncStartedForSession = false
 
     init {
         viewModelScope.launch {
@@ -267,18 +271,19 @@ constructor(
 
                 val profileUserId = currentProfileUserId()
                 val capability = kidModeRepository.policy.value
+                val visibilityContext =
+                    LocalLibraryVisibilityContext(
+                        currentUserId = profileUserId,
+                        kidModeEnabled = capability.isKidModeEnabled,
+                        parentUnlocked = capability.isParentUnlocked,
+                    )
                 val localItems =
                     localLibraryMediaRepository
                         .getContentForContainer(
                             containerId = libraryId?.let { runCatching { UUID.fromString(it) }.getOrNull() },
                             containerName = _uiState.value.libraryName,
                             profileUserId = profileUserId,
-                            visibilityContext =
-                                LocalLibraryVisibilityContext(
-                                    currentUserId = profileUserId,
-                                    kidModeEnabled = capability.isKidModeEnabled,
-                                    parentUnlocked = capability.isParentUnlocked,
-                                ),
+                            visibilityContext = visibilityContext,
                         )
                         .filterForLibraryType(type)
                         .filterForCurrentFilter()
@@ -295,10 +300,30 @@ constructor(
                         currentFilter = currentFilter,
                         isLoading = false,
                     )
+                scheduleLocalLibrarySync(visibilityContext, nameStartsWith)
             } catch (e: Exception) {
                 Timber.e(e, "Failed to load local library content")
                 showRemoteUnavailable()
             }
+        }
+    }
+
+    private fun scheduleLocalLibrarySync(
+        visibilityContext: LocalLibraryVisibilityContext,
+        nameStartsWith: String?,
+    ) {
+        if (localLibrarySyncStartedForSession) return
+        localLibrarySyncStartedForSession = true
+        viewModelScope.launch {
+            runCatching {
+                localLibraryScanService.scanEnabledRootsWithArtworkBackfill(visibilityContext)
+            }
+                .onSuccess {
+                    loadLocalLibraryContent(nameStartsWith)
+                }
+                .onFailure { error ->
+                    Timber.w(error, "Failed to sync local library after loading local content")
+                }
         }
     }
 

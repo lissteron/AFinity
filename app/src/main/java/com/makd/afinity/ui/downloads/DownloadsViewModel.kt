@@ -8,6 +8,8 @@ import com.makd.afinity.data.local.LocalLibraryRootBootstrapper
 import com.makd.afinity.data.local.LocalLibraryRootManager
 import com.makd.afinity.data.local.LocalLibraryRootRecord
 import com.makd.afinity.data.local.LocalLibraryRootStore
+import com.makd.afinity.data.local.LocalLibraryMediaRepository
+import com.makd.afinity.data.local.LocalLibraryScanSummary
 import com.makd.afinity.data.local.LocalLibraryScanService
 import com.makd.afinity.data.local.LocalLibraryVisibilityContext
 import com.makd.afinity.data.models.audiobookshelf.AbsDownloadInfo
@@ -46,6 +48,7 @@ constructor(
     private val localLibraryRootStore: LocalLibraryRootStore,
     private val localLibraryRootBootstrapper: LocalLibraryRootBootstrapper,
     private val localLibraryRootManager: LocalLibraryRootManager,
+    private val localLibraryMediaRepository: LocalLibraryMediaRepository,
     private val localLibraryScanService: LocalLibraryScanService,
 ) : ViewModel() {
 
@@ -57,6 +60,8 @@ constructor(
     init {
         observeDownloads()
         observeLocalLibraryRoots()
+        observeLocalLibraryCatalog()
+        observeLocalLibraryVisibilityProfile()
         loadStorageInfo()
         loadDownloadPreferences()
         loadLocalArtworkRefreshCount()
@@ -153,6 +158,8 @@ constructor(
                 localLibraryRootBootstrapper.ensureDefaultRoot(
                     preferSelectedDownloadLocation = true
                 )
+                Timber.i("Download storage location selected: %s", locationId)
+                rescanLocalLibraryRootsInternal()
                 val storageLocations = downloadStorageManager.getAvailableLocations()
                 _uiState.value = _uiState.value.copy(storageLocations = storageLocations)
                 loadStorageInfo()
@@ -183,6 +190,8 @@ constructor(
                 localLibraryRootBootstrapper.ensureDefaultRoot(
                     preferSelectedDownloadLocation = true
                 )
+                Timber.i("Custom download storage location selected: %s", uri)
+                rescanLocalLibraryRootsInternal()
                 val storageLocations = downloadStorageManager.getAvailableLocations()
                 _uiState.value = _uiState.value.copy(storageLocations = storageLocations)
                 loadStorageInfo()
@@ -277,7 +286,9 @@ constructor(
         if (!kidModeRepository.policy.value.canManageDownloads) return
         viewModelScope.launch {
             try {
+                Timber.i("Manual local library rescan requested")
                 rescanLocalLibraryRootsInternal()
+                loadStorageInfo()
             } catch (e: Exception) {
                 Timber.e(e, "Failed to rescan local library")
                 _uiState.value =
@@ -287,14 +298,60 @@ constructor(
     }
 
     private suspend fun rescanLocalLibraryRootsInternal() {
-        localLibraryScanService.scanEnabledRootsWithArtworkBackfill(
-            LocalLibraryVisibilityContext(
-                currentUserId = null,
-                kidModeEnabled = kidModeRepository.policy.value.isKidModeEnabled,
-                parentUnlocked = kidModeRepository.policy.value.isParentUnlocked,
+        _uiState.value =
+            _uiState.value.copy(
+                localLibraryScan = _uiState.value.localLibraryScan.copy(isRunning = true)
             )
-        )
-        updateLocalArtworkRefreshCount()
+        try {
+            val summaries =
+                localLibraryScanService.scanEnabledRootsWithArtworkBackfill(
+                    currentLocalVisibilityContext()
+                )
+            Timber.i(
+                "Local library rescan finished from Downloads screen: %s",
+                summaries.joinToString(separator = "; ") { summary ->
+                    "root=${summary.rootId} files=${summary.discoveredFiles} unavailable=${summary.unavailableItems} errors=${summary.errors.size}"
+                },
+            )
+            publishLocalLibraryScanSummary(summaries)
+            updateLocalLibraryCatalogSummary()
+            updateLocalArtworkRefreshCount()
+        } catch (e: CancellationException) {
+            _uiState.value =
+                _uiState.value.copy(
+                    localLibraryScan =
+                        _uiState.value.localLibraryScan.copy(
+                            isRunning = false,
+                            lastCancelled = true,
+                        )
+                )
+            throw e
+        } catch (e: Exception) {
+            _uiState.value =
+                _uiState.value.copy(
+                    localLibraryScan =
+                        _uiState.value.localLibraryScan.copy(
+                            isRunning = false,
+                            lastCancelled = false,
+                            lastErrorCount = 1,
+                        )
+                )
+            throw e
+        }
+    }
+
+    private fun publishLocalLibraryScanSummary(summaries: List<LocalLibraryScanSummary>) {
+        _uiState.value =
+            _uiState.value.copy(
+                localLibraryScan =
+                    _uiState.value.localLibraryScan.copy(
+                        isRunning = false,
+                        lastDiscoveredFiles = summaries.sumOf { it.discoveredFiles },
+                        lastUnavailableRoots = summaries.sumOf { it.unavailableItems },
+                        lastErrorCount = summaries.sumOf { it.errors.size },
+                        lastCancelled = summaries.any { it.cancelled },
+                    )
+            )
     }
 
     private fun observeDownloads() {
@@ -319,6 +376,7 @@ constructor(
                     .collect { completedDownloads ->
                         _uiState.value =
                             _uiState.value.copy(completedDownloads = completedDownloads)
+                        loadStorageInfo()
                     }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to observe completed downloads")
@@ -363,9 +421,36 @@ constructor(
                         _uiState.value =
                             _uiState.value.copy(localLibraryRoots = roots.sortedBy { it.priority })
                         updateLocalArtworkRefreshCount()
+                        updateLocalLibraryCatalogSummary()
                     }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to observe local library roots")
+            }
+        }
+    }
+
+    private fun observeLocalLibraryCatalog() {
+        viewModelScope.launch {
+            try {
+                localLibraryMediaRepository
+                    .catalogGenerationFlow()
+                    .catch { e -> Timber.e(e, "Error observing local library catalog") }
+                    .collect { updateLocalLibraryCatalogSummary() }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to observe local library catalog")
+            }
+        }
+    }
+
+    private fun observeLocalLibraryVisibilityProfile() {
+        viewModelScope.launch {
+            try {
+                preferencesRepository
+                    .getCurrentUserIdFlow()
+                    .catch { e -> Timber.e(e, "Error observing local library profile") }
+                    .collect { updateLocalLibraryCatalogSummary() }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to observe local library profile")
             }
         }
     }
@@ -406,9 +491,31 @@ constructor(
     }
 
     private suspend fun updateLocalArtworkRefreshCount() {
-        val count = localLibraryScanService.refreshableLocalLibraryArtworkCount()
+        val count =
+            localLibraryScanService.refreshableLocalLibraryArtworkCount(
+                forceRefreshItemArtwork = true
+            )
         _uiState.value = _uiState.value.copy(localArtworkRefreshCount = count)
     }
+
+    private suspend fun updateLocalLibraryCatalogSummary() {
+        val summary = localLibraryMediaRepository.visibleCatalogSummary(currentLocalVisibilityContext())
+        _uiState.value =
+            _uiState.value.copy(
+                localLibraryScan =
+                    _uiState.value.localLibraryScan.copy(
+                        indexedFiles = summary.fileCount,
+                        indexedStorageUsed = summary.totalSizeBytes,
+                    )
+            )
+    }
+
+    private suspend fun currentLocalVisibilityContext(): LocalLibraryVisibilityContext =
+        LocalLibraryVisibilityContext(
+            currentUserId = preferencesRepository.getCurrentUserId(),
+            kidModeEnabled = kidModeRepository.policy.value.isKidModeEnabled,
+            parentUnlocked = kidModeRepository.policy.value.isParentUnlocked,
+        )
 
     fun pauseDownload(downloadId: UUID) {
         if (!kidModeRepository.policy.value.canManageDownloads) return
@@ -533,7 +640,10 @@ constructor(
                     uiState.value.completedDownloads.count { download ->
                         download.itemType.uppercase() in setOf("MOVIE", "EPISODE")
                     }
-                val localArtworkCount = localLibraryScanService.refreshableLocalLibraryArtworkCount()
+                val localArtworkCount =
+                    localLibraryScanService.refreshableLocalLibraryArtworkCount(
+                        forceRefreshItemArtwork = true
+                    )
                 _uiState.value = _uiState.value.copy(localArtworkRefreshCount = localArtworkCount)
                 val totalRefreshCount = completedVideoCount + localArtworkCount
                 if (totalRefreshCount == 0) {
@@ -581,7 +691,9 @@ constructor(
 
                     if (localArtworkCount > 0) {
                         val localSummary =
-                            localLibraryScanService.refreshLocalLibraryArtworkFromOrigins { progress ->
+                            localLibraryScanService.refreshLocalLibraryArtworkFromOrigins(
+                                forceRefreshItemArtwork = true
+                            ) { progress ->
                                 _uiState.value =
                                     _uiState.value.copy(
                                         artworkRefresh =
@@ -701,9 +813,20 @@ data class DownloadsUiState(
     val storageLocations: List<DownloadStorageLocation> = emptyList(),
     val localLibraryRoots: List<LocalLibraryRootRecord> = emptyList(),
     val localArtworkRefreshCount: Int = 0,
+    val localLibraryScan: LocalLibraryScanUiState = LocalLibraryScanUiState(),
     val deviceStorageStats: DownloadsViewModel.DeviceStorageStats? = null,
     val artworkRefresh: ArtworkRefreshUiState = ArtworkRefreshUiState(),
     val error: String? = null,
+)
+
+data class LocalLibraryScanUiState(
+    val isRunning: Boolean = false,
+    val indexedFiles: Int = 0,
+    val indexedStorageUsed: Long = 0L,
+    val lastDiscoveredFiles: Int? = null,
+    val lastUnavailableRoots: Int = 0,
+    val lastErrorCount: Int = 0,
+    val lastCancelled: Boolean = false,
 )
 
 data class ArtworkRefreshUiState(

@@ -61,7 +61,12 @@ constructor(
         const val KEY_DOWNLOAD_QUALITY_MODE = "download_quality_mode"
     }
 
-    override suspend fun startDownload(itemId: UUID, sourceId: String): Result<UUID> =
+    override suspend fun startDownload(
+        itemId: UUID,
+        sourceId: String,
+        seriesId: UUID?,
+        seasonId: UUID?,
+    ): Result<UUID> =
         withContext(Dispatchers.IO) {
             return@withContext try {
                 if (offlineModeManager.isHardOffline()) {
@@ -75,7 +80,6 @@ constructor(
                 val userId = currentSession.userId
                 val serverId = currentSession.serverId
                 val baseUrl = currentSession.serverUrl
-
                 val existingDownload =
                     databaseRepository.getDownloadByItemIdScoped(itemId, serverId, userId)
                 if (existingDownload != null) {
@@ -92,29 +96,24 @@ constructor(
                     }
                 }
 
-                val baseItemDto =
-                    mediaRepository.getItem(
-                        itemId = itemId,
-                        fields =
-                            listOf(
-                                ItemFields.MEDIA_SOURCES,
-                                ItemFields.MEDIA_STREAMS,
-                                ItemFields.OVERVIEW,
-                            ),
-                    ) ?: return@withContext Result.failure(Exception("Item not found"))
-
                 val item =
-                    when (baseItemDto.type) {
-                        BaseItemKind.MOVIE -> baseItemDto.toAfinityMovie(baseUrl)
-                        BaseItemKind.EPISODE ->
-                            baseItemDto.toAfinityEpisode(baseUrl)
-                                ?: return@withContext Result.failure(
-                                    Exception("Failed to convert episode")
-                                )
-
+                    when (
+                        val resolvedItem =
+                            resolveDownloadItem(
+                                itemId = itemId,
+                                baseUrl = baseUrl,
+                                fallbackSeriesId = seriesId,
+                                fallbackSeasonId = seasonId,
+                            )
+                    ) {
+                        is AfinityMovie -> resolvedItem
+                        is AfinityEpisode -> resolvedItem
                         else ->
                             return@withContext Result.failure(
-                                Exception("Unsupported item type: ${baseItemDto.type}")
+                                Exception(
+                                    if (resolvedItem == null) "Item not found"
+                                    else "Unsupported item type: ${resolvedItem::class.simpleName}"
+                                )
                             )
                     }
 
@@ -152,6 +151,35 @@ constructor(
                 Result.failure(e)
             }
         }
+
+    private suspend fun resolveDownloadItem(
+        itemId: UUID,
+        baseUrl: String,
+        fallbackSeriesId: UUID?,
+        fallbackSeasonId: UUID?,
+    ): AfinityItem? {
+        val baseItemDto =
+            mediaRepository.getItem(
+                itemId = itemId,
+                fields =
+                    listOf(
+                        ItemFields.MEDIA_SOURCES,
+                        ItemFields.MEDIA_STREAMS,
+                        ItemFields.OVERVIEW,
+                    ),
+            ) ?: return null
+
+        return when (baseItemDto.type) {
+            BaseItemKind.MOVIE -> baseItemDto.toAfinityMovie(baseUrl)
+            BaseItemKind.EPISODE ->
+                baseItemDto.toAfinityEpisode(
+                    baseUrl = baseUrl,
+                    fallbackSeriesId = fallbackSeriesId,
+                    fallbackSeasonId = fallbackSeasonId,
+                ) ?: (mediaRepository.getItemById(itemId) as? AfinityEpisode)
+            else -> null
+        }
+    }
 
     private suspend fun scheduleQueue(trigger: DownloadQueueScheduleTrigger) {
         if (offlineModeManager.isHardOffline()) {
@@ -222,6 +250,7 @@ constructor(
             runtimeTicks = item.runtimeTicks,
             folderPath = folderPath,
             seriesId = (item as? AfinityEpisode)?.seriesId?.toString(),
+            seasonId = (item as? AfinityEpisode)?.seasonId?.toString(),
         )
     }
 

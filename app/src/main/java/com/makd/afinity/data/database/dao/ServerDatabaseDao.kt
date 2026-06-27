@@ -225,6 +225,24 @@ abstract class ServerDatabaseDao {
     @Query(
         """
         UPDATE downloads
+        SET claimHeartbeatAt = :updatedAt,
+            updatedAt = :updatedAt
+        WHERE id = :downloadId
+            AND activeClaimId = :activeClaimId
+            AND activeBackendRunId = :activeBackendRunId
+            AND status = 'DOWNLOADING'
+        """
+    )
+    abstract suspend fun touchActiveDownloadClaim(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        updatedAt: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE downloads
         SET status = :status,
             progress = :progress,
             bytesDownloaded = :bytesDownloaded,

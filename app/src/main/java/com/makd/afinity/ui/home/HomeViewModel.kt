@@ -1265,9 +1265,7 @@ constructor(
                 _isLoadingEpisode.value = true
 
                 val fullEpisode =
-                    mediaRepository
-                        .getItem(episode.id, fields = FieldSets.ITEM_DETAIL)
-                        ?.toAfinityEpisode(mediaRepository.getBaseUrl(), null)
+                    mediaRepository.getItemById(episode.id) as? AfinityEpisode
 
                 if (fullEpisode != null) {
                     _selectedEpisode.value = fullEpisode

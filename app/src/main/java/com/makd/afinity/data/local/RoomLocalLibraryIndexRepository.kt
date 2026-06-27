@@ -3,6 +3,7 @@ package com.makd.afinity.data.local
 import com.makd.afinity.data.database.dao.LocalLibraryDao
 import com.makd.afinity.data.database.entities.LocalLibraryItemEntity
 import com.makd.afinity.data.database.entities.LocalLibraryRootSnapshotEntity
+import com.makd.afinity.data.database.entities.LocalLibraryScanRunEntity
 import com.makd.afinity.data.database.entities.LocalMediaFileEntity
 import com.makd.afinity.data.database.entities.LocalMediaIdentityEntity
 import com.makd.afinity.data.database.entities.LocalMediaImportJobEntity
@@ -28,6 +29,7 @@ constructor(private val dao: LocalLibraryDao) : LocalLibraryIndexRepository {
         files: List<LocalMediaFileRecord>,
         importJobs: List<LocalMediaImportJobRecord>,
     ) {
+        val completedAt = System.currentTimeMillis()
         dao.deleteMediaFilesForRoot(root.registryId.toString())
         dao.deleteImportJobsForRoot(root.registryId.toString())
         dao.upsertRootSnapshot(
@@ -39,8 +41,8 @@ constructor(private val dao: LocalLibraryDao) : LocalLibraryIndexRepository {
                 writable = root.writable,
                 defaultForDownloads = root.defaultForDownloads,
                 priority = root.priority,
-                lastScanStartedAt = System.currentTimeMillis(),
-                lastScanCompletedAt = System.currentTimeMillis(),
+                lastScanStartedAt = completedAt,
+                lastScanCompletedAt = completedAt,
                 lastScanStatus = LocalLibraryScanStatus.COMPLETED.name,
                 lastError = null,
             )
@@ -56,9 +58,26 @@ constructor(private val dao: LocalLibraryDao) : LocalLibraryIndexRepository {
         dao.deleteOrphanedIdentities()
         dao.deleteOrphanedItems()
         dao.deleteOrphanedSidecars()
+        dao.upsertScanRun(
+            LocalLibraryScanRunEntity(
+                scanRunId = UUID.randomUUID().toString(),
+                rootRegistryId = root.registryId.toString(),
+                startedAt = completedAt,
+                completedAt = completedAt,
+                status = LocalLibraryScanStatus.COMPLETED.name,
+                discoveredFiles = files.size,
+                importedItems = files.size,
+                updatedItems = files.size,
+                unavailableItems = 0,
+                duplicateGroups = duplicateGroupCount(),
+                parseWarnings = importJobs.size,
+                errorsJson = json.encodeToString(importJobs.mapNotNull { it.lastError }),
+            )
+        )
     }
 
     override fun markRootUnavailable(root: LocalLibraryRootRecord) {
+        val completedAt = System.currentTimeMillis()
         dao.upsertRootSnapshot(
             LocalLibraryRootSnapshotEntity(
                 registryId = root.registryId.toString(),
@@ -68,10 +87,26 @@ constructor(private val dao: LocalLibraryDao) : LocalLibraryIndexRepository {
                 writable = root.writable,
                 defaultForDownloads = root.defaultForDownloads,
                 priority = root.priority,
-                lastScanStartedAt = null,
-                lastScanCompletedAt = System.currentTimeMillis(),
+                lastScanStartedAt = completedAt,
+                lastScanCompletedAt = completedAt,
                 lastScanStatus = LocalLibraryScanStatus.FAILED.name,
                 lastError = "Root unavailable",
+            )
+        )
+        dao.upsertScanRun(
+            LocalLibraryScanRunEntity(
+                scanRunId = UUID.randomUUID().toString(),
+                rootRegistryId = root.registryId.toString(),
+                startedAt = completedAt,
+                completedAt = completedAt,
+                status = LocalLibraryScanStatus.FAILED.name,
+                discoveredFiles = 0,
+                importedItems = 0,
+                updatedItems = 0,
+                unavailableItems = 1,
+                duplicateGroups = duplicateGroupCount(),
+                parseWarnings = 0,
+                errorsJson = json.encodeToString(listOf("Root unavailable")),
             )
         )
     }

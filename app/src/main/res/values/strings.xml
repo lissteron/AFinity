@@ -473,6 +473,7 @@
     <string name="storage_free_on_device_fmt">%1$s free on device</string>
     <string name="storage_this_server">This server</string>
     <string name="storage_all_servers_fmt">%1$s total across all servers</string>
+    <string name="storage_local_catalog_fmt">%1$s in local catalog (%2$d files)</string>
 
     <string name="download_preferences_title">Download Settings</string>
     <string name="pref_download_wifi_only_title">Wi-Fi only</string>
@@ -488,6 +489,11 @@
     <string name="local_library_roots_summary">Folders scanned for existing video files and new downloads</string>
     <string name="local_library_add_folder">Add folder</string>
     <string name="local_library_rescan">Rescan</string>
+    <string name="local_library_scan_running">Scanning local folders...</string>
+    <string name="local_library_scan_cancelled">Local folder scan cancelled</string>
+    <string name="local_library_scan_last_fmt">Last scan found %1$d video files</string>
+    <string name="local_library_scan_last_with_unavailable_fmt">Last scan found %1$d video files; %2$d folder unavailable</string>
+    <string name="local_library_indexed_files_fmt">%1$d video files indexed</string>
     <string name="local_library_make_default">Default</string>
     <string name="local_library_remove">Remove</string>
     <string name="local_library_default_fmt">%1$s, default for downloads</string>

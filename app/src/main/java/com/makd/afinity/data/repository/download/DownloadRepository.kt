@@ -7,7 +7,12 @@ import kotlinx.coroutines.flow.Flow
 
 interface DownloadRepository {
 
-    suspend fun startDownload(itemId: UUID, sourceId: String): Result<UUID>
+    suspend fun startDownload(
+        itemId: UUID,
+        sourceId: String,
+        seriesId: UUID? = null,
+        seasonId: UUID? = null,
+    ): Result<UUID>
 
     suspend fun pauseDownload(downloadId: UUID): Result<Unit>
 

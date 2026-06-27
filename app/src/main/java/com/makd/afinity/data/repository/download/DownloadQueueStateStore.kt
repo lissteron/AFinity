@@ -142,6 +142,19 @@ constructor(private val databaseRepository: DatabaseRepository) {
             updatedAt = now,
         )
 
+    suspend fun touchOwnedClaim(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        backendRunId: UUID,
+        now: Long = System.currentTimeMillis(),
+    ): Boolean =
+        databaseRepository.touchActiveDownloadClaim(
+            downloadId = downloadId,
+            activeClaimId = activeClaimId,
+            activeBackendRunId = backendRunId,
+            updatedAt = now,
+        )
+
     suspend fun completeOwned(
         downloadId: UUID,
         activeClaimId: UUID,
@@ -222,7 +235,7 @@ constructor(private val databaseRepository: DatabaseRepository) {
     private companion object {
         const val LEGACY_INTERRUPTED_PAUSED_REASON =
             "Interrupted download recovered to paused queue state"
-        const val UIDT_STOPPED_PAUSED_REASON_PATTERN = "UIDT job stopped:%"
+        const val UIDT_STOPPED_PAUSED_REASON_PATTERN = "UIDT job stopped%"
         val TRANSIENT_PAUSED_REASON_PATTERNS =
             DownloadQueueTransientFailureClassifier.sqlLikePatterns
         val TRANSIENT_FAILED_REASON_PATTERNS =

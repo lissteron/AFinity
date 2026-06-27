@@ -99,8 +99,7 @@ constructor(
                     _selectedEpisode.value?.let { ep ->
                         if (ep.id == event.itemId) {
                             val refreshedEp =
-                                mediaRepository.getItem(event.itemId)
-                                    ?.toAfinityEpisode(mediaRepository.getBaseUrl(), null)
+                                mediaRepository.getItemById(event.itemId) as? AfinityEpisode
                             refreshedEp?.let { _selectedEpisode.value = it }
                         }
                     }
@@ -125,9 +124,7 @@ constructor(
                 _isLoadingEpisode.value = true
 
                 val fullEpisode =
-                    mediaRepository
-                        .getItem(episode.id, fields = FieldSets.ITEM_DETAIL)
-                        ?.toAfinityEpisode(mediaRepository.getBaseUrl(), null)
+                    mediaRepository.getItemById(episode.id) as? AfinityEpisode
 
                 _selectedEpisode.value = fullEpisode ?: episode
 

@@ -166,6 +166,250 @@ class LocalLibraryOriginArtworkRefresherTest {
         )
     }
 
+    @Test
+    fun forcedRefreshOverwritesOnlyItemArtworkFromOrigin() = runBlocking {
+        val rootDir = temporaryFolder.newFolder("force-refresh-root")
+        val root = root(rootDir)
+        val sidecarPath = "Shows/Kote/Season 00/Kote - S00E00 - Test.afinity.json"
+        writeSidecar(rootDir, sidecarPath, seriesId = seriesId, seasonId = seasonId)
+        writeBytes(
+            File(rootDir, "Shows/Kote/Season 00/images/Kote - S00E00 - Test/primary.jpg"),
+            byteArrayOf(8, 8, 8),
+        )
+        writeBytes(File(rootDir, "Shows/Kote/Season 00/images/primary.jpg"), byteArrayOf(1, 1, 1))
+        writeBytes(File(rootDir, "Shows/Kote/images/primary.jpg"), byteArrayOf(2, 2, 2))
+        val index =
+            InMemoryLocalLibraryIndexRepository().also {
+                it.replaceRootScan(root, listOf(localEpisode(root, sidecarPath)))
+            }
+        val resolver =
+            FakeRemoteArtworkResolver(
+                LocalLibraryResolvedArtwork(
+                    itemImages =
+                        LocalLibraryResolvedImageSet(
+                            primary = LocalLibraryResolvedImage(byteArrayOf(3, 3, 3), "image/png", "png")
+                        ),
+                    seasonImages =
+                        LocalLibraryResolvedImageSet(
+                            primary = LocalLibraryResolvedImage(byteArrayOf(4, 4, 4), "image/jpeg", "jpg")
+                        ),
+                    showImages =
+                        LocalLibraryResolvedImageSet(
+                            primary = LocalLibraryResolvedImage(byteArrayOf(5, 5, 5), "image/jpeg", "jpg")
+                        ),
+                )
+            )
+        val service = service(root, index, resolver)
+
+        assertEquals(1, service.refreshCandidateCount(forceRefreshItemArtwork = true))
+        val summary = service.refreshMissingArtwork(overwriteExistingItemArtwork = true)
+
+        assertEquals(1, summary.writtenFiles)
+        assertEquals(1, resolver.seenOrigins.size)
+        assertArrayEquals(
+            byteArrayOf(3, 3, 3),
+            File(rootDir, "Shows/Kote/Season 00/images/Kote - S00E00 - Test/primary.png").readBytes(),
+        )
+        assertEquals(
+            false,
+            File(rootDir, "Shows/Kote/Season 00/images/Kote - S00E00 - Test/primary.jpg").exists(),
+        )
+        assertArrayEquals(
+            byteArrayOf(1, 1, 1),
+            File(rootDir, "Shows/Kote/Season 00/images/primary.jpg").readBytes(),
+        )
+        assertArrayEquals(
+            byteArrayOf(2, 2, 2),
+            File(rootDir, "Shows/Kote/images/primary.jpg").readBytes(),
+        )
+    }
+
+    @Test
+    fun refreshRepairsDuplicatedItemArtworkBytesFromOrigin() = runBlocking {
+        val rootDir = temporaryFolder.newFolder("duplicate-item-art-root")
+        val root = root(rootDir)
+        val firstItemId = UUID.fromString("00000000-0000-0000-0000-00000000db01")
+        val secondItemId = UUID.fromString("00000000-0000-0000-0000-00000000db02")
+        val firstSidecar = "Shows/Kote/Season 00/Kote - S00E00 - First.afinity.json"
+        val secondSidecar = "Shows/Kote/Season 00/Kote - S00E01 - Second.afinity.json"
+        writeSidecar(
+            rootDir = rootDir,
+            sidecarPath = firstSidecar,
+            itemId = firstItemId,
+            sourceId = "source-1",
+            relativePath = "Shows/Kote/Season 00/Kote - S00E00 - First.mp4",
+            name = "First",
+            episodeNumber = 0,
+            seriesId = seriesId,
+            seasonId = seasonId,
+        )
+        writeSidecar(
+            rootDir = rootDir,
+            sidecarPath = secondSidecar,
+            itemId = secondItemId,
+            sourceId = "source-2",
+            relativePath = "Shows/Kote/Season 00/Kote - S00E01 - Second.mp4",
+            name = "Second",
+            episodeNumber = 1,
+            seriesId = seriesId,
+            seasonId = seasonId,
+        )
+        writeBytes(
+            File(rootDir, "Shows/Kote/Season 00/images/Kote - S00E00 - First/primary.jpg"),
+            byteArrayOf(9, 9, 9),
+        )
+        writeBytes(
+            File(rootDir, "Shows/Kote/Season 00/images/Kote - S00E01 - Second/primary.jpg"),
+            byteArrayOf(9, 9, 9),
+        )
+        val index =
+            InMemoryLocalLibraryIndexRepository().also {
+                it.replaceRootScan(
+                    root,
+                    listOf(
+                        localEpisode(
+                            root = root,
+                            sidecarPath = firstSidecar,
+                            itemId = firstItemId,
+                            sourceId = "source-1",
+                            relativePath = "Shows/Kote/Season 00/Kote - S00E00 - First.mp4",
+                            name = "First",
+                            episodeNumber = 0,
+                        ),
+                        localEpisode(
+                            root = root,
+                            sidecarPath = secondSidecar,
+                            itemId = secondItemId,
+                            sourceId = "source-2",
+                            relativePath = "Shows/Kote/Season 00/Kote - S00E01 - Second.mp4",
+                            name = "Second",
+                            episodeNumber = 1,
+                        ),
+                    ),
+                )
+            }
+        val resolver =
+            MappingRemoteArtworkResolver(
+                mapOf(
+                    firstItemId to
+                        LocalLibraryResolvedArtwork(
+                            itemImages =
+                                LocalLibraryResolvedImageSet(
+                                    primary = LocalLibraryResolvedImage(byteArrayOf(1, 1, 1), "image/jpeg", "jpg")
+                                )
+                        ),
+                    secondItemId to
+                        LocalLibraryResolvedArtwork(
+                            itemImages =
+                                LocalLibraryResolvedImageSet(
+                                    primary = LocalLibraryResolvedImage(byteArrayOf(2, 2, 2), "image/jpeg", "jpg")
+                                )
+                        ),
+                )
+            )
+        val service = service(root, index, resolver)
+
+        assertEquals(2, service.refreshCandidateCount())
+        val summary = service.refreshMissingArtwork()
+
+        assertEquals(2, summary.refreshedItems)
+        assertEquals(2, summary.writtenFiles)
+        assertEquals(listOf(firstItemId, secondItemId), resolver.seenOrigins.map { it.itemId })
+        assertArrayEquals(
+            byteArrayOf(1, 1, 1),
+            File(rootDir, "Shows/Kote/Season 00/images/Kote - S00E00 - First/primary.jpg").readBytes(),
+        )
+        assertArrayEquals(
+            byteArrayOf(2, 2, 2),
+            File(rootDir, "Shows/Kote/Season 00/images/Kote - S00E01 - Second/primary.jpg").readBytes(),
+        )
+    }
+
+    @Test
+    fun refreshRemovesDuplicatedItemArtworkWhenOriginHasNoItemImage() = runBlocking {
+        val rootDir = temporaryFolder.newFolder("duplicate-empty-origin-art-root")
+        val root = root(rootDir)
+        val firstItemId = UUID.fromString("00000000-0000-0000-0000-00000000dc01")
+        val secondItemId = UUID.fromString("00000000-0000-0000-0000-00000000dc02")
+        val firstSidecar = "Shows/Kote/Season 00/Kote - S00E00 - First.afinity.json"
+        val secondSidecar = "Shows/Kote/Season 00/Kote - S00E01 - Second.afinity.json"
+        val firstArtwork = File(rootDir, "Shows/Kote/Season 00/images/Kote - S00E00 - First/primary.jpg")
+        val secondArtwork = File(rootDir, "Shows/Kote/Season 00/images/Kote - S00E01 - Second/primary.jpg")
+        writeSidecar(
+            rootDir = rootDir,
+            sidecarPath = firstSidecar,
+            itemId = firstItemId,
+            sourceId = "source-1",
+            relativePath = "Shows/Kote/Season 00/Kote - S00E00 - First.mp4",
+            name = "First",
+            episodeNumber = 0,
+            seriesId = seriesId,
+            seasonId = seasonId,
+        )
+        writeSidecar(
+            rootDir = rootDir,
+            sidecarPath = secondSidecar,
+            itemId = secondItemId,
+            sourceId = "source-2",
+            relativePath = "Shows/Kote/Season 00/Kote - S00E01 - Second.mp4",
+            name = "Second",
+            episodeNumber = 1,
+            seriesId = seriesId,
+            seasonId = seasonId,
+        )
+        writeBytes(firstArtwork, byteArrayOf(9, 9, 9))
+        writeBytes(secondArtwork, byteArrayOf(9, 9, 9))
+        val index =
+            InMemoryLocalLibraryIndexRepository().also {
+                it.replaceRootScan(
+                    root,
+                    listOf(
+                        localEpisode(
+                            root = root,
+                            sidecarPath = firstSidecar,
+                            itemId = firstItemId,
+                            sourceId = "source-1",
+                            relativePath = "Shows/Kote/Season 00/Kote - S00E00 - First.mp4",
+                            name = "First",
+                            episodeNumber = 0,
+                        ),
+                        localEpisode(
+                            root = root,
+                            sidecarPath = secondSidecar,
+                            itemId = secondItemId,
+                            sourceId = "source-2",
+                            relativePath = "Shows/Kote/Season 00/Kote - S00E01 - Second.mp4",
+                            name = "Second",
+                            episodeNumber = 1,
+                        ),
+                    ),
+                )
+            }
+        val resolver =
+            MappingRemoteArtworkResolver(
+                mapOf(
+                    firstItemId to
+                        LocalLibraryResolvedArtwork(
+                            itemImages =
+                                LocalLibraryResolvedImageSet(
+                                    primary = LocalLibraryResolvedImage(byteArrayOf(1, 1, 1), "image/jpeg", "jpg")
+                                )
+                        ),
+                    secondItemId to LocalLibraryResolvedArtwork(),
+                )
+            )
+        val service = service(root, index, resolver)
+
+        assertEquals(2, service.refreshCandidateCount())
+        val summary = service.refreshMissingArtwork()
+
+        assertEquals(2, summary.refreshedItems)
+        assertEquals(1, summary.writtenFiles)
+        assertEquals(1, summary.removedFiles)
+        assertArrayEquals(byteArrayOf(1, 1, 1), firstArtwork.readBytes())
+        assertEquals(false, secondArtwork.exists())
+    }
+
     private fun service(
         root: LocalLibraryRootRecord,
         index: LocalLibraryIndexRepository,
@@ -193,12 +437,17 @@ class LocalLibraryOriginArtworkRefresherTest {
     private fun localEpisode(
         root: LocalLibraryRootRecord,
         sidecarPath: String,
+        itemId: UUID = this.itemId,
+        sourceId: String = "source-1",
+        relativePath: String = "Shows/Kote/Season 00/Kote - S00E00 - Test.mp4",
+        name: String = "Test",
+        episodeNumber: Int = 0,
     ): LocalMediaFileRecord =
         LocalMediaFileRecord(
             mediaFileId = UUID.nameUUIDFromBytes("media:$itemId".toByteArray()),
             rootRegistryId = root.registryId,
             stableRootId = root.stableRootId,
-            relativePath = "Shows/Kote/Season 00/Kote - S00E00 - Test.mp4",
+            relativePath = relativePath,
             sidecarRelativePath = sidecarPath,
             ownerUserId = userId.toString(),
             mediaKind = LocalMediaKind.EPISODE,
@@ -207,16 +456,16 @@ class LocalLibraryOriginArtworkRefresherTest {
                     localItemId = itemId.toString(),
                     serverId = serverId,
                     jellyfinItemId = itemId.toString(),
-                    jellyfinSourceId = "source-1",
+                    jellyfinSourceId = sourceId,
                     stableRootId = root.stableRootId,
                     fingerprint = LocalMediaFingerprint("test", "fingerprint"),
                 ),
             title =
                 LocalLibraryTitle(
-                    name = "Test",
+                    name = name,
                     showName = "Kote",
                     seasonNumber = 0,
-                    episodeNumber = 0,
+                    episodeNumber = episodeNumber,
                 ),
             sizeBytes = 100,
             modifiedAt = 1,
@@ -227,6 +476,11 @@ class LocalLibraryOriginArtworkRefresherTest {
     private fun writeSidecar(
         rootDir: File,
         sidecarPath: String,
+        itemId: UUID = this.itemId,
+        sourceId: String = "source-1",
+        relativePath: String = "Shows/Kote/Season 00/Kote - S00E00 - Test.mp4",
+        name: String = "Test",
+        episodeNumber: Int = 0,
         seriesId: UUID?,
         seasonId: UUID?,
     ) {
@@ -238,7 +492,7 @@ class LocalLibraryOriginArtworkRefresherTest {
                 identity =
                     AfinitySidecarIdentity(
                         itemId = itemId.toString(),
-                        sourceId = "source-1",
+                        sourceId = sourceId,
                         seriesId = seriesId?.toString(),
                         seasonId = seasonId?.toString(),
                     ),
@@ -246,15 +500,15 @@ class LocalLibraryOriginArtworkRefresherTest {
                     AfinitySidecarLocalIdentity(
                         localItemId = itemId.toString(),
                         stableRootId = rootId.toString(),
-                        relativePathAtWrite = "Shows/Kote/Season 00/Kote - S00E00 - Test.mp4",
+                        relativePathAtWrite = relativePath,
                         fingerprint = AfinitySidecarFingerprint("test", "fingerprint"),
                     ),
                 titles =
                     AfinitySidecarTitles(
-                        name = "Test",
+                        name = name,
                         showName = "Kote",
                         seasonNumber = 0,
-                        episodeNumber = 0,
+                        episodeNumber = episodeNumber,
                     ),
             )
         File(rootDir, sidecarPath).also { file ->
@@ -291,6 +545,17 @@ class LocalLibraryOriginArtworkRefresherTest {
         override suspend fun resolve(origin: LocalLibraryArtworkOrigin): LocalLibraryResolvedArtwork? {
             seenOrigins += origin
             return artwork
+        }
+    }
+
+    private class MappingRemoteArtworkResolver(
+        private val artworkByItemId: Map<UUID, LocalLibraryResolvedArtwork>
+    ) : LocalLibraryRemoteArtworkResolver {
+        val seenOrigins = mutableListOf<LocalLibraryArtworkOrigin>()
+
+        override suspend fun resolve(origin: LocalLibraryArtworkOrigin): LocalLibraryResolvedArtwork? {
+            seenOrigins += origin
+            return artworkByItemId[origin.itemId]
         }
     }
 }

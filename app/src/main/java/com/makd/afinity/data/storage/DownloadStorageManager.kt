@@ -85,12 +85,71 @@ constructor(
             .also { if (!it.exists()) it.mkdirs() }
     }
 
+    suspend fun getItemImagesDirectory(
+        download: DownloadDto?,
+        itemId: UUID,
+        itemType: String? = download?.itemType,
+    ): File {
+        val imagesFromFile = download?.filePath?.let { getItemImagesDirectoryFromMediaPath(it, itemType) }
+        return (imagesFromFile ?: File(getItemDownloadDirectory(download, itemId), "images"))
+            .also { if (!it.exists()) it.mkdirs() }
+    }
+
+    suspend fun getShowImagesDirectory(download: DownloadDto?, showId: UUID): File {
+        val imagesFromFile = download?.filePath?.let(::getShowImagesDirectoryFromMediaPath)
+        val fallback =
+            download
+                ?.serverId
+                ?.takeIf { it.isNotBlank() }
+                ?.let { serverId -> File(getSelectedDownloadsRoot(), "$serverId/shows/$showId/images") }
+                ?: File(getItemDownloadDirectory(download, download?.itemId ?: showId), "images")
+        return (imagesFromFile ?: fallback).also { if (!it.exists()) it.mkdirs() }
+    }
+
+    suspend fun getSeasonImagesDirectory(
+        download: DownloadDto?,
+        seriesId: UUID,
+        seasonNumber: Int,
+    ): File {
+        val imagesFromFile = download?.filePath?.let(::getSeasonImagesDirectoryFromMediaPath)
+        val fallback =
+            download
+                ?.serverId
+                ?.takeIf { it.isNotBlank() }
+                ?.let { serverId ->
+                    File(getSelectedDownloadsRoot(), "$serverId/shows/$seriesId/seasons/$seasonNumber/images")
+                }
+                ?: File(getItemDownloadDirectory(download, download?.itemId ?: seriesId), "images")
+        return (imagesFromFile ?: fallback).also { if (!it.exists()) it.mkdirs() }
+    }
+
     fun getItemRootFromMediaPath(filePath: String): File? {
         val uri = Uri.parse(filePath)
         if (uri.scheme == "content") return null
         val mediaFile = File(filePath)
         val parent = mediaFile.parentFile ?: return null
         return if (parent.name == "media") parent.parentFile else parent
+    }
+
+    fun getItemImagesDirectoryFromMediaPath(
+        filePath: String,
+        itemType: String?,
+    ): File? {
+        if (isContentUri(filePath)) return null
+        return PortableMediaArtworkPaths.itemImagesDirectoryForMediaFile(
+            File(filePath),
+            isEpisode = itemType.isEpisodeItem(),
+        )
+    }
+
+    fun getSeasonImagesDirectoryFromMediaPath(filePath: String): File? {
+        if (isContentUri(filePath)) return null
+        return PortableMediaArtworkPaths.seasonImagesDirectoryForMediaFile(File(filePath))
+    }
+
+    fun getShowImagesDirectoryFromMediaPath(filePath: String): File? {
+        if (isContentUri(filePath)) return null
+        return PortableMediaArtworkPaths.showImagesDirectoryForMediaFile(File(filePath))
     }
 
     suspend fun createMediaFileTarget(
@@ -433,6 +492,9 @@ constructor(
         val treeUri: Uri? = null,
         val isCustom: Boolean = false,
     )
+
+    private fun String?.isEpisodeItem(): Boolean =
+        equals("EPISODE", ignoreCase = true)
 
     sealed class MediaFileTarget {
         abstract val displayPath: String

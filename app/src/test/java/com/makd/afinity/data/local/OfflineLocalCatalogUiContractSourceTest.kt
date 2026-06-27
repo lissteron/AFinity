@@ -66,8 +66,13 @@ class OfflineLocalCatalogUiContractSourceTest {
 
         assertTrue(app.contains("localLibraryMediaRepository.hasIndexedMediaMissingArtwork()"))
         assertTrue(app.contains("localLibraryMediaRepository.hasIndexedMedia()"))
+        assertTrue(app.contains("localLibraryScanService.refreshableLocalLibraryArtworkCount()"))
         assertTrue(app.contains("val needsIndexRebuild = !hasIndexedMedia"))
-        assertTrue(app.contains("if (!needsIndexRebuild && !hasMissingArtwork) return@launch"))
+        assertTrue(
+            app.contains(
+                "if (!needsIndexRebuild && !hasMissingArtwork && refreshableArtworkCount == 0)"
+            )
+        )
         assertFalse(app.contains("localLibraryScanService.hasCompletedVideoDownloads()"))
         assertFalse(app.contains("if (!hasCompletedVideoDownloads) return@launch"))
         assertTrue(app.contains("localLibraryScanService.scanEnabledRootsWithArtworkBackfill("))
@@ -117,10 +122,16 @@ class OfflineLocalCatalogUiContractSourceTest {
         assertTrue(repository.contains("path = localCatalogPath()"))
         assertTrue(repository.contains("suspend fun hasIndexedMediaMissingArtwork()"))
         assertTrue(repository.contains("images = artwork.toAfinityImages()"))
+        assertTrue(repository.contains("images = artwork.toAfinityImages(inheritParentArtwork = true)"))
         assertTrue(repository.contains("val seasonImages = seasonEntries.toSeasonImages()"))
         assertTrue(repository.contains("val showImages = seriesEntries.map { it.episode }.toShowImages()"))
-        assertTrue(repository.contains("private fun LocalMediaArtwork.toAfinityImages()"))
-        assertTrue(repository.contains("primary = primaryUri?.toAndroidAssetUri()"))
+        assertTrue(repository.contains("private fun LocalMediaArtwork.toAfinityImages("))
+        assertTrue(
+            repository.contains(
+                "(primaryUri ?: parentArtwork(inheritParentArtwork, seasonPrimaryUri, showPrimaryUri))"
+            )
+        )
+        assertTrue(repository.contains("private fun parentArtwork("))
         assertFalse(repository.contains("primary = seasonPrimaryUri?.let(Uri::parse)"))
         assertTrue(repository.contains("primary = firstArtworkUri { it.seasonPrimaryUri }"))
         assertTrue(repository.contains("primary = images.firstUri { it.showPrimary }"))
@@ -144,14 +155,21 @@ class OfflineLocalCatalogUiContractSourceTest {
         val downloadsViewModel = readSource("src/main/java/com/makd/afinity/ui/downloads/DownloadsViewModel.kt")
         val transferRunner =
             readSource("src/main/java/com/makd/afinity/data/repository/download/MediaDownloadTransferRunner.kt")
+        val downloadedArtworkRefresher =
+            readSource("src/main/java/com/makd/afinity/data/repository/download/DownloadedArtworkRefresher.kt")
+        val downloadStorageManager =
+            readSource("src/main/java/com/makd/afinity/data/storage/DownloadStorageManager.kt")
         val scanService = readSource("src/main/java/com/makd/afinity/data/local/LocalLibraryScanService.kt")
         val backfillService =
             readSource("src/main/java/com/makd/afinity/data/local/LocalLibraryArtworkBackfillService.kt")
         val originRefresher =
             readSource("src/main/java/com/makd/afinity/data/local/LocalLibraryOriginArtworkRefresher.kt")
+        val sessionRestoreResolver =
+            readSource("src/main/java/com/makd/afinity/data/repository/download/SessionRestoreResolver.kt")
 
-        assertTrue(downloadsViewModel.contains("refreshableLocalLibraryArtworkCount()"))
-        assertTrue(downloadsViewModel.contains("refreshLocalLibraryArtworkFromOrigins"))
+        assertTrue(downloadsViewModel.contains("refreshableLocalLibraryArtworkCount("))
+        assertTrue(downloadsViewModel.contains("forceRefreshItemArtwork = true"))
+        assertTrue(downloadsViewModel.contains("refreshLocalLibraryArtworkFromOrigins("))
         assertTrue(downloadsViewModel.contains("localArtworkRefreshCount"))
         assertTrue(downloadsViewModel.contains("updateLocalArtworkRefreshCount()"))
         assertTrue(downloadsViewModel.contains("completedVideoCount + localArtworkCount"))
@@ -166,15 +184,32 @@ class OfflineLocalCatalogUiContractSourceTest {
             transferRunner.indexOf("localLibraryScanService.backfillDownloadedArtwork(listOf(completedDownload))") <
                 transferRunner.indexOf("if (artworkBackfill.writtenFiles > 0)")
         )
+        assertTrue(transferRunner.contains("downloadStorageManager.getItemImagesDirectory(download, itemId, itemType)"))
+        assertTrue(transferRunner.contains("downloadStorageManager.getShowImagesDirectory(download, showId)"))
+        assertTrue(transferRunner.contains("downloadStorageManager.getSeasonImagesDirectory(download,"))
+        assertTrue(downloadedArtworkRefresher.contains("downloadStorageManager.getItemImagesDirectory(download, itemId)"))
+        assertTrue(downloadedArtworkRefresher.contains("downloadStorageManager.getShowImagesDirectory(download, showId)"))
+        assertTrue(downloadedArtworkRefresher.contains("downloadStorageManager.getSeasonImagesDirectory("))
+        assertTrue(downloadStorageManager.contains("PortableMediaArtworkPaths.itemImagesDirectoryForMediaFile("))
         assertTrue(transferRunner.contains("if (artworkBackfill.writtenFiles > 0)"))
         assertTrue(scanService.contains("LocalLibraryArtworkBackfillService"))
         assertTrue(scanService.contains("LocalLibraryOriginArtworkRefresher"))
         assertTrue(scanService.contains("scanEnabledRootsWithArtworkBackfill("))
-        assertTrue(scanService.contains("val localScan = scanEnabledRoots(visibilityContext)"))
+        val scanWithBackfill =
+            scanService.substring(scanService.indexOf("scanEnabledRootsWithArtworkBackfill("))
         assertTrue(
-            scanService.indexOf("val localScan = scanEnabledRoots(visibilityContext)") <
-                scanService.indexOf("val originRefresh = refreshLocalLibraryArtworkFromOrigins()")
+            scanWithBackfill.contains(
+                "): List<LocalLibraryScanSummary> =\n        withContext(Dispatchers.IO)"
+            )
         )
+        assertTrue(scanService.contains("val localScan = scanEnabledRoots(visibilityContext)"))
+        val indexedScanBranch =
+            scanWithBackfill.substring(scanWithBackfill.indexOf("if (indexRepository.allMediaFiles().isNotEmpty())"))
+        assertTrue(
+            indexedScanBranch.indexOf("val originRefresh = refreshLocalLibraryArtworkFromOrigins()") <
+                indexedScanBranch.indexOf("val localScan = scanEnabledRoots(visibilityContext)")
+        )
+        assertTrue(scanService.contains("writtenFiles > 0 || removedFiles > 0 || updatedSidecars > 0"))
         assertTrue(backfillService.contains("fileSystem.writeBytes("))
         assertTrue(backfillService.contains("seasonImageDirectories(sourceRoots)"))
         assertTrue(backfillService.contains("showImageDirectories(sourceRoots)"))
@@ -184,6 +219,57 @@ class OfflineLocalCatalogUiContractSourceTest {
         assertTrue(originRefresher.contains("needsOriginArtworkRefresh("))
         assertTrue(originRefresher.contains("LocalLibraryArtworkPaths.itemImagesDirectory("))
         assertTrue(originRefresher.contains("updateSidecarParentIdentity("))
+        assertTrue(sessionRestoreResolver.contains("ServerAddressResolver"))
+        assertTrue(sessionRestoreResolver.contains("serverAddressResolver.resolveAddress(serverId)"))
+        assertTrue(sessionRestoreResolver.contains("val restoredServerUrl = resolveRestoredServerUrl("))
+        assertTrue(sessionRestoreResolver.contains("jellyfin.createApi(baseUrl = restoredServerUrl)"))
+        assertTrue(sessionRestoreResolver.contains("serverUrl = restoredServerUrl"))
+    }
+
+    @Test
+    fun downloadStorageSelectionRebuildsLocalCatalogImmediately() {
+        val downloadsViewModel = readSource("src/main/java/com/makd/afinity/ui/downloads/DownloadsViewModel.kt")
+        val settingsScreen =
+            readSource("src/main/java/com/makd/afinity/ui/settings/downloads/DownloadSettingsScreen.kt")
+
+        val fileLocationBlock =
+            downloadsViewModel.substring(
+                downloadsViewModel.indexOf("fun setDownloadStorageLocation"),
+                downloadsViewModel.indexOf("fun setCustomDownloadStorageLocation"),
+            )
+        assertTrue(
+            fileLocationBlock.indexOf("downloadStorageManager.setSelectedLocation(locationId)") <
+                fileLocationBlock.indexOf("rescanLocalLibraryRootsInternal()")
+        )
+        assertTrue(
+                fileLocationBlock.indexOf("localLibraryRootBootstrapper.ensureDefaultRoot(") <
+                fileLocationBlock.indexOf("rescanLocalLibraryRootsInternal()")
+        )
+        assertTrue(downloadsViewModel.contains(".catalogGenerationFlow()"))
+        assertTrue(downloadsViewModel.contains(".getCurrentUserIdFlow()"))
+        assertTrue(downloadsViewModel.contains("currentUserId = preferencesRepository.getCurrentUserId()"))
+        assertTrue(downloadsViewModel.contains("visibleCatalogSummary(currentLocalVisibilityContext())"))
+        assertTrue(downloadsViewModel.contains("localLibraryScan = _uiState.value.localLibraryScan.copy(isRunning = true)"))
+        assertTrue(downloadsViewModel.contains("indexedStorageUsed = summary.totalSizeBytes"))
+        assertTrue(settingsScreen.contains("localLibraryScan = uiState.localLibraryScan"))
+        assertTrue(settingsScreen.contains("localLibraryScanStatusText(localLibraryScan)"))
+        assertTrue(settingsScreen.contains("storage_local_catalog_fmt"))
+        assertTrue(settingsScreen.contains("enabled = canModify && !localLibraryScan.isRunning"))
+        assertTrue(settingsScreen.contains("LinearProgressIndicator("))
+
+        val customLocationBlock =
+            downloadsViewModel.substring(
+                downloadsViewModel.indexOf("fun setCustomDownloadStorageLocation"),
+                downloadsViewModel.indexOf("fun addLocalLibraryFolder"),
+            )
+        assertTrue(
+            customLocationBlock.indexOf("downloadStorageManager.setCustomTreeLocation(uri)") <
+                customLocationBlock.indexOf("rescanLocalLibraryRootsInternal()")
+        )
+        assertTrue(
+            customLocationBlock.indexOf("localLibraryRootBootstrapper.ensureDefaultRoot(") <
+                customLocationBlock.indexOf("rescanLocalLibraryRootsInternal()")
+        )
     }
 
     @Test
@@ -195,6 +281,7 @@ class OfflineLocalCatalogUiContractSourceTest {
                 readSource("src/main/java/com/makd/afinity/ui/components/ContinueWatchingCard.kt"),
                 readSource("src/main/java/com/makd/afinity/ui/components/EpisodeListCard.kt"),
                 readSource("src/main/java/com/makd/afinity/ui/home/components/HomeSections.kt"),
+                readSource("src/main/java/com/makd/afinity/ui/library/LibraryContentScreen.kt"),
                 readSource("src/main/java/com/makd/afinity/ui/item/components/EpisodeDetailOverlay.kt"),
             )
 
@@ -288,9 +375,14 @@ class OfflineLocalCatalogUiContractSourceTest {
         assertTrue(detailScreen.contains("mediaSourceId = localSource?.id.orEmpty()"))
         assertTrue(playerWrapper.contains("loadedItem = loadLocalCatalogItem(itemId, profileUserId)"))
         assertTrue(playerWrapper.contains("Loaded item from local catalog after cache/API miss"))
-        assertTrue(player.contains("private suspend fun resolveLocalPlaybackUrl(mediaSource: AfinitySource): String?"))
+        assertTrue(player.contains("private suspend fun resolveLocalPlaybackMedia(mediaSource: AfinitySource): ResolvedPlaybackMedia?"))
         assertTrue(player.contains("localPlaybackSourceRepository.resolve("))
         assertTrue(player.contains("LocalPlaybackResolutionRequest("))
+        assertTrue(player.contains("subtitles = resolution.subtitles"))
+        assertTrue(player.contains("playbackMedia.subtitles.toLocalSubtitleConfigurations()"))
+        assertFalse(player.contains("downloadRepository.getItemDownloadDirectory"))
+        assertFalse(player.contains("val segmentsJob = launch(Dispatchers.IO) { loadSegments(fullItem.id) }"))
+        assertTrue(player.contains("if (useLocalSource || isOffline) {\n                clearSegments()"))
         assertTrue(player.contains("if (mediaSource?.type != AfinitySourceType.LOCAL) return"))
     }
 
@@ -318,7 +410,10 @@ class OfflineLocalCatalogUiContractSourceTest {
         assertTrue(navigationPolicy.contains("source.type == AfinitySourceType.LOCAL"))
         assertTrue(navigation.contains("route.startsWith(\"library_content/\")"))
         assertTrue(libraryContent.contains("private val localLibraryMediaRepository: LocalLibraryMediaRepository"))
+        assertTrue(libraryContent.contains("private val localLibraryScanService: LocalLibraryScanService"))
         assertTrue(libraryContent.contains("private fun loadLocalLibraryContent("))
+        assertTrue(libraryContent.contains("scheduleLocalLibrarySync(visibilityContext, nameStartsWith)"))
+        assertTrue(libraryContent.contains("scanEnabledRootsWithArtworkBackfill(visibilityContext)"))
         assertTrue(libraryContent.contains("localLibraryMediaRepository"))
         assertTrue(libraryContent.contains(".getContentForContainer("))
         assertTrue(libraryContent.contains("flowOf(PagingData.from(localItems))"))

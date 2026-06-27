@@ -213,9 +213,7 @@ constructor(
                 _isLoadingEpisode.value = true
                 val fullEpisode =
                     try {
-                        mediaRepository
-                            .getItem(episode.id, fields = FieldSets.ITEM_DETAIL)
-                            ?.toAfinityEpisode(mediaRepository.getBaseUrl(), null)
+                        mediaRepository.getItemById(episode.id) as? AfinityEpisode
                     } catch (e: Exception) {
                         try {
                             authRepository.currentUser.value?.id?.let {

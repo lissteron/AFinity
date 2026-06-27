@@ -1,6 +1,7 @@
 package com.makd.afinity.data.local
 
 import java.util.UUID
+import timber.log.Timber
 
 class LocalLibraryScanner(
     private val fileSystem: LocalLibraryFileSystem,
@@ -28,44 +29,70 @@ class LocalLibraryScanner(
         val files = mutableListOf<LocalMediaFileRecord>()
         val importJobs = mutableListOf<LocalMediaImportJobRecord>()
         val artworkDirectoryListings = mutableMapOf<String, List<LocalLibraryNode>>()
-        walk(root).forEach { node ->
-            if (shouldCancel()) {
-                return LocalLibraryScanSummary(
-                    rootId = root.registryId,
-                    discoveredFiles = files.size,
-                    importedItems = files.size,
-                    updatedItems = files.size,
-                    unavailableItems = 0,
-                    duplicateGroups = indexRepository.duplicateGroupCount(),
-                    parseWarnings = warnings.size,
-                    cancelled = true,
-                    errors = warnings,
-                )
+        try {
+            walk(root).forEach { node ->
+                if (shouldCancel()) {
+                    return LocalLibraryScanSummary(
+                        rootId = root.registryId,
+                        discoveredFiles = files.size,
+                        importedItems = files.size,
+                        updatedItems = files.size,
+                        unavailableItems = 0,
+                        duplicateGroups = indexRepository.duplicateGroupCount(),
+                        parseWarnings = warnings.size,
+                        cancelled = true,
+                        errors = warnings,
+                    )
+                }
+                if (node.name.isStagingFile()) {
+                    importJobs +=
+                        node.toImportPendingJob(
+                            root,
+                            "Staging file is not importable until finish verifies final media",
+                        )
+                    return@forEach
+                }
+                if (!node.isMediaFile()) return@forEach
+                val sidecarPath = pathPolicy.sidecarPathForMedia(node.relativePath)
+                val sidecarResult =
+                    fileSystem.readText(root, sidecarPath)?.let(sidecarReader::readMediaSidecar)
+                sidecarResult?.warnings?.let(warnings::addAll)
+                val record =
+                    buildRecord(
+                        root,
+                        node,
+                        sidecarPath.takeIf { sidecarResult?.sidecar != null },
+                        sidecarResult?.sidecar,
+                        artworkDirectoryListings,
+                    )
+                if (record != null) {
+                    files += record.copy(visibleByDefault = true)
+                } else {
+                    val warning = "Unable to parse ${node.relativePath}"
+                    warnings += warning
+                    importJobs += node.toImportPendingJob(root, warning)
+                }
             }
-            if (node.name.isStagingFile()) {
-                importJobs += node.toImportPendingJob(root, "Staging file is not importable until finish verifies final media")
-                return@forEach
-            }
-            if (!node.isMediaFile()) return@forEach
-            val sidecarPath = pathPolicy.sidecarPathForMedia(node.relativePath)
-            val sidecarResult =
-                fileSystem.readText(root, sidecarPath)?.let(sidecarReader::readMediaSidecar)
-            sidecarResult?.warnings?.let(warnings::addAll)
-            val record =
-                buildRecord(
-                    root,
-                    node,
-                    sidecarPath.takeIf { sidecarResult?.sidecar != null },
-                    sidecarResult?.sidecar,
-                    artworkDirectoryListings,
-                )
-            if (record != null) {
-                files += record.copy(visibleByDefault = true)
-            } else {
-                val warning = "Unable to parse ${node.relativePath}"
-                warnings += warning
-                importJobs += node.toImportPendingJob(root, warning)
-            }
+        } catch (error: LocalLibraryRootAccessException) {
+            indexRepository.markRootUnavailable(root)
+            Timber.w(
+                error,
+                "Local library root unavailable: id=%s kind=%s path=%s",
+                root.registryId,
+                root.kind,
+                root.uriOrPath,
+            )
+            return LocalLibraryScanSummary(
+                rootId = root.registryId,
+                discoveredFiles = 0,
+                importedItems = 0,
+                updatedItems = 0,
+                unavailableItems = 1,
+                duplicateGroups = indexRepository.duplicateGroupCount(),
+                parseWarnings = 0,
+                cancelled = false,
+                errors = listOf(error.message ?: "Root unavailable"),
+            )
         }
 
         indexRepository.replaceRootScan(root, files, importJobs)
@@ -80,7 +107,18 @@ class LocalLibraryScanner(
             parseWarnings = warnings.size,
             cancelled = false,
             errors = warnings,
-        )
+        ).also { summary ->
+            Timber.i(
+                "Local library root scanned: id=%s kind=%s path=%s files=%d importJobs=%d duplicateGroups=%d warnings=%d",
+                root.registryId,
+                root.kind,
+                root.uriOrPath,
+                summary.discoveredFiles,
+                importJobs.size,
+                summary.duplicateGroups,
+                summary.parseWarnings,
+            )
+        }
     }
 
     private fun walk(root: LocalLibraryRootRecord): Sequence<LocalLibraryNode> =

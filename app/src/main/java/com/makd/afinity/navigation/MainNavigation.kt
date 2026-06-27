@@ -232,6 +232,7 @@ fun MainNavigation(
                     audioStreamIndex = null,
                     subtitleStreamIndex = null,
                     startPositionMs = playableItem.playbackPositionTicks / 10_000,
+                    seasonId = (playableItem as? AfinityEpisode)?.seasonId,
                 )
             } catch (e: Exception) {
                 Timber.e(e, "Failed to launch playable item for: ${item.name}")
@@ -628,6 +629,7 @@ fun MainNavigation(
                                                 subtitleStreamIndex =
                                                     selection?.subtitleStreamIndex,
                                                 startPositionMs = selection?.startPositionMs ?: 0L,
+                                                seasonId = (item as? AfinityEpisode)?.seasonId,
                                             )
                                         },
                                         modifier = Modifier.fillMaxSize(),
@@ -654,6 +656,7 @@ fun MainNavigation(
                                                     subtitleStreamIndex =
                                                         selection.subtitleStreamIndex,
                                                     startPositionMs = selection.startPositionMs,
+                                                    seasonId = (item as? AfinityEpisode)?.seasonId,
                                                 )
                                             }
                                         },

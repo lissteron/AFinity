@@ -16,6 +16,7 @@ object PlayerLauncher {
         audioStreamIndex: Int? = null,
         subtitleStreamIndex: Int? = null,
         startPositionMs: Long = 0L,
+        seriesId: UUID? = null,
         seasonId: UUID? = null,
         shuffle: Boolean = false,
     ) {
@@ -30,6 +31,7 @@ object PlayerLauncher {
                 audioStreamIndex?.let { putExtra("audioStreamIndex", it) }
                 subtitleStreamIndex?.let { putExtra("subtitleStreamIndex", it) }
                 putExtra("startPositionMs", startPositionMs)
+                seriesId?.let { putExtra("seriesId", it.toString()) }
                 seasonId?.let { putExtra("seasonId", it.toString()) }
                 putExtra("shuffle", shuffle)
 

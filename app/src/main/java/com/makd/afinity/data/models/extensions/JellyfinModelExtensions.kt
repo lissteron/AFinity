@@ -21,8 +21,10 @@ import com.makd.afinity.data.models.media.AfinityShow
 import com.makd.afinity.data.models.media.AfinitySource
 import com.makd.afinity.data.models.media.AfinitySourceType
 import com.makd.afinity.data.models.media.AfinityVideo
+import com.makd.afinity.data.models.media.resolveAfinityEpisodeIdentity
 import com.makd.afinity.data.models.media.toAfinityExternalUrl
 import com.makd.afinity.data.models.media.toAfinityTrickplayInfo
+import java.util.UUID
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.BaseItemPerson
@@ -195,7 +197,17 @@ fun BaseItemDto.toAfinitySeason(baseUrl: String): AfinitySeason {
     )
 }
 
-fun BaseItemDto.toAfinityEpisode(baseUrl: String): AfinityEpisode? {
+fun BaseItemDto.toAfinityEpisode(
+    baseUrl: String,
+    fallbackSeriesId: UUID? = null,
+    fallbackSeasonId: UUID? = null,
+): AfinityEpisode? {
+    val identity =
+        resolveAfinityEpisodeIdentity(
+            fallbackSeriesId = fallbackSeriesId,
+            fallbackSeasonId = fallbackSeasonId,
+        ) ?: return null
+
     return try {
         AfinityEpisode(
             id = id,
@@ -261,10 +273,10 @@ fun BaseItemDto.toAfinityEpisode(baseUrl: String): AfinityEpisode? {
             playbackPositionTicks = userData?.playbackPositionTicks ?: 0L,
             premiereDate = premiereDate,
             seriesName = seriesName.orEmpty(),
-            seriesId = seriesId!!,
+            seriesId = identity.seriesId,
             seriesLogo = null,
             seriesLogoBlurHash = null,
-            seasonId = seasonId!!,
+            seasonId = identity.seasonId,
             communityRating = communityRating,
             people = people?.map { it.toAfinityPerson(baseUrl) } ?: emptyList(),
             missing = locationType == LocationType.VIRTUAL,

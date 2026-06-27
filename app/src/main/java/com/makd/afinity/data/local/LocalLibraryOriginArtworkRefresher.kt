@@ -8,6 +8,7 @@ import com.makd.afinity.data.models.extensions.toAfinityShow
 import com.makd.afinity.data.models.media.AfinityImages
 import com.makd.afinity.data.repository.download.SessionRestoreResolver
 import com.makd.afinity.data.repository.download.SessionRestoreResult
+import java.security.MessageDigest
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -33,6 +34,7 @@ data class LocalLibraryOriginArtworkProgress(
 data class LocalLibraryOriginArtworkSummary(
     val refreshedItems: Int,
     val writtenFiles: Int,
+    val removedFiles: Int,
     val updatedSidecars: Int,
     val skippedItems: Int,
     val failedItems: Int,
@@ -85,27 +87,53 @@ constructor(
     private val sidecarReader: LocalLibrarySidecarReader,
     private val remoteArtworkResolver: LocalLibraryRemoteArtworkResolver,
 ) {
-    suspend fun refreshCandidateCount(): Int =
+    suspend fun refreshCandidateCount(forceRefreshItemArtwork: Boolean = false): Int =
         withContext(Dispatchers.IO) {
             val rootsById = rootStore.getRoots().associateBy { it.registryId }
-            indexRepository.allMediaFiles().count { mediaFile ->
-                mediaFile.refreshCandidate(rootsById) != null
+            val mediaFiles = indexRepository.allMediaFiles()
+            val corruptedItemIds =
+                if (forceRefreshItemArtwork) emptySet() else mediaFiles.duplicatedItemArtworkLocalItemIds(rootsById)
+            mediaFiles.count { mediaFile ->
+                mediaFile.refreshCandidate(
+                    rootsById = rootsById,
+                    forceRefreshItemArtwork = forceRefreshItemArtwork ||
+                        mediaFile.identity.localItemId in corruptedItemIds,
+                ) != null
             }
         }
 
     suspend fun refreshMissingArtwork(
         progress: suspend (LocalLibraryOriginArtworkProgress) -> Unit = {},
+        overwriteExistingItemArtwork: Boolean = false,
     ): LocalLibraryOriginArtworkSummary =
         withContext(Dispatchers.IO) {
             val rootsById = rootStore.getRoots().associateBy { it.registryId }
+            val mediaFiles = indexRepository.allMediaFiles()
+            val corruptedItemIds =
+                if (overwriteExistingItemArtwork) {
+                    emptySet()
+                } else {
+                    mediaFiles.duplicatedItemArtworkLocalItemIds(rootsById)
+                }
+            if (corruptedItemIds.isNotEmpty()) {
+                Timber.i(
+                    "Found duplicated item artwork for %d local library items; refreshing item artwork from origin",
+                    corruptedItemIds.size,
+                )
+            }
             val candidates =
-                indexRepository.allMediaFiles().mapNotNull { mediaFile ->
-                    mediaFile.refreshCandidate(rootsById)
+                mediaFiles.mapNotNull { mediaFile ->
+                    mediaFile.refreshCandidate(
+                        rootsById = rootsById,
+                        forceRefreshItemArtwork = overwriteExistingItemArtwork ||
+                            mediaFile.identity.localItemId in corruptedItemIds,
+                    )
                 }
             val processedTargets = mutableSetOf<String>()
             val blockedSessions = mutableSetOf<Pair<String, UUID>>()
             var refreshedItems = 0
             var writtenFiles = 0
+            var removedFiles = 0
             var updatedSidecars = 0
             var skippedItems = 0
             var failedItems = 0
@@ -144,17 +172,19 @@ constructor(
                     if (resolved == null) {
                         skippedItems += 1
                     } else {
-                        val written =
+                        val changes =
                             writeResolvedArtwork(
                                 candidate.root,
                                 candidate.mediaFile,
                                 resolved,
                                 processedTargets,
+                                candidate.overwriteExistingItemArtwork,
                             )
                         val sidecarUpdated =
                             updateSidecarParentIdentity(candidate.root, candidate.mediaFile, resolved)
-                        if (written > 0 || sidecarUpdated) refreshedItems += 1 else skippedItems += 1
-                        writtenFiles += written
+                        if (changes.hasChanges || sidecarUpdated) refreshedItems += 1 else skippedItems += 1
+                        writtenFiles += changes.writtenFiles
+                        removedFiles += changes.removedFiles
                         if (sidecarUpdated) updatedSidecars += 1
                     }
                 } catch (error: CancellationException) {
@@ -176,18 +206,37 @@ constructor(
             LocalLibraryOriginArtworkSummary(
                 refreshedItems = refreshedItems,
                 writtenFiles = writtenFiles,
+                removedFiles = removedFiles,
                 updatedSidecars = updatedSidecars,
                 skippedItems = skippedItems,
                 failedItems = failedItems,
-            )
+            ).also { summary ->
+                if (
+                    corruptedItemIds.isNotEmpty() ||
+                        summary.writtenFiles > 0 ||
+                        summary.removedFiles > 0 ||
+                        summary.failedItems > 0
+                ) {
+                    Timber.i(
+                        "Local library origin artwork refresh finished: refreshed=%d, written=%d, removed=%d, sidecars=%d, skipped=%d, failed=%d",
+                        summary.refreshedItems,
+                        summary.writtenFiles,
+                        summary.removedFiles,
+                        summary.updatedSidecars,
+                        summary.skippedItems,
+                        summary.failedItems,
+                    )
+                }
+            }
         }
 
     private fun LocalMediaFileRecord.refreshCandidate(
-        rootsById: Map<UUID, LocalLibraryRootRecord>
+        rootsById: Map<UUID, LocalLibraryRootRecord>,
+        forceRefreshItemArtwork: Boolean,
     ): LocalArtworkRefreshCandidate? {
         val root = rootsById[rootRegistryId]?.takeIf { it.enabled && it.lastKnownAvailable && it.writable }
             ?: return null
-        if (!needsOriginArtworkRefresh(root)) return null
+        if (!needsOriginArtworkRefresh(root, forceRefreshItemArtwork)) return null
         val origin =
             LocalLibraryArtworkOrigin(
                 serverId = identity.serverId?.takeIf { it.isNotBlank() } ?: return null,
@@ -197,7 +246,12 @@ constructor(
                 itemName = title.name,
                 mediaKind = mediaKind,
             )
-        return LocalArtworkRefreshCandidate(this, root, origin)
+        return LocalArtworkRefreshCandidate(
+            mediaFile = this,
+            root = root,
+            origin = origin,
+            overwriteExistingItemArtwork = forceRefreshItemArtwork,
+        )
     }
 
     private fun writeResolvedArtwork(
@@ -205,13 +259,16 @@ constructor(
         mediaFile: LocalMediaFileRecord,
         resolved: LocalLibraryResolvedArtwork,
         processedTargets: MutableSet<String>,
-    ): Int {
+        overwriteExistingItemArtwork: Boolean,
+    ): ArtworkFileChanges {
         if (mediaFile.mediaKind == LocalMediaKind.MOVIE) {
             return writeImageSet(
                 root,
                 LocalLibraryArtworkPaths.itemImagesDirectory(mediaFile.relativePath, mediaFile.mediaKind),
                 resolved.itemImages,
                 processedTargets,
+                overwriteExisting = overwriteExistingItemArtwork,
+                removeMissingExisting = overwriteExistingItemArtwork,
             )
         }
 
@@ -220,29 +277,85 @@ constructor(
             LocalLibraryArtworkPaths.itemImagesDirectory(mediaFile.relativePath, mediaFile.mediaKind),
             resolved.itemImages,
             processedTargets,
+            overwriteExisting = overwriteExistingItemArtwork,
+            removeMissingExisting = overwriteExistingItemArtwork,
         ) + writeImageSet(
             root,
             LocalLibraryArtworkPaths.seasonImagesDirectory(mediaFile.relativePath),
             resolved.seasonImages,
             processedTargets,
+            overwriteExisting = false,
         ) + writeImageSet(
             root,
             LocalLibraryArtworkPaths.showImagesDirectory(mediaFile.relativePath),
             resolved.showImages,
             processedTargets,
+            overwriteExisting = false,
         )
     }
 
-    private fun LocalMediaFileRecord.needsOriginArtworkRefresh(root: LocalLibraryRootRecord): Boolean =
+    private fun LocalMediaFileRecord.needsOriginArtworkRefresh(
+        root: LocalLibraryRootRecord,
+        forceRefreshItemArtwork: Boolean,
+    ): Boolean =
         when (mediaKind) {
             LocalMediaKind.MOVIE ->
-                !hasDisplayImage(root, LocalLibraryArtworkPaths.itemImagesDirectory(relativePath, mediaKind))
+                forceRefreshItemArtwork ||
+                    !hasDisplayImage(root, LocalLibraryArtworkPaths.itemImagesDirectory(relativePath, mediaKind))
 
             LocalMediaKind.EPISODE ->
-                !hasDisplayImage(root, LocalLibraryArtworkPaths.itemImagesDirectory(relativePath, mediaKind)) ||
+                forceRefreshItemArtwork ||
+                    !hasDisplayImage(root, LocalLibraryArtworkPaths.itemImagesDirectory(relativePath, mediaKind)) ||
                     !hasDisplayImage(root, LocalLibraryArtworkPaths.seasonImagesDirectory(relativePath)) ||
                     !hasDisplayImage(root, LocalLibraryArtworkPaths.showImagesDirectory(relativePath))
         }
+
+    private fun List<LocalMediaFileRecord>.duplicatedItemArtworkLocalItemIds(
+        rootsById: Map<UUID, LocalLibraryRootRecord>
+    ): Set<String> {
+        val entries =
+            mapNotNull { mediaFile ->
+                val root =
+                    rootsById[mediaFile.rootRegistryId]
+                        ?.takeIf { it.enabled && it.lastKnownAvailable && it.writable }
+                        ?: return@mapNotNull null
+                val directory =
+                    LocalLibraryArtworkPaths.itemImagesDirectory(
+                        mediaFile.relativePath,
+                        mediaFile.mediaKind,
+                    )
+                val relativePath =
+                    firstDisplayImageVariant(root, directory)
+                        ?: return@mapNotNull null
+                val bytes =
+                    fileSystem.readBytes(root, relativePath)
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: return@mapNotNull null
+                DuplicatedArtworkEntry(
+                    localItemId = mediaFile.identity.localItemId,
+                    fingerprint = bytes.sha256Fingerprint(),
+                )
+            }
+        return entries
+            .groupBy { it.fingerprint }
+            .values
+            .filter { group -> group.map { it.localItemId }.distinct().size > 1 }
+            .flatMap { group -> group.map { it.localItemId } }
+            .toSet()
+    }
+
+    private fun firstDisplayImageVariant(
+        root: LocalLibraryRootRecord,
+        directory: String,
+    ): String? =
+        existingImageVariant(root, directory, "primary")
+            ?: existingImageVariant(root, directory, "thumb")
+            ?: existingImageVariant(root, directory, "backdrop")
+
+    private fun ByteArray.sha256Fingerprint(): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(this)
+        return "${size}:${digest.joinToString("") { "%02x".format(it.toInt() and 0xff) }}"
+    }
 
     private fun hasDisplayImage(
         root: LocalLibraryRootRecord,
@@ -257,14 +370,32 @@ constructor(
         directory: String,
         images: LocalLibraryResolvedImageSet,
         processedTargets: MutableSet<String>,
-    ): Int {
-        if (directory.isBlank() || images.isEmpty) return 0
-        var written = 0
-        written += writeImage(root, directory, "primary", images.primary, processedTargets)
-        written += writeImage(root, directory, "backdrop", images.backdrop, processedTargets)
-        written += writeImage(root, directory, "thumb", images.thumb, processedTargets)
-        written += writeImage(root, directory, "logo", images.logo, processedTargets)
-        return written
+        overwriteExisting: Boolean,
+        removeMissingExisting: Boolean = false,
+    ): ArtworkFileChanges {
+        if (directory.isBlank() || (images.isEmpty && !removeMissingExisting)) return ArtworkFileChanges()
+        var changes = ArtworkFileChanges()
+        changes += syncImage(root, directory, "primary", images.primary, processedTargets, overwriteExisting, removeMissingExisting)
+        changes += syncImage(root, directory, "backdrop", images.backdrop, processedTargets, overwriteExisting, removeMissingExisting)
+        changes += syncImage(root, directory, "thumb", images.thumb, processedTargets, overwriteExisting, removeMissingExisting)
+        changes += syncImage(root, directory, "logo", images.logo, processedTargets, overwriteExisting, removeMissingExisting)
+        return changes
+    }
+
+    private fun syncImage(
+        root: LocalLibraryRootRecord,
+        directory: String,
+        baseName: String,
+        image: LocalLibraryResolvedImage?,
+        processedTargets: MutableSet<String>,
+        overwriteExisting: Boolean,
+        removeMissingExisting: Boolean,
+    ): ArtworkFileChanges {
+        if (image != null) return writeImage(root, directory, baseName, image, processedTargets, overwriteExisting)
+        if (!removeMissingExisting) return ArtworkFileChanges()
+        return ArtworkFileChanges(
+            removedFiles = deleteExistingImageVariants(root, directory, baseName, keepRelativePath = null, processedTargets)
+        )
     }
 
     private fun writeImage(
@@ -273,14 +404,38 @@ constructor(
         baseName: String,
         image: LocalLibraryResolvedImage?,
         processedTargets: MutableSet<String>,
-    ): Int {
-        image ?: return 0
+        overwriteExisting: Boolean,
+    ): ArtworkFileChanges {
+        image ?: return ArtworkFileChanges()
         val targetKey = "${root.registryId}:$directory/$baseName"
-        if (targetKey in processedTargets) return 0
+        if (targetKey in processedTargets) return ArtworkFileChanges()
         processedTargets += targetKey
-        if (existingImageVariant(root, directory, baseName) != null) return 0
+        if (!overwriteExisting && existingImageVariant(root, directory, baseName) != null) return ArtworkFileChanges()
         val relativePath = "$directory/$baseName.${image.extension}"
-        return if (fileSystem.writeBytes(root, relativePath, image.bytes, image.mimeType)) 1 else 0
+        val written = fileSystem.writeBytes(root, relativePath, image.bytes, image.mimeType)
+        if (!written) return ArtworkFileChanges()
+        val removed = deleteExistingImageVariants(root, directory, baseName, relativePath)
+        return ArtworkFileChanges(writtenFiles = 1, removedFiles = removed)
+    }
+
+    private fun deleteExistingImageVariants(
+        root: LocalLibraryRootRecord,
+        directory: String,
+        baseName: String,
+        keepRelativePath: String?,
+        processedTargets: MutableSet<String>? = null,
+    ): Int {
+        val targetKey = "${root.registryId}:$directory/$baseName"
+        if (processedTargets != null) {
+            if (targetKey in processedTargets) return 0
+            processedTargets += targetKey
+        }
+        return IMAGE_EXTENSIONS
+            .map { extension -> "$directory/$baseName.$extension" }
+            .filter { it != keepRelativePath }
+            .count { relativePath ->
+                fileSystem.exists(root, relativePath) && fileSystem.delete(root, relativePath)
+            }
     }
 
     private fun existingImageVariant(
@@ -321,7 +476,27 @@ constructor(
         val mediaFile: LocalMediaFileRecord,
         val root: LocalLibraryRootRecord,
         val origin: LocalLibraryArtworkOrigin,
+        val overwriteExistingItemArtwork: Boolean,
     )
+
+    private data class DuplicatedArtworkEntry(
+        val localItemId: String,
+        val fingerprint: String,
+    )
+
+    private data class ArtworkFileChanges(
+        val writtenFiles: Int = 0,
+        val removedFiles: Int = 0,
+    ) {
+        val hasChanges: Boolean
+            get() = writtenFiles > 0 || removedFiles > 0
+
+        operator fun plus(other: ArtworkFileChanges): ArtworkFileChanges =
+            ArtworkFileChanges(
+                writtenFiles = writtenFiles + other.writtenFiles,
+                removedFiles = removedFiles + other.removedFiles,
+            )
+    }
 
     private companion object {
         val IMAGE_EXTENSIONS = listOf("jpg", "jpeg", "png", "webp", "gif")

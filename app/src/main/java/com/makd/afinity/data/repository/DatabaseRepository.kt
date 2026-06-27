@@ -256,6 +256,13 @@ interface DatabaseRepository {
         updatedAt: Long = System.currentTimeMillis(),
     ): Boolean
 
+    suspend fun touchActiveDownloadClaim(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        updatedAt: Long = System.currentTimeMillis(),
+    ): Boolean
+
     suspend fun finalizeActiveDownload(
         downloadId: UUID,
         activeClaimId: UUID,

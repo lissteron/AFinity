@@ -26,6 +26,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.operations.ItemsApi
+import org.jellyfin.sdk.api.operations.TvShowsApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.ItemFields
@@ -160,7 +161,13 @@ constructor(
                 true
             }
             BaseItemKind.EPISODE -> {
-                val episode = item.toAfinityEpisode(baseUrl) ?: return false
+                val episode =
+                    item.toAfinityEpisodeForDownload(
+                        apiClient = session.apiClient,
+                        userId = download.userId,
+                        baseUrl = baseUrl,
+                        download = download,
+                    ) ?: return false
                 val existingImages =
                     databaseRepository.getEpisode(episode.id, download.userId)?.images
                 refreshRelatedEpisodeArtwork(
@@ -302,6 +309,52 @@ constructor(
             .items
             .firstOrNull()
 
+    private suspend fun BaseItemDto.toAfinityEpisodeForDownload(
+        apiClient: ApiClient,
+        userId: UUID,
+        baseUrl: String,
+        download: DownloadDto,
+    ): AfinityEpisode? {
+        val fallbackSeriesId = seriesId ?: download.seriesId?.toUuidOrNull()
+        val fallbackSeasonId =
+            seasonId
+                ?: download.seasonId?.toUuidOrNull()
+                ?: fallbackSeriesId?.let { resolveSingleSeasonId(apiClient, userId, it) }
+        return toAfinityEpisode(
+            baseUrl = baseUrl,
+            fallbackSeriesId = fallbackSeriesId,
+            fallbackSeasonId = fallbackSeasonId,
+        )
+    }
+
+    private suspend fun resolveSingleSeasonId(
+        apiClient: ApiClient,
+        userId: UUID,
+        seriesId: UUID,
+    ): UUID? =
+        runCatching {
+                TvShowsApi(apiClient)
+                    .getSeasons(
+                        seriesId = seriesId,
+                        userId = userId,
+                        enableImages = false,
+                        enableUserData = false,
+                    )
+                    .content
+                    .items
+                    .singleOrNull()
+                    ?.id
+            }
+            .onFailure { error ->
+                Timber.w(error, "Failed to resolve fallback season for artwork refresh series $seriesId")
+            }
+            .getOrNull()
+
+    private fun String.toUuidOrNull(): UUID? =
+        runCatching { UUID.fromString(this) }
+            .onFailure { Timber.w("Ignoring invalid persisted UUID: $this") }
+            .getOrNull()
+
     private suspend fun refreshMovieImages(
         apiClient: ApiClient,
         okHttpClient: OkHttpClient,
@@ -399,30 +452,15 @@ constructor(
     }
 
     private suspend fun itemImagesDir(download: DownloadDto, itemId: UUID): File {
-        val itemDir = downloadStorageManager.getItemDownloadDirectory(download, itemId)
-        return File(itemDir, "images").also { it.mkdirs() }
+        return downloadStorageManager.getItemImagesDirectory(download, itemId)
     }
 
     private suspend fun showImagesDir(download: DownloadDto, showId: UUID): File {
-        val itemDir = downloadStorageManager.getItemDownloadDirectory(download, download.itemId)
-        val showDir =
-            itemDir.parentFile?.parentFile?.parentFile
-                ?: File(
-                    downloadStorageManager.getSelectedDownloadsRoot(),
-                    "${download.serverId}/shows/$showId",
-                )
-        return File(showDir, "images").also { it.mkdirs() }
+        return downloadStorageManager.getShowImagesDirectory(download, showId)
     }
 
     private suspend fun seasonImagesDir(download: DownloadDto, season: AfinitySeason): File {
-        val itemDir = downloadStorageManager.getItemDownloadDirectory(download, download.itemId)
-        val seasonDir =
-            itemDir.parentFile
-                ?: File(
-                    downloadStorageManager.getSelectedDownloadsRoot(),
-                    "${download.serverId}/shows/${season.seriesId}/seasons/${season.indexNumber}",
-                )
-        return File(seasonDir, "images").also { it.mkdirs() }
+        return downloadStorageManager.getSeasonImagesDirectory(download, season.seriesId, season.indexNumber)
     }
 
     private suspend fun downloadImageSet(

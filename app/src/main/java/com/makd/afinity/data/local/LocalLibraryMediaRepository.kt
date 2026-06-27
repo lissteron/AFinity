@@ -46,6 +46,22 @@ constructor(
     suspend fun hasIndexedMedia(): Boolean =
         withContext(Dispatchers.IO) { indexRepository.allMediaFiles().isNotEmpty() }
 
+    suspend fun visibleCatalogSummary(
+        visibilityContext: LocalLibraryVisibilityContext =
+            LocalLibraryVisibilityContext(currentUserId = null, kidModeEnabled = false, parentUnlocked = false),
+    ): LocalLibraryCatalogSummary =
+        withContext(Dispatchers.IO) {
+            val rootsById = rootStore.getRoots().associateBy { it.registryId }
+            val files =
+                indexRepository
+                    .visibleMediaFiles(visibilityContext)
+                    .filter { file -> rootsById[file.rootRegistryId]?.isVisibleRoot() == true }
+            LocalLibraryCatalogSummary(
+                fileCount = files.size,
+                totalSizeBytes = files.sumOf { it.sizeBytes },
+            )
+        }
+
     suspend fun getVisibleMovies(
         profileUserId: String? = null,
         visibilityContext: LocalLibraryVisibilityContext =
@@ -394,7 +410,7 @@ constructor(
             endDate = null,
             trailer = null,
             tagline = null,
-            images = artwork.toAfinityImages(),
+            images = artwork.toAfinityImages(inheritParentArtwork = true),
             chapters = emptyList(),
             trickplayInfo = null,
             providerIds = identity.providerIds.takeIf { it.isNotEmpty() },
@@ -503,17 +519,34 @@ constructor(
     private fun String.toUuidOrNull(): UUID? =
         runCatching { UUID.fromString(this) }.getOrNull()
 
-    private fun LocalMediaArtwork.toAfinityImages(): AfinityImages =
+    private fun LocalMediaArtwork.toAfinityImages(
+        inheritParentArtwork: Boolean = false,
+    ): AfinityImages =
         AfinityImages(
-            primary = primaryUri?.toAndroidAssetUri(),
-            backdrop = backdropUri?.toAndroidAssetUri(),
-            thumb = thumbUri?.toAndroidAssetUri(),
-            logo = logoUri?.toAndroidAssetUri(),
+            primary =
+                (primaryUri ?: parentArtwork(inheritParentArtwork, seasonPrimaryUri, showPrimaryUri))
+                    ?.toAndroidAssetUri(),
+            backdrop =
+                (backdropUri ?: parentArtwork(inheritParentArtwork, seasonBackdropUri, showBackdropUri))
+                    ?.toAndroidAssetUri(),
+            thumb =
+                (thumbUri ?: parentArtwork(inheritParentArtwork, seasonThumbUri, showThumbUri))
+                    ?.toAndroidAssetUri(),
+            logo =
+                (logoUri ?: parentArtwork(inheritParentArtwork, seasonLogoUri, showLogoUri))
+                    ?.toAndroidAssetUri(),
             showPrimary = showPrimaryUri?.toAndroidAssetUri(),
             showBackdrop = showBackdropUri?.toAndroidAssetUri(),
             showThumb = showThumbUri?.toAndroidAssetUri(),
             showLogo = showLogoUri?.toAndroidAssetUri(),
         )
+
+    private fun parentArtwork(
+        inheritParentArtwork: Boolean,
+        seasonUri: String?,
+        showUri: String?,
+    ): String? =
+        if (inheritParentArtwork) seasonUri ?: showUri else null
 
     private fun List<LocalEpisodeCatalogEntry>.toSeasonImages(): AfinityImages {
         val images = map { it.episode.images }

@@ -3,18 +3,24 @@ package com.makd.afinity.data.repository.download
 import com.makd.afinity.data.repository.DatabaseRepository
 import com.makd.afinity.data.repository.SecurePreferencesRepository
 import com.makd.afinity.data.repository.ServerUserToken
+import com.makd.afinity.data.repository.server.AddressResolutionResult
+import com.makd.afinity.data.repository.server.ServerAddressResolver
 import com.makd.afinity.di.DownloadClient
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import org.jellyfin.sdk.Jellyfin
+import org.jellyfin.sdk.api.operations.UserApi
+import timber.log.Timber
 
 @Singleton
 class SessionRestoreResolver
 @Inject
 constructor(
     private val databaseRepository: DatabaseRepository,
+    private val serverAddressResolver: ServerAddressResolver,
     private val securePreferencesRepository: SecurePreferencesRepository,
     private val jellyfin: Jellyfin,
     @param:DownloadClient private val downloadClient: OkHttpClient,
@@ -62,21 +68,61 @@ constructor(
             )
         }
 
+        val restoredServerUrl = resolveRestoredServerUrl(serverId, tokenInfo.serverUrl, token)
         val apiClient =
-            jellyfin.createApi(baseUrl = tokenInfo.serverUrl).also {
-                it.update(baseUrl = tokenInfo.serverUrl, accessToken = token)
+            jellyfin.createApi(baseUrl = restoredServerUrl).also {
+                it.update(baseUrl = restoredServerUrl, accessToken = token)
             }
         return SessionRestoreResult.Restored(
             RestoredDownloadSession(
                 serverId = serverId,
                 userId = userId,
-                serverUrl = tokenInfo.serverUrl,
+                serverUrl = restoredServerUrl,
                 accessToken = token,
                 apiClient = apiClient,
                 okHttpClient = downloadClient,
             )
         )
     }
+
+    private suspend fun resolveRestoredServerUrl(
+        serverId: String,
+        savedServerUrl: String,
+        accessToken: String,
+    ): String {
+        val result =
+            runCatching {
+                    serverAddressResolver.resolveAddress(serverId) { address ->
+                        canAuthenticateAt(address, accessToken)
+                    }
+                }
+                .onFailure { error ->
+                    Timber.w(error, "Failed to resolve server address for restored background session")
+                }
+                .getOrNull()
+        return when (result) {
+            is AddressResolutionResult.Success -> result.address
+            is AddressResolutionResult.AllFailed -> {
+                Timber.w(
+                    "All server addresses failed for restored background session; falling back to saved URL: %s",
+                    savedServerUrl,
+                )
+                savedServerUrl
+            }
+            null -> savedServerUrl
+        }
+    }
+
+    private suspend fun canAuthenticateAt(address: String, accessToken: String): Boolean =
+        try {
+            val client =
+                jellyfin.createApi(baseUrl = address).also {
+                    it.update(baseUrl = address, accessToken = accessToken)
+                }
+            withTimeoutOrNull(3000L) { UserApi(client).getCurrentUser() }?.content != null
+        } catch (_: Exception) {
+            false
+        }
 
     companion object {
         fun findExactToken(

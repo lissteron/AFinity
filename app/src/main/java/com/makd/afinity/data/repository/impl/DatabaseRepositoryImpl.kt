@@ -817,6 +817,20 @@ constructor(
         ) == 1
     }
 
+    override suspend fun touchActiveDownloadClaim(
+        downloadId: UUID,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        updatedAt: Long,
+    ): Boolean {
+        return serverDatabaseDao.touchActiveDownloadClaim(
+            downloadId = downloadId,
+            activeClaimId = activeClaimId,
+            activeBackendRunId = activeBackendRunId,
+            updatedAt = updatedAt,
+        ) == 1
+    }
+
     override suspend fun finalizeActiveDownload(
         downloadId: UUID,
         activeClaimId: UUID,

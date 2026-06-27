@@ -56,6 +56,21 @@ class RoomLocalLibraryIndexRepositoryTest {
     }
 
     @Test
+    fun rootScanWritesDiagnosticScanRunRows() {
+        val dao = FakeLocalLibraryDao()
+        val repository = RoomLocalLibraryIndexRepository(dao)
+
+        repository.replaceRootScan(root(), listOf(record()))
+        repository.markRootUnavailable(root())
+
+        assertEquals(2, dao.scanRuns.size)
+        assertEquals(LocalLibraryScanStatus.COMPLETED.name, dao.scanRuns[0].status)
+        assertEquals(1, dao.scanRuns[0].discoveredFiles)
+        assertEquals(LocalLibraryScanStatus.FAILED.name, dao.scanRuns[1].status)
+        assertEquals(1, dao.scanRuns[1].unavailableItems)
+    }
+
+    @Test
     fun visibleRowsExcludeDisabledRootSnapshots() {
         val dao = FakeLocalLibraryDao()
         val repository = RoomLocalLibraryIndexRepository(dao)
@@ -134,6 +149,7 @@ class RoomLocalLibraryIndexRepositoryTest {
         private val userStates = linkedMapOf<Pair<String, String>, LocalMediaUserStateEntity>()
         private val visibilities =
             linkedMapOf<Pair<String, String>, LocalMediaVisibilityEntity>()
+        val scanRuns = mutableListOf<LocalLibraryScanRunEntity>()
 
         override fun catalogGenerationFlow(): Flow<String> = flowOf("fake")
 
@@ -165,7 +181,9 @@ class RoomLocalLibraryIndexRepositoryTest {
             jobs.forEach { importJobs[it.jobId] = it }
         }
 
-        override fun upsertScanRun(scanRun: LocalLibraryScanRunEntity) = Unit
+        override fun upsertScanRun(scanRun: LocalLibraryScanRunEntity) {
+            scanRuns += scanRun
+        }
 
         override fun upsertUserState(state: LocalMediaUserStateEntity) {
             userStates[state.localItemId to state.profileUserId] = state

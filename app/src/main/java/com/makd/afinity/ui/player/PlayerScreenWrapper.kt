@@ -29,6 +29,7 @@ fun PlayerScreenWrapper(
     audioStreamIndex: Int? = null,
     subtitleStreamIndex: Int? = null,
     startPositionMs: Long = 0L,
+    seriesId: UUID? = null,
     seasonId: UUID? = null,
     shuffle: Boolean = false,
     isLiveChannel: Boolean = false,
@@ -45,11 +46,11 @@ fun PlayerScreenWrapper(
     val streamError by viewModel.streamError.collectAsState()
 
     val defaultChannelName = stringResource(R.string.channel_default_name)
-    LaunchedEffect(itemId, isLiveChannel, defaultChannelName) {
+    LaunchedEffect(itemId, seriesId, seasonId, isLiveChannel, defaultChannelName) {
         if (isLiveChannel) {
             viewModel.loadLiveChannel(itemId, channelName ?: defaultChannelName)
         } else {
-            viewModel.loadItem(itemId)
+            viewModel.loadItem(itemId, fallbackSeriesId = seriesId, fallbackSeasonId = seasonId)
         }
     }
 

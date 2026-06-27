@@ -59,7 +59,6 @@ import com.makd.afinity.data.models.player.VideoZoomMode
 import com.makd.afinity.data.repository.AppDataRepository
 import com.makd.afinity.data.repository.KidModeRepository
 import com.makd.afinity.data.repository.PreferencesRepository
-import com.makd.afinity.data.repository.download.JellyfinDownloadRepository
 import com.makd.afinity.data.repository.media.MediaRepository
 import com.makd.afinity.data.repository.playback.PlaybackRepository
 import com.makd.afinity.data.repository.segments.SegmentsRepository
@@ -70,8 +69,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -99,7 +96,6 @@ constructor(
     private val segmentsRepository: SegmentsRepository,
     private val preferencesRepository: PreferencesRepository,
     private val playlistManager: PlaylistManager,
-    private val downloadRepository: JellyfinDownloadRepository,
     private val appDataRepository: AppDataRepository,
     private val apiClient: ApiClient,
     private val audiobookshelfPlayer: AudiobookshelfPlayer,
@@ -994,13 +990,13 @@ constructor(
                 mediaSourceId = actualMediaSourceId,
             )
             playbackStateManager.trackCurrentItem(fullItem.id)
-            coroutineScope {
-                val streamUrlDeferred =
-                    async(Dispatchers.IO) {
-                        if (useLocalSource) {
-                            resolveLocalPlaybackUrl(mediaSource)
-                        } else {
-                            playbackRepository.getStreamUrl(
+            val playbackMedia =
+                withContext(Dispatchers.IO) {
+                    if (useLocalSource) {
+                        resolveLocalPlaybackMedia(mediaSource)
+                    } else {
+                        playbackRepository
+                            .getStreamUrl(
                                 itemId = fullItem.id,
                                 mediaSourceId = actualMediaSourceId,
                                 audioStreamIndex = targetAudioStreamIndex,
@@ -1009,164 +1005,86 @@ constructor(
                                 maxStreamingBitrate = null,
                                 startTimeTicks = null,
                             )
-                        }
+                            ?.let { ResolvedPlaybackMedia(streamUrl = it, subtitles = emptyList()) }
                     }
+                }
 
-                val segmentsJob = launch(Dispatchers.IO) { loadSegments(fullItem.id) }
-                val trickplayJob =
-                    launch(Dispatchers.IO) { loadTrickplayData(allowRemote = !useLocalSource && !isOffline) }
-                val reportStartJob =
-                    launch(Dispatchers.IO) {
-                        if (!useLocalSource && !isOffline) {
-                            reportPlaybackStart(fullItem)
+            val streamUrl = playbackMedia?.streamUrl
+            if (streamUrl.isNullOrBlank()) {
+                Timber.e("Stream URL is null or empty")
+                updateUiState {
+                    it.copy(
+                        isLoading = false,
+                        showError = true,
+                        errorMessage = context.getString(R.string.error_load_stream),
+                    )
+                }
+                return
+            }
+
+            val externalSubtitles =
+                if (useLocalSource) {
+                    playbackMedia.subtitles.toLocalSubtitleConfigurations()
+                } else {
+                    buildRemoteSubtitleConfigurations(
+                        mediaSource = mediaSource,
+                        itemId = fullItem.id,
+                        mediaSourceId = actualMediaSourceId,
+                    )
+                }
+
+            val mediaItem =
+                MediaItem.Builder()
+                    .setMediaId(fullItem.id.toString())
+                    .setUri(streamUrl)
+                    .setMediaMetadata(MediaMetadata.Builder().setTitle(fullItem.name).build())
+                    .setSubtitleConfigurations(externalSubtitles)
+                    .build()
+
+            withContext(Dispatchers.Main) {
+                player.setMediaItems(listOf(mediaItem), 0, startPositionMs)
+                player.prepare()
+                if (castManager.isCasting) {
+                    startCasting(startPositionOverride = startPositionMs)
+                } else {
+                    player.play()
+                }
+                if (shouldShowControls) {
+                    showControls()
+                }
+            }
+
+            if (useLocalSource || isOffline) {
+                clearSegments()
+            } else {
+                viewModelScope.launch(Dispatchers.IO) { loadSegments(fullItem.id) }
+                viewModelScope.launch(Dispatchers.IO) { reportPlaybackStart(fullItem) }
+            }
+            loadTrickplayData(allowRemote = !useLocalSource && !isOffline)
+
+            if (!isOffline && !useLocalSource && (fullItem is AfinityMovie || fullItem is AfinityEpisode)) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        Timber.d(
+                            "[MultiPart] Checking additional parts for '${fullItem.name}' id=${fullItem.id}"
+                        )
+                        val parts = mediaRepository.getAdditionalParts(fullItem.id)
+                        Timber.d(
+                            "[MultiPart] getAdditionalParts returned ${parts.size} item(s): ${parts.map { "'${it.name}' (${it.id})" }}"
+                        )
+                        if (parts.isNotEmpty()) {
+                            playlistManager.insertAfterCurrent(parts)
+                            Timber.d(
+                                "[MultiPart] Inserted ${parts.size} parts into queue after '${fullItem.name}'"
+                            )
                         }
-                    }
-
-                val streamUrl = streamUrlDeferred.await()
-                if (streamUrl.isNullOrBlank()) {
-                    Timber.e("Stream URL is null or empty")
-                    updateUiState {
-                        it.copy(
-                            isLoading = false,
-                            showError = true,
-                            errorMessage = context.getString(R.string.error_load_stream),
+                    } catch (e: Exception) {
+                        Timber.e(
+                            e,
+                            "[MultiPart] Exception fetching additional parts for: ${fullItem.id}",
                         )
                     }
-                    return@coroutineScope
                 }
-
-                val externalSubtitles =
-                    if (useLocalSource) {
-                        val itemDir = downloadRepository.getItemDownloadDirectory(fullItem.id)
-                        val subtitlesDir = java.io.File(itemDir, "subtitles")
-                        if (subtitlesDir.exists()) {
-                            val files = subtitlesDir.listFiles()
-                            files?.mapNotNull { subtitleFile ->
-                                try {
-                                    val extension = subtitleFile.extension
-                                    val mimeType =
-                                        when (extension.lowercase()) {
-                                            "srt" -> MimeTypes.APPLICATION_SUBRIP
-                                            "vtt" -> MimeTypes.TEXT_VTT
-                                            "ass",
-                                            "ssa" -> MimeTypes.TEXT_SSA
-                                            else -> MimeTypes.TEXT_UNKNOWN
-                                        }
-
-                                    val language =
-                                        subtitleFile.nameWithoutExtension.split("_").firstOrNull()
-                                            ?: context.getString(R.string.track_unknown)
-
-                                    MediaItem.SubtitleConfiguration.Builder(
-                                            "file://${subtitleFile.absolutePath}".toUri()
-                                        )
-                                        .setLabel(language)
-                                        .setMimeType(mimeType)
-                                        .setLanguage(language)
-                                        .build()
-                                } catch (_: Exception) {
-                                    null
-                                }
-                            } ?: emptyList()
-                        } else {
-                            emptyList()
-                        }
-                    } else {
-                        mediaSource.mediaStreams
-                            .filter { stream ->
-                                stream.type == MediaStreamType.SUBTITLE && stream.isExternal
-                            }
-                            .mapNotNull { stream ->
-                                try {
-                                    val extension =
-                                        when (stream.codec.lowercase()) {
-                                            "subrip",
-                                            "srt" -> "srt"
-                                            "vtt",
-                                            "webvtt" -> "vtt"
-                                            "ass" -> "ass"
-                                            "ssa" -> "ssa"
-                                            else -> "srt"
-                                        }
-                                    val mimeType =
-                                        when (stream.codec.lowercase()) {
-                                            "subrip",
-                                            "srt" -> MimeTypes.APPLICATION_SUBRIP
-                                            "vtt",
-                                            "webvtt" -> MimeTypes.TEXT_VTT
-                                            "ass",
-                                            "ssa" -> MimeTypes.TEXT_SSA
-                                            else -> MimeTypes.APPLICATION_SUBRIP
-                                        }
-                                    val subtitleUrl =
-                                        "${apiClient.baseUrl}/Videos/${fullItem.id}/${actualMediaSourceId}/Subtitles/${stream.index}/Stream.$extension"
-                                    MediaItem.SubtitleConfiguration.Builder(subtitleUrl.toUri())
-                                        .setLabel(
-                                            stream.displayTitle
-                                                ?: stream.language
-                                                ?: context.getString(
-                                                    R.string.track_number_fmt,
-                                                    stream.index,
-                                                )
-                                        )
-                                        .setMimeType(mimeType)
-                                        .setLanguage(stream.language ?: "eng")
-                                        .build()
-                                } catch (_: Exception) {
-                                    null
-                                }
-                            }
-                    }
-
-                val mediaItem =
-                    MediaItem.Builder()
-                        .setMediaId(fullItem.id.toString())
-                        .setUri(streamUrl)
-                        .setMediaMetadata(MediaMetadata.Builder().setTitle(fullItem.name).build())
-                        .setSubtitleConfigurations(externalSubtitles)
-                        .build()
-
-                withContext(Dispatchers.Main) {
-                    player.setMediaItems(listOf(mediaItem), 0, startPositionMs)
-                    player.prepare()
-                    if (castManager.isCasting) {
-                        startCasting(startPositionOverride = startPositionMs)
-                    } else {
-                        player.play()
-                    }
-                    if (shouldShowControls) {
-                        showControls()
-                    }
-                }
-
-                if (!isOffline && !useLocalSource && (fullItem is AfinityMovie || fullItem is AfinityEpisode)) {
-                    viewModelScope.launch(Dispatchers.IO) {
-                        try {
-                            Timber.d(
-                                "[MultiPart] Checking additional parts for '${fullItem.name}' id=${fullItem.id}"
-                            )
-                            val parts = mediaRepository.getAdditionalParts(fullItem.id)
-                            Timber.d(
-                                "[MultiPart] getAdditionalParts returned ${parts.size} item(s): ${parts.map { "'${it.name}' (${it.id})" }}"
-                            )
-                            if (parts.isNotEmpty()) {
-                                playlistManager.insertAfterCurrent(parts)
-                                Timber.d(
-                                    "[MultiPart] Inserted ${parts.size} parts into queue after '${fullItem.name}'"
-                                )
-                            }
-                        } catch (e: Exception) {
-                            Timber.e(
-                                e,
-                                "[MultiPart] Exception fetching additional parts for: ${fullItem.id}",
-                            )
-                        }
-                    }
-                }
-
-                segmentsJob.join()
-                trickplayJob.join()
-                reportStartJob.join()
             }
         } catch (e: Exception) {
             Timber.e(e, "Failed to load media")
@@ -1499,9 +1417,7 @@ constructor(
     }
 
     private suspend fun loadSegments(itemId: UUID) {
-        segmentCheckingJob?.cancel()
-        currentMediaSegments = emptyList()
-        updateUiState { it.copy(currentSegment = null, showSkipButton = false) }
+        clearSegments()
 
         currentMediaSegments =
             try {
@@ -1516,6 +1432,12 @@ constructor(
         } else {
             Timber.d("No segments found for item $itemId")
         }
+    }
+
+    private fun clearSegments() {
+        segmentCheckingJob?.cancel()
+        currentMediaSegments = emptyList()
+        updateUiState { it.copy(currentSegment = null, showSkipButton = false) }
     }
 
     private fun startSegmentMonitoring() {
@@ -1691,7 +1613,7 @@ constructor(
         playlistManager.clearQueue()
     }
 
-    private suspend fun resolveLocalPlaybackUrl(mediaSource: AfinitySource): String? {
+    private suspend fun resolveLocalPlaybackMedia(mediaSource: AfinitySource): ResolvedPlaybackMedia? {
         val mediaFileId = runCatching { UUID.fromString(mediaSource.id) }.getOrNull()
         if (mediaFileId != null) {
             val capability = capabilityPolicy.value
@@ -1708,9 +1630,13 @@ constructor(
                             mediaFileId = mediaFileId,
                             visibilityContext = visibilityContext,
                         )
-                    )
+                )
             ) {
-                is LocalPlaybackResolution.Resolved -> resolution.playerUri
+                is LocalPlaybackResolution.Resolved ->
+                    ResolvedPlaybackMedia(
+                        streamUrl = resolution.playerUri,
+                        subtitles = resolution.subtitles,
+                    )
                 is LocalPlaybackResolution.Unavailable -> {
                     Timber.w("Local playback source unavailable: ${resolution.reason}")
                     null
@@ -1719,13 +1645,81 @@ constructor(
         }
 
         return mediaSource.path.let { path ->
-            if (path.startsWith("content://") || path.startsWith("file://")) {
+            val streamUrl = if (path.startsWith("content://") || path.startsWith("file://")) {
                 path
             } else {
                 "file://$path"
             }
+            ResolvedPlaybackMedia(streamUrl = streamUrl, subtitles = emptyList())
         }
     }
+
+    private fun List<String>.toLocalSubtitleConfigurations(): List<MediaItem.SubtitleConfiguration> =
+        mapNotNull { subtitleUri ->
+            try {
+                val extension = subtitleUri.substringBefore('?').substringBefore('#').substringAfterLast('.', "")
+                val mimeType = extension.subtitleMimeType()
+                val fileName = subtitleUri.toUri().lastPathSegment?.substringBeforeLast('.')
+                val language =
+                    fileName
+                        ?.substringAfterLast('_')
+                        ?.substringAfterLast('.')
+                        ?.takeIf { it.isNotBlank() }
+                        ?: context.getString(R.string.track_unknown)
+                MediaItem.SubtitleConfiguration.Builder(subtitleUri.toUri())
+                    .setLabel(language)
+                    .setMimeType(mimeType)
+                    .setLanguage(language)
+                    .build()
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+    private fun buildRemoteSubtitleConfigurations(
+        mediaSource: AfinitySource,
+        itemId: UUID,
+        mediaSourceId: String,
+    ): List<MediaItem.SubtitleConfiguration> =
+        mediaSource.mediaStreams
+            .filter { stream -> stream.type == MediaStreamType.SUBTITLE && stream.isExternal }
+            .mapNotNull { stream ->
+                try {
+                    val extension =
+                        when (stream.codec.lowercase()) {
+                            "subrip",
+                            "srt" -> "srt"
+                            "vtt",
+                            "webvtt" -> "vtt"
+                            "ass" -> "ass"
+                            "ssa" -> "ssa"
+                            else -> "srt"
+                        }
+                    val subtitleUrl =
+                        "${apiClient.baseUrl}/Videos/$itemId/$mediaSourceId/Subtitles/${stream.index}/Stream.$extension"
+                    MediaItem.SubtitleConfiguration.Builder(subtitleUrl.toUri())
+                        .setLabel(
+                            stream.displayTitle
+                                ?: stream.language
+                        )
+                        .setMimeType(stream.codec.subtitleMimeType())
+                        .setLanguage(stream.language)
+                        .build()
+                } catch (_: Exception) {
+                    null
+                }
+            }
+
+    private fun String.subtitleMimeType(): String =
+        when (lowercase()) {
+            "subrip",
+            "srt" -> MimeTypes.APPLICATION_SUBRIP
+            "vtt",
+            "webvtt" -> MimeTypes.TEXT_VTT
+            "ass",
+            "ssa" -> MimeTypes.TEXT_SSA
+            else -> MimeTypes.TEXT_UNKNOWN
+        }
 
     private fun saveLocalPlaybackProgress(
         mediaSource: AfinitySource?,
@@ -2210,4 +2204,9 @@ private data class MpvPrefsSnapshot(
     val subtitlePrefs: SubtitlePreferences,
     val preferredAudioLanguage: String,
     val preferredSubtitleLanguage: String,
+)
+
+private data class ResolvedPlaybackMedia(
+    val streamUrl: String,
+    val subtitles: List<String>,
 )

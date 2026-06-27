@@ -118,6 +118,7 @@ class PlayerActivity : ComponentActivity() {
         val subtitleStreamIndex = intent.getIntExtra("subtitleStreamIndex", -1).takeIf { it != -1 }
         val startPositionMs = intent.getLongExtra("startPositionMs", 0L)
         val seasonId = intent.getStringExtra("seasonId")?.let { UUID.fromString(it) }
+        val seriesId = intent.getStringExtra("seriesId")?.let { UUID.fromString(it) }
         val shuffle = intent.getBooleanExtra("shuffle", false)
         val isLiveChannel = intent.getBooleanExtra("isLiveChannel", false)
         val channelName = intent.getStringExtra("channelName")
@@ -159,6 +160,7 @@ class PlayerActivity : ComponentActivity() {
                     audioStreamIndex = audioStreamIndex,
                     subtitleStreamIndex = subtitleStreamIndex,
                     startPositionMs = startPositionMs,
+                    seriesId = seriesId,
                     seasonId = seasonId,
                     shuffle = shuffle,
                     isLiveChannel = isLiveChannel,

@@ -1118,7 +1118,7 @@ private fun handlePlayRequest(
             audioStreamIndex = selection.audioStreamIndex,
             subtitleStreamIndex = selection.subtitleStreamIndex,
             startPositionMs = selection.startPositionMs,
-            seasonId = if (item is AfinitySeason) item.id else null,
+            seasonId = (targetPlayItem as? AfinityEpisode)?.seasonId ?: (item as? AfinitySeason)?.id,
         )
     } else {
         onPlayClick(targetPlayItem, selection)
@@ -1141,7 +1141,7 @@ private fun shufflePlay(item: AfinityItem, nextEpisode: AfinityEpisode?, context
             audioStreamIndex = null,
             subtitleStreamIndex = null,
             startPositionMs = 0L,
-            seasonId = if (item is AfinitySeason) item.id else null,
+            seasonId = ep.seasonId,
             shuffle = true,
         )
     }

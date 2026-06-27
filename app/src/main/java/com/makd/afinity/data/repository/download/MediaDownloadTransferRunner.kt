@@ -51,6 +51,7 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -60,6 +61,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -67,14 +69,17 @@ import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.libraryApi
 import org.jellyfin.sdk.api.operations.ItemsApi
 import org.jellyfin.sdk.api.operations.MediaSegmentsApi
+import org.jellyfin.sdk.api.operations.TvShowsApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.ItemFields
 import org.jellyfin.sdk.model.api.MediaStreamType
+import org.json.JSONObject
 import timber.log.Timber
 
 @Singleton
@@ -97,6 +102,7 @@ constructor(
 ) {
     companion object {
         const val BUFFER_SIZE = 8192
+        private const val PREPARED_DOWNLOAD_POLL_DELAY_MS = 3_000L
     }
 
     suspend fun run(
@@ -277,7 +283,12 @@ constructor(
                 when (baseItemDto.type) {
                     BaseItemKind.MOVIE -> baseItemDto.toAfinityMovie(baseUrl)
                     BaseItemKind.EPISODE ->
-                        baseItemDto.toAfinityEpisode(baseUrl)
+                        baseItemDto.toAfinityEpisodeForDownload(
+                            apiClient = apiClient,
+                            userId = userId,
+                            baseUrl = baseUrl,
+                            download = claimedDownload,
+                        )
                             ?: throw TerminalTransferException("Failed to convert episode")
                     else -> throw TerminalTransferException("Unsupported item type: ${baseItemDto.type}")
                 }
@@ -288,7 +299,7 @@ constructor(
                     ?: throw TerminalTransferException("Source not found")
 
             failureStage = "building download request"
-            val requestPlan = buildDownloadRequestPlan(apiClient, itemId, source, qualityMode)
+            var requestPlan = buildDownloadRequestPlan(apiClient, itemId, source, qualityMode)
             failureStage = "creating media target"
             val localLibraryRoot = localLibraryRootBootstrapper.ensureDefaultRoot()
             val canonicalRelativeMediaPath = item.toCanonicalLocalLibraryPath(requestPlan.extension)
@@ -297,7 +308,28 @@ constructor(
                     root = localLibraryRoot,
                     relativeMediaPath = canonicalRelativeMediaPath,
                 )
-            val existingFileSize = if (requestPlan.resumable) mediaTarget.resumeSize else 0L
+            requestPlan.prepareUrl?.let { prepareUrl ->
+                failureStage = "preparing optimized media download"
+                val preparedUrl =
+                    prepareOptimizedDownloadArtifact(
+                        apiClient = apiClient,
+                        okHttpClient = okHttpClient,
+                        download = claimedDownload,
+                        activeClaimId = activeClaimId,
+                        activeBackendRunId = activeBackendRunId,
+                        prepareUrl = prepareUrl,
+                        networkGeneration = session.networkGeneration,
+                        stopRequest = stopRequest,
+                    )
+                requestPlan =
+                    requestPlan.copy(
+                        url = preparedUrl,
+                        resumable = true,
+                        description = "${requestPlan.description}; prepared artifact",
+                    )
+            }
+
+            var existingFileSize = if (requestPlan.resumable) mediaTarget.resumeSize else 0L
             val requestBuilder =
                 Request.Builder()
                     .url(requestPlan.url)
@@ -325,7 +357,14 @@ constructor(
                     }
                 }
 
-                val remainingBytes = response.body?.contentLength() ?: -1L
+                val remainingBytes = if (response.code == 416) 0L else response.body.contentLength()
+                val appendToExistingFile = requestPlan.resumable && existingFileSize > 0 && response.code == 206
+                if (requestPlan.resumable && existingFileSize > 0 && response.code == 200) {
+                    Timber.w(
+                        "Server ignored Range for ${requestPlan.description}; restarting partial media file"
+                    )
+                    existingFileSize = 0L
+                }
                 val totalBytes =
                     if (remainingBytes != -1L) existingFileSize + remainingBytes else -1L
                 var downloadedBytes = existingFileSize
@@ -363,9 +402,9 @@ constructor(
                     return true
                 }
 
-                response.body?.byteStream()?.use { input ->
+                if (response.code != 416) response.body.byteStream().use { input ->
                     failureStage = "opening media output stream"
-                    mediaTarget.openOutputStream(append = existingFileSize > 0).use { output ->
+                    mediaTarget.openOutputStream(append = appendToExistingFile).use { output ->
                         failureStage = "copying media stream"
                         val buffer = ByteArray(BUFFER_SIZE)
                         while (true) {
@@ -459,8 +498,7 @@ constructor(
             ensureItemInDatabase(
                 apiClient,
                 okHttpClient,
-                claimedDownload.id,
-                claimedDownload.serverId,
+                completedDownload,
                 baseItemDto,
                 userId,
                 session.networkGeneration,
@@ -512,6 +550,11 @@ constructor(
 
             Timber.i("Media download completed successfully for: ${claimedDownload.itemName}")
             return TransferResult.Completed(claimedDownload.id, completedFile.path)
+        } catch (e: PreparationPausedException) {
+            applyStopRequest(claimedDownload.id, activeClaimId, activeBackendRunId, e.request)
+            return TransferResult.Paused(e.request.reason)
+        } catch (e: PreparationClaimLostException) {
+            return TransferResult.Paused("Download no longer owns the active claim")
         } catch (e: TerminalTransferException) {
             val message = e.toDownloadFailureMessage(failureStage)
             failActiveDownload(
@@ -817,6 +860,172 @@ constructor(
         return builder.build().toString()
     }
 
+    private suspend fun prepareOptimizedDownloadArtifact(
+        apiClient: ApiClient,
+        okHttpClient: OkHttpClient,
+        download: DownloadDto,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        prepareUrl: String,
+        networkGeneration: Long?,
+        stopRequest: () -> DownloadQueueStopRequest?,
+    ): String {
+        Timber.d("Preparing optimized download artifact: ${prepareUrl.redactSensitiveQueryParams()}")
+        var info =
+            executePreparedDownloadRequest(
+                apiClient = apiClient,
+                okHttpClient = okHttpClient,
+                url = prepareUrl,
+                method = PreparedDownloadRequestMethod.POST,
+                networkGeneration = networkGeneration,
+            )
+        recordPreparedDownloadStatus(download, activeClaimId, activeBackendRunId, info)
+
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            stopRequest()?.let { throw PreparationPausedException(it) }
+            ensureUidtNetworkFresh(networkGeneration)
+
+            when (info.status.lowercase()) {
+                "ready" -> {
+                    val downloadUrl =
+                        info.downloadUrl
+                            ?: throw TerminalTransferException(
+                                "Prepared download is ready but missing downloadUrl"
+                            )
+                    return resolvePreparedDownloadUrl(apiClient, downloadUrl)
+                }
+                "failed" -> {
+                    throw TerminalTransferException(
+                        "Prepared download failed: ${info.error ?: "unknown error"}"
+                    )
+                }
+                "preparing" -> {
+                    val statusUrl =
+                        info.statusUrl
+                            ?: throw TerminalTransferException(
+                                "Prepared download is preparing but missing statusUrl"
+                            )
+                    delay(PREPARED_DOWNLOAD_POLL_DELAY_MS)
+                    info =
+                        executePreparedDownloadRequest(
+                            apiClient = apiClient,
+                            okHttpClient = okHttpClient,
+                            url = resolvePreparedDownloadUrl(apiClient, statusUrl),
+                            method = PreparedDownloadRequestMethod.GET,
+                            networkGeneration = networkGeneration,
+                        )
+                    recordPreparedDownloadStatus(download, activeClaimId, activeBackendRunId, info)
+                }
+                else -> {
+                    throw TerminalTransferException("Unknown prepared download status: ${info.status}")
+                }
+            }
+        }
+    }
+
+    private suspend fun recordPreparedDownloadStatus(
+        download: DownloadDto,
+        activeClaimId: UUID,
+        activeBackendRunId: UUID,
+        info: PreparedDownloadInfo,
+    ) {
+        val touched =
+            stateStore.touchOwnedClaim(
+                downloadId = download.id,
+                activeClaimId = activeClaimId,
+                backendRunId = activeBackendRunId,
+            )
+        if (!touched) throw PreparationClaimLostException()
+        Timber.d("Prepared download status for ${download.itemName}: ${info.diagnosticSummary()}")
+    }
+
+    private fun executePreparedDownloadRequest(
+        apiClient: ApiClient,
+        okHttpClient: OkHttpClient,
+        url: String,
+        method: PreparedDownloadRequestMethod,
+        networkGeneration: Long?,
+    ): PreparedDownloadInfo {
+        ensureUidtNetworkFresh(networkGeneration)
+        val requestBuilder =
+            Request.Builder()
+                .url(url)
+                .header("Authorization", "MediaBrowser Token=\"${apiClient.accessToken ?: ""}\"")
+
+        if (method == PreparedDownloadRequestMethod.POST) {
+            requestBuilder.post(ByteArray(0).toRequestBody())
+        }
+
+        okHttpClient.newCall(requestBuilder.build()).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw TerminalTransferException(
+                    "Prepared download request failed: ${response.code} ${response.message}"
+                )
+            }
+
+            val rawBody = response.body.string()
+            return parsePreparedDownloadInfo(rawBody)
+        }
+    }
+
+    private fun parsePreparedDownloadInfo(rawJson: String): PreparedDownloadInfo {
+        val json = JSONObject(rawJson)
+        val status =
+            json.optCaseInsensitiveString("status")
+                ?: throw TerminalTransferException("Prepared download response is missing status")
+        return PreparedDownloadInfo(
+            status = status,
+            statusUrl = json.optCaseInsensitiveString("statusUrl"),
+            downloadUrl = json.optCaseInsensitiveString("downloadUrl"),
+            error =
+                json.optCaseInsensitiveString("error")
+                    ?: json.optCaseInsensitiveString("errorMessage"),
+            message = json.optCaseInsensitiveString("message"),
+            progressPercent =
+                json.optCaseInsensitiveDouble(
+                    "progress",
+                    "percentComplete",
+                    "completionPercentage",
+                ),
+        )
+    }
+
+    private fun JSONObject.optCaseInsensitiveString(name: String): String? {
+        val value = optCaseInsensitiveValue(name) ?: return null
+        return value.toString().takeIf { it.isNotBlank() && it != "null" }
+    }
+
+    private fun JSONObject.optCaseInsensitiveDouble(vararg names: String): Double? =
+        names.firstNotNullOfOrNull { name ->
+            val value = optCaseInsensitiveValue(name) ?: return@firstNotNullOfOrNull null
+            when (value) {
+                is Number -> value.toDouble()
+                else -> value.toString().toDoubleOrNull()
+            }
+        }
+
+    private fun JSONObject.optCaseInsensitiveValue(name: String): Any? {
+        if (has(name) && !isNull(name)) return opt(name)
+        val capitalized = name.replaceFirstChar { it.uppercaseChar() }
+        if (has(capitalized) && !isNull(capitalized)) return opt(capitalized)
+
+        val keys = keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            if (key.equals(name, ignoreCase = true)) {
+                return if (isNull(key)) null else opt(key)
+            }
+        }
+        return null
+    }
+
+    private fun resolvePreparedDownloadUrl(apiClient: ApiClient, url: String): String {
+        val baseUrl = (apiClient.baseUrl ?: "").trimEnd('/').toHttpUrl()
+        return baseUrl.resolve(url)?.toString()
+            ?: throw TerminalTransferException("Invalid prepared download URL")
+    }
+
     private fun String.redactSensitiveQueryParams(): String =
         runCatching {
                 val url = toHttpUrl()
@@ -940,11 +1149,56 @@ constructor(
     private fun normalizeLandscapeBounds(width: Int, height: Int): DisplaySizePx =
         DisplaySizePx(width = maxOf(width, height), height = minOf(width, height))
 
+    private suspend fun BaseItemDto.toAfinityEpisodeForDownload(
+        apiClient: ApiClient,
+        userId: UUID,
+        baseUrl: String,
+        download: DownloadDto,
+    ): AfinityEpisode? {
+        val fallbackSeriesId = seriesId ?: download.seriesId?.toUuidOrNull()
+        val fallbackSeasonId =
+            seasonId
+                ?: download.seasonId?.toUuidOrNull()
+                ?: fallbackSeriesId?.let { resolveSingleSeasonId(apiClient, userId, it) }
+        return toAfinityEpisode(
+            baseUrl = baseUrl,
+            fallbackSeriesId = fallbackSeriesId,
+            fallbackSeasonId = fallbackSeasonId,
+        )
+    }
+
+    private suspend fun resolveSingleSeasonId(
+        apiClient: ApiClient,
+        userId: UUID,
+        seriesId: UUID,
+    ): UUID? =
+        runCatching {
+                TvShowsApi(apiClient)
+                    .getSeasons(
+                        seriesId = seriesId,
+                        userId = userId,
+                        enableImages = false,
+                        enableUserData = false,
+                    )
+                    .content
+                    .items
+                    .singleOrNull()
+                    ?.id
+            }
+            .onFailure { error ->
+                Timber.w(error, "Failed to resolve fallback season for download series $seriesId")
+            }
+            .getOrNull()
+
+    private fun String.toUuidOrNull(): UUID? =
+        runCatching { UUID.fromString(this) }
+            .onFailure { Timber.w("Ignoring invalid persisted UUID: $this") }
+            .getOrNull()
+
     private suspend fun ensureItemInDatabase(
         apiClient: ApiClient,
         okHttpClient: OkHttpClient,
-        downloadId: UUID,
-        serverId: String,
+        download: DownloadDto,
         baseItemDto: BaseItemDto,
         userId: UUID,
         networkGeneration: Long?,
@@ -953,13 +1207,21 @@ constructor(
             ensureUidtNetworkFresh(networkGeneration)
             val baseUrl = apiClient.baseUrl ?: ""
             val itemsApi = ItemsApi(apiClient)
+            val downloadId = download.id
+            val serverId = download.serverId
             when (baseItemDto.type) {
                 BaseItemKind.MOVIE -> {
                     val movie = baseItemDto.toAfinityMovie(baseUrl)
                     databaseRepository.insertMovieIfDownloadCompleted(downloadId, movie, serverId)
                 }
                 BaseItemKind.EPISODE -> {
-                    val episode = baseItemDto.toAfinityEpisode(baseUrl) ?: return
+                    val episode =
+                        baseItemDto.toAfinityEpisodeForDownload(
+                            apiClient = apiClient,
+                            userId = userId,
+                            baseUrl = baseUrl,
+                            download = download,
+                        ) ?: return
                     val seriesId = episode.seriesId
                     val seasonId = episode.seasonId
                     coroutineScope {
@@ -1027,8 +1289,7 @@ constructor(
                                 downloadShowImages(
                                     apiClient,
                                     okHttpClient,
-                                    downloadId,
-                                    serverId,
+                                    download,
                                     showId,
                                     userId,
                                     networkGeneration,
@@ -1051,8 +1312,7 @@ constructor(
                             downloadSeasonImages(
                                 apiClient,
                                 okHttpClient,
-                                downloadId,
-                                serverId,
+                                download,
                                 seasonId,
                                 userId,
                                 networkGeneration,
@@ -1115,8 +1375,7 @@ constructor(
                     else -> null
                 } ?: return
             if (!isStillCompleted(download.id)) return
-            val itemDir = downloadStorageManager.getItemDownloadDirectory(download, itemId)
-            val imagesDir = File(itemDir, "images").also { it.mkdirs() }
+            val imagesDir = downloadStorageManager.getItemImagesDirectory(download, itemId, itemType)
             val images = item.images
             val sharedSeriesImages =
                 (item as? AfinityEpisode)?.seriesId?.let { seriesId ->
@@ -1204,21 +1463,19 @@ constructor(
     private suspend fun downloadShowImages(
         apiClient: ApiClient,
         okHttpClient: OkHttpClient,
-        downloadId: UUID,
-        serverId: String,
+        download: DownloadDto,
         showId: UUID,
         userId: UUID,
         networkGeneration: Long?,
     ) {
         try {
             val show = databaseRepository.getShow(showId, userId) ?: return
-            val showDir = File(downloadStorageManager.getSelectedDownloadsRoot(), "$serverId/shows/$showId").also { it.mkdirs() }
-            val imagesDir = File(showDir, "images").also { it.mkdirs() }
+            val imagesDir = downloadStorageManager.getShowImagesDirectory(download, showId)
             val images = show.images
             val downloadedImages = mutableMapOf<String, Uri?>()
             suspend fun saveImage(uri: Uri?, key: String) {
                 if (!uri.isDownloadableRemoteUri()) return
-                if (!isStillCompleted(downloadId)) return
+                if (!isStillCompleted(download.id)) return
                 val localPath =
                     downloadImage(
                         apiClient,
@@ -1228,7 +1485,7 @@ constructor(
                         key,
                         networkGeneration,
                     )
-                if (!isStillCompleted(downloadId)) {
+                if (!isStillCompleted(download.id)) {
                     localPath?.deleteLocalFileUri()
                     return
                 }
@@ -1249,9 +1506,9 @@ constructor(
                     logoImageBlurHash = images.logoImageBlurHash,
                 )
             databaseRepository.insertShowIfDownloadCompleted(
-                downloadId,
+                download.id,
                 show.copy(images = updatedImages),
-                serverId,
+                download.serverId,
             )
         } catch (e: Exception) {
             Timber.e(e, "Failed to download show images")
@@ -1261,26 +1518,20 @@ constructor(
     private suspend fun downloadSeasonImages(
         apiClient: ApiClient,
         okHttpClient: OkHttpClient,
-        downloadId: UUID,
-        serverId: String,
+        download: DownloadDto,
         seasonId: UUID,
         userId: UUID,
         networkGeneration: Long?,
     ) {
         try {
             val season = databaseRepository.getSeason(seasonId, userId) ?: return
-            val seasonDir =
-                File(
-                        downloadStorageManager.getSelectedDownloadsRoot(),
-                        "$serverId/shows/${season.seriesId}/seasons/${season.indexNumber}",
-                    )
-                    .also { it.mkdirs() }
-            val imagesDir = File(seasonDir, "images").also { it.mkdirs() }
+            val imagesDir =
+                downloadStorageManager.getSeasonImagesDirectory(download, season.seriesId, season.indexNumber)
             val images = season.images
             val downloadedImages = mutableMapOf<String, Uri?>()
             suspend fun saveImage(uri: Uri?, key: String) {
                 if (!uri.isDownloadableRemoteUri()) return
-                if (!isStillCompleted(downloadId)) return
+                if (!isStillCompleted(download.id)) return
                 val localPath =
                     downloadImage(
                         apiClient,
@@ -1290,7 +1541,7 @@ constructor(
                         key,
                         networkGeneration,
                     )
-                if (!isStillCompleted(downloadId)) {
+                if (!isStillCompleted(download.id)) {
                     localPath?.deleteLocalFileUri()
                     return
                 }
@@ -1310,9 +1561,9 @@ constructor(
                     logoImageBlurHash = images.logoImageBlurHash,
                 )
             databaseRepository.insertSeasonIfDownloadCompleted(
-                downloadId,
+                download.id,
                 season.copy(images = updatedImages),
-                serverId,
+                download.serverId,
             )
         } catch (e: Exception) {
             Timber.e(e, "Failed to download season images")
@@ -1565,7 +1816,13 @@ constructor(
         val item =
             when (baseItemDto.type) {
                 BaseItemKind.MOVIE -> baseItemDto.toAfinityMovie(baseUrl)
-                BaseItemKind.EPISODE -> baseItemDto.toAfinityEpisode(baseUrl)
+                BaseItemKind.EPISODE ->
+                    baseItemDto.toAfinityEpisodeForDownload(
+                        apiClient = apiClient,
+                        userId = download.userId,
+                        baseUrl = baseUrl,
+                        download = download,
+                    )
                 else -> null
             } ?: return
         val trickplayInfo = item.trickplayInfo ?: return
@@ -2021,14 +2278,46 @@ constructor(
 
     private class TerminalTransferException(message: String) : Exception(message)
 
+    private class PreparationPausedException(val request: DownloadQueueStopRequest) :
+        Exception(request.reason)
+
+    private class PreparationClaimLostException : Exception("Download no longer owns the active claim")
+
     private class UidtNetworkChangedException : IOException("UIDT required network changed")
 
     private data class DownloadRequestPlan(
         val url: String,
         val extension: String,
         val resumable: Boolean,
+        val prepareUrl: String? = null,
         val description: String,
     )
+
+    private data class PreparedDownloadInfo(
+        val status: String,
+        val statusUrl: String?,
+        val downloadUrl: String?,
+        val error: String?,
+        val message: String?,
+        val progressPercent: Double?,
+    ) {
+        fun diagnosticSummary(): String {
+            val fields = mutableListOf("status=$status")
+            progressPercent?.let {
+                fields += "progress=${String.format(Locale.US, "%.2f", it)}"
+            }
+            fields += "hasStatusUrl=${statusUrl != null}"
+            fields += "hasDownloadUrl=${downloadUrl != null}"
+            error?.let { fields += "error=${it.take(180)}" }
+            message?.let { fields += "message=${it.take(180)}" }
+            return fields.joinToString(", ")
+        }
+    }
+
+    private enum class PreparedDownloadRequestMethod {
+        GET,
+        POST,
+    }
 
     private data class VideoOptimizationDecision(
         val useOriginal: Boolean,

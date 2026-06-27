@@ -10,6 +10,7 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.UUID
 import javax.inject.Inject
+import timber.log.Timber
 
 data class LocalLibraryNode(
     val relativePath: String,
@@ -20,6 +21,9 @@ data class LocalLibraryNode(
 )
 
 data class LocalLibraryCompletedMediaFile(val path: String, val sizeBytes: Long)
+
+class LocalLibraryRootAccessException(message: String, cause: Throwable? = null) :
+    RuntimeException(message, cause)
 
 interface LocalLibraryMediaWriteTarget {
     val displayPath: String
@@ -36,6 +40,8 @@ interface LocalLibraryFileSystem {
     fun list(root: LocalLibraryRootRecord, relativePath: String = ""): List<LocalLibraryNode>
 
     fun readText(root: LocalLibraryRootRecord, relativePath: String): String?
+
+    fun readBytes(root: LocalLibraryRootRecord, relativePath: String): ByteArray?
 
     fun writeText(
         root: LocalLibraryRootRecord,
@@ -78,6 +84,9 @@ constructor(private val context: Context) : LocalLibraryFileSystem {
 
     override fun readText(root: LocalLibraryRootRecord, relativePath: String): String? =
         root.delegate().readText(root, relativePath)
+
+    override fun readBytes(root: LocalLibraryRootRecord, relativePath: String): ByteArray? =
+        root.delegate().readBytes(root, relativePath)
 
     override fun writeText(
         root: LocalLibraryRootRecord,
@@ -124,8 +133,39 @@ constructor(private val context: Context) : LocalLibraryFileSystem {
 class FilePathLibraryFileSystem : LocalLibraryFileSystem {
     override fun list(root: LocalLibraryRootRecord, relativePath: String): List<LocalLibraryNode> {
         val directory = root.resolve(relativePath)
-        if (!directory.exists() || !directory.isDirectory) return emptyList()
-        return directory.listFiles()?.map { file ->
+        if (!directory.exists() || !directory.isDirectory) {
+            if (relativePath.isBlank()) {
+                throw LocalLibraryRootAccessException(
+                    "Local library root is not an accessible directory: ${directory.absolutePath}"
+                )
+            }
+            return emptyList()
+        }
+        if (relativePath.isBlank() && !directory.canRead()) {
+            throw LocalLibraryRootAccessException(
+                "Local library root is not readable: ${directory.absolutePath}"
+            )
+        }
+        val files =
+            directory.listFiles()
+                ?: if (relativePath.isBlank()) {
+                    throw LocalLibraryRootAccessException(
+                        "Local library root listing returned null: ${directory.absolutePath}"
+                    )
+                } else {
+                    return emptyList()
+                }
+        if (relativePath.isBlank()) {
+            Timber.i(
+                "Local library root listing: path=%s exists=%s isDirectory=%s canRead=%s children=%d",
+                directory.absolutePath,
+                directory.exists(),
+                directory.isDirectory,
+                directory.canRead(),
+                files.size,
+            )
+        }
+        return files.map { file ->
             LocalLibraryNode(
                 relativePath = file.relativeTo(root.rootFile()).invariantSeparatorsPath,
                 name = file.name,
@@ -133,12 +173,17 @@ class FilePathLibraryFileSystem : LocalLibraryFileSystem {
                 sizeBytes = if (file.isFile) file.length() else 0L,
                 modifiedAt = file.lastModified(),
             )
-        } ?: emptyList()
+        }
     }
 
     override fun readText(root: LocalLibraryRootRecord, relativePath: String): String? {
         val file = root.resolve(relativePath)
         return if (file.exists() && file.isFile) file.readText() else null
+    }
+
+    override fun readBytes(root: LocalLibraryRootRecord, relativePath: String): ByteArray? {
+        val file = root.resolve(relativePath)
+        return if (file.exists() && file.isFile) file.readBytes() else null
     }
 
     override fun writeText(
@@ -280,19 +325,39 @@ class FilePathLibraryFileSystem : LocalLibraryFileSystem {
 
 class SafTreeLibraryFileSystem(private val context: Context) : LocalLibraryFileSystem {
     override fun list(root: LocalLibraryRootRecord, relativePath: String): List<LocalLibraryNode> {
-        val directoryUri = resolveDocument(root, relativePath, requireDirectory = true)?.uri ?: return emptyList()
+        val directoryUri =
+            resolveDocument(root, relativePath, requireDirectory = true)?.uri
+                ?: if (relativePath.isBlank()) {
+                    throw LocalLibraryRootAccessException(
+                        "SAF local library root cannot be opened: ${root.uriOrPath}"
+                    )
+                } else {
+                    return emptyList()
+                }
         val childrenUri =
             DocumentsContract.buildChildDocumentsUriUsingTree(
                 directoryUri,
                 DocumentsContract.getDocumentId(directoryUri),
             )
-        return queryChildren(childrenUri, relativePath)
+        return queryChildren(
+            childrenUri = childrenUri,
+            parentRelativePath = relativePath,
+            failOnError = relativePath.isBlank(),
+        )
     }
 
     override fun readText(root: LocalLibraryRootRecord, relativePath: String): String? {
         val documentUri = resolveDocument(root, relativePath, requireDirectory = false)?.uri ?: return null
         return runCatching {
                 context.contentResolver.openInputStream(documentUri)?.bufferedReader()?.use { it.readText() }
+            }
+            .getOrNull()
+    }
+
+    override fun readBytes(root: LocalLibraryRootRecord, relativePath: String): ByteArray? {
+        val documentUri = resolveDocument(root, relativePath, requireDirectory = false)?.uri ?: return null
+        return runCatching {
+                context.contentResolver.openInputStream(documentUri)?.use { it.readBytes() }
             }
             .getOrNull()
     }
@@ -367,11 +432,24 @@ class SafTreeLibraryFileSystem(private val context: Context) : LocalLibraryFileS
         )
     }
 
-    private fun queryChildren(childrenUri: Uri, parentRelativePath: String): List<LocalLibraryNode> =
-        runCatching {
-                context.contentResolver
-                    .query(childrenUri, CHILD_PROJECTION, null, null, null)
-                    ?.use { cursor ->
+    private fun queryChildren(
+        childrenUri: Uri,
+        parentRelativePath: String,
+        failOnError: Boolean = false,
+    ): List<LocalLibraryNode> {
+        val result =
+            runCatching {
+                val cursor =
+                    context.contentResolver.query(childrenUri, CHILD_PROJECTION, null, null, null)
+                if (cursor == null) {
+                    if (failOnError) {
+                        throw LocalLibraryRootAccessException(
+                            "SAF local library root query returned null: $childrenUri"
+                        )
+                    }
+                    return emptyList()
+                }
+                cursor.use {
                         buildList {
                             while (cursor.moveToNext()) {
                                 val name =
@@ -408,8 +486,16 @@ class SafTreeLibraryFileSystem(private val context: Context) : LocalLibraryFileS
                         }
                     }
             }
-            .getOrNull()
-            .orEmpty()
+        return result.getOrElse { error ->
+            if (failOnError) {
+                throw LocalLibraryRootAccessException(
+                    "SAF local library root query failed: $childrenUri",
+                    error,
+                )
+            }
+            emptyList()
+        }
+    }
 
     private fun resolveDocument(
         root: LocalLibraryRootRecord,

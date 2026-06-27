@@ -236,6 +236,23 @@ class LocalLibraryScannerTest {
     }
 
     @Test
+    fun inaccessibleFileRootIsMarkedUnavailableWithoutReplacingExistingRows() {
+        val rootDir = temporaryFolder.newFolder("library")
+        val availableRoot = root(rootDir)
+        writeMovie(rootDir)
+        val index = InMemoryLocalLibraryIndexRepository()
+        scanner(index).scanRoot(availableRoot)
+
+        val missingRoot = availableRoot.copy(uriOrPath = rootDir.resolve("missing").absolutePath)
+        val summary = scanner(index).scanRoot(missingRoot)
+
+        assertEquals(1, summary.unavailableItems)
+        assertEquals(1, summary.errors.size)
+        assertEquals(1, index.allMediaFiles().size)
+        assertEquals(0, index.visibleMediaFiles().size)
+    }
+
+    @Test
     fun cancelledScanDoesNotReplaceExistingIndexWithPartialRows() {
         val rootDir = temporaryFolder.newFolder("library")
         val libraryRoot = root(rootDir)

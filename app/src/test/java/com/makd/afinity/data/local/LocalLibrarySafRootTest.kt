@@ -101,6 +101,11 @@ class LocalLibrarySafRootTest {
             relativePath: String,
         ): String? = files[relativePath]?.toString(Charsets.UTF_8)
 
+        override fun readBytes(
+            root: LocalLibraryRootRecord,
+            relativePath: String,
+        ): ByteArray? = files[relativePath]
+
         override fun writeText(
             root: LocalLibraryRootRecord,
             relativePath: String,

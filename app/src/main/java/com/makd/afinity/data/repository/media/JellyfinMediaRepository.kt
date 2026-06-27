@@ -104,7 +104,7 @@ constructor(
                     userLibraryApi
                         .getItem(userId = userId, itemId = itemId)
                         .content
-                        .toAfinityItem(getBaseUrl())
+                        .toAfinityItemWithResolvedEpisodeContext()
 
                 if (freshItem != null) {
                     updateItemInCache(_continueWatching, freshItem)
@@ -120,7 +120,7 @@ constructor(
                                         userLibraryApi
                                             .getItem(userId = userId, itemId = seriesId)
                                             .content
-                                            .toAfinityItem(getBaseUrl())
+                                            .toAfinityItemWithResolvedEpisodeContext()
                                     if (seriesItem != null) {
                                         updateItemInCache(_latestMedia, seriesItem)
                                     }
@@ -236,7 +236,7 @@ constructor(
 
                 val continueWatchingItems =
                     response.content.items.mapNotNull { baseItemDto ->
-                        baseItemDto.toAfinityItem(getBaseUrl())
+                        baseItemDto.toAfinityItemWithResolvedEpisodeContext()
                     }
 
                 _continueWatching.value = continueWatchingItems
@@ -266,7 +266,7 @@ constructor(
 
                 val latestItems =
                     response.content.mapNotNull { baseItemDto ->
-                        baseItemDto.toAfinityItem(getBaseUrl())
+                        baseItemDto.toAfinityItemWithResolvedEpisodeContext()
                     }
 
                 _latestMedia.value = latestItems
@@ -296,7 +296,7 @@ constructor(
 
                 val nextUpEpisodes =
                     response.content.items.mapNotNull { baseItemDto ->
-                        baseItemDto.toAfinityEpisode(getBaseUrl())
+                        baseItemDto.toAfinityEpisodeWithResolvedContext()
                     }
 
                 _nextUp.value = nextUpEpisodes
@@ -339,6 +339,51 @@ constructor(
 
     override fun getBaseUrl(): String {
         return sessionManager.currentSession.value?.serverUrl ?: ""
+    }
+
+    private suspend fun BaseItemDto.toAfinityItemWithResolvedEpisodeContext(
+        seasonContextCache: MutableMap<UUID, UUID?> = mutableMapOf(),
+        fallbackSeriesId: UUID? = null,
+    ): AfinityItem? =
+        when (type) {
+            BaseItemKind.EPISODE ->
+                toAfinityEpisodeWithResolvedContext(
+                    seasonContextCache = seasonContextCache,
+                    fallbackSeriesId = fallbackSeriesId,
+                )
+            else -> toAfinityItem(getBaseUrl())
+        }
+
+    private suspend fun BaseItemDto.toAfinityEpisodeWithResolvedContext(
+        seasonContextCache: MutableMap<UUID, UUID?> = mutableMapOf(),
+        fallbackSeriesId: UUID? = null,
+    ): AfinityEpisode? =
+        toAfinityEpisode(
+            baseUrl = getBaseUrl(),
+            fallbackSeriesId = seriesId ?: fallbackSeriesId,
+            fallbackSeasonId = resolveFallbackSeasonId(seasonContextCache, fallbackSeriesId),
+        )
+
+    private suspend fun BaseItemDto.resolveFallbackSeasonId(
+        seasonContextCache: MutableMap<UUID, UUID?>,
+        fallbackSeriesId: UUID? = null,
+    ): UUID? {
+        seasonId?.let { return it }
+
+        val episodeSeriesId = seriesId ?: fallbackSeriesId ?: return null
+        if (!seasonContextCache.containsKey(episodeSeriesId)) {
+            seasonContextCache[episodeSeriesId] =
+                try {
+                    getSeasons(episodeSeriesId).singleOrNull()?.id
+                } catch (e: Exception) {
+                    Timber.w(
+                        e,
+                        "Failed to resolve fallback season for loose episode series $episodeSeriesId",
+                    )
+                    null
+                }
+        }
+        return seasonContextCache[episodeSeriesId]
     }
 
     override fun getItemsPaging(
@@ -430,7 +475,7 @@ constructor(
 
                 val latestItems =
                     response.content.mapNotNull { baseItemDto ->
-                        baseItemDto.toAfinityItem(getBaseUrl())
+                        baseItemDto.toAfinityItemWithResolvedEpisodeContext()
                     }
 
                 if (parentId == null) {
@@ -468,7 +513,7 @@ constructor(
 
                 val continueWatchingItems =
                     response.content.items.mapNotNull { baseItemDto ->
-                        baseItemDto.toAfinityItem(getBaseUrl())
+                        baseItemDto.toAfinityItemWithResolvedEpisodeContext()
                     }
 
                 _continueWatching.value = continueWatchingItems
@@ -607,7 +652,7 @@ constructor(
         }
 
     override suspend fun getItemById(itemId: UUID): AfinityItem? =
-        getItem(itemId, FieldSets.ITEM_DETAIL)?.toAfinityItem(getBaseUrl())
+        getItem(itemId, FieldSets.ITEM_DETAIL)?.toAfinityItemWithResolvedEpisodeContext()
 
     override suspend fun getItemsByIds(ids: List<UUID>): List<AfinityItem> =
         withContext(Dispatchers.IO) {
@@ -625,7 +670,7 @@ constructor(
                         enableImages = true,
                         enableUserData = true,
                     )
-                response.content.items.mapNotNull { it.toAfinityItem(getBaseUrl()) }
+                response.content.items.mapNotNull { it.toAfinityItemWithResolvedEpisodeContext() }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to batch-fetch items by ids")
                 emptyList()
@@ -643,7 +688,7 @@ constructor(
                 val response = userLibraryApi.getIntros(itemId = itemId, userId = userId)
 
                 response.content.items.mapNotNull { baseItem ->
-                    baseItem.toAfinityItem(getBaseUrl())
+                    baseItem.toAfinityItemWithResolvedEpisodeContext()
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to get intros for item: $itemId")
@@ -666,7 +711,9 @@ constructor(
                 )
 
                 val mapped =
-                    rawItems?.mapNotNull { baseItem -> baseItem.toAfinityItem(getBaseUrl()) }
+                    rawItems?.mapNotNull { baseItem ->
+                        baseItem.toAfinityItemWithResolvedEpisodeContext()
+                    }
                         ?: emptyList()
                 mapped
             } catch (e: Exception) {
@@ -695,7 +742,7 @@ constructor(
                         fields = fields ?: FieldSets.SIMILAR_ITEMS,
                     )
                 response.content.items.mapNotNull { baseItem ->
-                    baseItem.toAfinityItem(getBaseUrl())
+                    baseItem.toAfinityItemWithResolvedEpisodeContext()
                 }
             } catch (e: ApiClientException) {
                 Timber.e(e, "Failed to get similar items")
@@ -871,7 +918,7 @@ constructor(
                         enableImages = true,
                         enableUserData = true,
                     )
-                response.content.items.mapNotNull { it.toAfinityItem(getBaseUrl()) }
+                response.content.items.mapNotNull { it.toAfinityItemWithResolvedEpisodeContext() }
             } catch (e: ApiClientException) {
                 Timber.e(e, "Failed to get top-rated items for genre: $genre")
                 emptyList()
@@ -902,7 +949,7 @@ constructor(
                         enableImages = true,
                         enableUserData = true,
                     )
-                response.content.items.mapNotNull { it.toAfinityItem(getBaseUrl()) }
+                response.content.items.mapNotNull { it.toAfinityItemWithResolvedEpisodeContext() }
             } catch (e: ApiClientException) {
                 Timber.e(e, "Failed to get top-rated items for studio: $studioName")
                 emptyList()
@@ -1024,7 +1071,13 @@ constructor(
                         limit = limit,
                     )
                 response.content.items
-                    .mapNotNull { baseItem -> baseItem.toAfinityEpisode(getBaseUrl()) }
+                    .mapNotNull { baseItem ->
+                        baseItem.toAfinityEpisode(
+                            baseUrl = getBaseUrl(),
+                            fallbackSeriesId = actualSeriesId,
+                            fallbackSeasonId = seasonId,
+                        )
+                    }
                     .filter { episode ->
                         if (episode.missing) {
                             episode.premiereDate?.isBefore(java.time.LocalDateTime.now()) == true
@@ -1112,8 +1165,9 @@ constructor(
                         sortBy = listOf(ItemSortBy.SORT_NAME),
                     )
 
+                val seasonContextCache = mutableMapOf<UUID, UUID?>()
                 response.content.items.mapNotNull { baseItem ->
-                    baseItem.toAfinityEpisode(getBaseUrl())
+                    baseItem.toAfinityEpisodeWithResolvedContext(seasonContextCache)
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to get favorite episodes")
@@ -1223,9 +1277,13 @@ constructor(
                         enableImages = true,
                         enableUserData = true,
                     )
+                val seasonContextCache = mutableMapOf<UUID, UUID?>()
                 val nextUpItems =
                     response.content.items.mapNotNull { baseItem ->
-                        baseItem.toAfinityEpisode(getBaseUrl())
+                        baseItem.toAfinityEpisodeWithResolvedContext(
+                            seasonContextCache = seasonContextCache,
+                            fallbackSeriesId = seriesId,
+                        )
                     }
 
                 if (seriesId == null) {
@@ -1260,8 +1318,11 @@ constructor(
                     )
 
                 val now = java.time.LocalDateTime.now()
+                val seasonContextCache = mutableMapOf<UUID, UUID?>()
                 response.content.items
-                    .mapNotNull { baseItem -> baseItem.toAfinityEpisode(getBaseUrl()) }
+                    .mapNotNull { baseItem ->
+                        baseItem.toAfinityEpisodeWithResolvedContext(seasonContextCache)
+                    }
                     .filter { episode ->
                         episode.premiereDate?.isAfter(now) == true &&
                             (episode.missing || episode.sources.isEmpty())
@@ -1293,7 +1354,8 @@ constructor(
                 response.content.mapNotNull { baseItem ->
                     val result =
                         when (baseItem.type) {
-                            BaseItemKind.EPISODE -> baseItem.toAfinityEpisode(getBaseUrl())
+                            BaseItemKind.EPISODE ->
+                                baseItem.toAfinityEpisodeWithResolvedContext()
                             BaseItemKind.MOVIE -> baseItem.toAfinityMovie(getBaseUrl())
                             BaseItemKind.VIDEO -> baseItem.toAfinityVideo(getBaseUrl())
                             else -> {
@@ -1345,7 +1407,7 @@ constructor(
                         enableUserData = true,
                     )
                 response.content.items.mapNotNull { baseItem ->
-                    baseItem.toAfinityItem(getBaseUrl())
+                    baseItem.toAfinityItemWithResolvedEpisodeContext()
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to search items")
@@ -1403,7 +1465,7 @@ constructor(
                         limit = 150,
                     )
                 response.content.items.mapNotNull { baseItem ->
-                    baseItem.toAfinityItem(getBaseUrl())
+                    baseItem.toAfinityItemWithResolvedEpisodeContext()
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to get person items for ID: $personId")

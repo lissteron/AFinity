@@ -2,6 +2,7 @@ package com.makd.afinity.data.local
 
 import com.makd.afinity.data.database.entities.DownloadDto
 import com.makd.afinity.data.models.download.DownloadStatus
+import com.makd.afinity.data.storage.PortableMediaArtworkPaths
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -139,7 +140,7 @@ constructor(
     }
 
     private fun DownloadDto.itemImageDirectories(sourceRoots: List<File>): List<File> {
-        val mediaRoot = filePath?.localItemDirectoryFromMediaPath()?.let { File(it, "images") }
+        val mediaRoot = filePath?.localItemImagesDirectoryFromMediaPath(itemType)
         val folderRoots =
             folderPath
                 ?.takeIf { it.isNotBlank() }
@@ -291,11 +292,12 @@ constructor(
                     it.name.substringAfterLast('.', "").lowercase() in IMAGE_EXTENSIONS
             }
 
-    private fun String.localItemDirectoryFromMediaPath(): File? {
+    private fun String.localItemImagesDirectoryFromMediaPath(itemType: String): File? {
         if (startsWith("content://")) return null
-        val mediaFile = File(this)
-        val parent = mediaFile.parentFile ?: return null
-        return if (parent.name == "media") parent.parentFile else parent
+        return PortableMediaArtworkPaths.itemImagesDirectoryForMediaFile(
+            File(this),
+            isEpisode = itemType.equals("EPISODE", ignoreCase = true),
+        )
     }
 
     private fun List<File>.existingDistinctDirectories(): List<File> =

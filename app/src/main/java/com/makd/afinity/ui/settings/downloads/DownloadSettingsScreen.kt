@@ -90,6 +90,7 @@ import com.makd.afinity.navigation.LocalPlayerOffset
 import com.makd.afinity.ui.components.AsyncImage
 import com.makd.afinity.ui.downloads.ArtworkRefreshUiState
 import com.makd.afinity.ui.downloads.DownloadsViewModel
+import com.makd.afinity.ui.downloads.LocalLibraryScanUiState
 import java.util.Locale
 import java.util.UUID
 import timber.log.Timber
@@ -197,6 +198,7 @@ fun DownloadSettingsScreen(
                 StatusHub(
                     totalStorageUsed = uiState.totalStorageUsed,
                     totalStorageUsedAllServers = uiState.totalStorageUsedAllServers,
+                    localLibraryScan = uiState.localLibraryScan,
                     downloadCount = uiState.activeDownloads.size + uiState.completedDownloads.size,
                     isOffline = isOffline,
                     wifiOnly = uiState.downloadOverWifiOnly,
@@ -220,6 +222,7 @@ fun DownloadSettingsScreen(
                 DownloadStorageLocationCard(
                     locations = uiState.storageLocations,
                     localLibraryRoots = uiState.localLibraryRoots,
+                    localLibraryScan = uiState.localLibraryScan,
                     hasActiveDownloads = uiState.activeDownloads.isNotEmpty(),
                     onLocationSelected = viewModel::setDownloadStorageLocation,
                     onChooseFolder = {
@@ -398,6 +401,7 @@ fun DownloadSettingsScreen(
 fun StatusHub(
     totalStorageUsed: Long,
     totalStorageUsedAllServers: Long,
+    localLibraryScan: LocalLibraryScanUiState,
     downloadCount: Int,
     isOffline: Boolean,
     wifiOnly: Boolean,
@@ -470,6 +474,21 @@ fun StatusHub(
                                 stringResource(
                                     R.string.storage_all_servers_fmt,
                                     formatSize(totalStorageUsedAllServers),
+                                ),
+                            style =
+                                MaterialTheme.typography.bodySmall.copy(
+                                    fontWeight = FontWeight.Medium
+                                ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (localLibraryScan.indexedFiles > 0) {
+                        Text(
+                            text =
+                                stringResource(
+                                    R.string.storage_local_catalog_fmt,
+                                    formatSize(localLibraryScan.indexedStorageUsed),
+                                    localLibraryScan.indexedFiles,
                                 ),
                             style =
                                 MaterialTheme.typography.bodySmall.copy(
@@ -575,6 +594,7 @@ fun StatusHub(
 fun DownloadStorageLocationCard(
     locations: List<DownloadStorageLocation>,
     localLibraryRoots: List<LocalLibraryRootRecord>,
+    localLibraryScan: LocalLibraryScanUiState,
     hasActiveDownloads: Boolean,
     onLocationSelected: (String) -> Unit,
     onChooseFolder: () -> Unit,
@@ -699,7 +719,7 @@ fun DownloadStorageLocationCard(
                 },
                 supportingContent = {
                     Text(
-                        text = stringResource(R.string.local_library_roots_summary),
+                        text = localLibraryScanStatusText(localLibraryScan),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 },
@@ -712,7 +732,10 @@ fun DownloadStorageLocationCard(
                 },
                 trailingContent = {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(enabled = canModify, onClick = onRescanLocalLibrary) {
+                        TextButton(
+                            enabled = canModify && !localLibraryScan.isRunning,
+                            onClick = onRescanLocalLibrary,
+                        ) {
                             Text(stringResource(R.string.local_library_rescan))
                         }
                         TextButton(enabled = canModify, onClick = onAddLocalLibraryFolder) {
@@ -721,6 +744,9 @@ fun DownloadStorageLocationCard(
                     }
                 },
             )
+            if (localLibraryScan.isRunning) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp))
+            }
 
             localLibraryRoots.forEach { root ->
                 ListItem(
@@ -849,6 +875,24 @@ private fun localLibraryRootStatusLabel(root: LocalLibraryRootRecord): String {
         kind
     }
 }
+
+@Composable
+private fun localLibraryScanStatusText(scan: LocalLibraryScanUiState): String =
+    when {
+        scan.isRunning -> stringResource(R.string.local_library_scan_running)
+        scan.lastCancelled -> stringResource(R.string.local_library_scan_cancelled)
+        scan.lastDiscoveredFiles != null && scan.lastUnavailableRoots > 0 ->
+            stringResource(
+                R.string.local_library_scan_last_with_unavailable_fmt,
+                scan.lastDiscoveredFiles,
+                scan.lastUnavailableRoots,
+            )
+        scan.lastDiscoveredFiles != null ->
+            stringResource(R.string.local_library_scan_last_fmt, scan.lastDiscoveredFiles)
+        scan.indexedFiles > 0 ->
+            stringResource(R.string.local_library_indexed_files_fmt, scan.indexedFiles)
+        else -> stringResource(R.string.local_library_roots_summary)
+    }
 
 @Composable
 fun DownloadQualityModeCard(

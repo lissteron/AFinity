@@ -232,6 +232,60 @@ class LocalLibraryMediaRepositoryTest {
     }
 
     @Test
+    fun visibleCatalogSummaryCountsOnlyCurrentlyVisibleLocalFiles() = runBlocking {
+        val root = root()
+        val disabledRoot = root(secondRootId, enabled = false)
+        val missingRoot =
+            root(UUID.fromString("00000000-0000-0000-0000-00000000bb21"), enabled = true)
+        val index = InMemoryLocalLibraryIndexRepository()
+        index.replaceRootScan(
+            root,
+            listOf(movieRecord(root, ownerUserId = userId), episodeRecord(root, ownerUserId = userId)),
+        )
+        index.replaceRootScan(
+            disabledRoot.copy(enabled = true),
+            listOf(
+                episodeRecord(
+                    disabledRoot,
+                    mediaFileId = UUID.fromString("00000000-0000-0000-0000-00000000bb14"),
+                    localItemId = "disabled-local-episode",
+                    ownerUserId = userId,
+                    relativePath = "Shows/Hidden/Season 01/Hidden - S01E01 - Hidden.mkv",
+                )
+            ),
+        )
+        index.replaceRootScan(
+            missingRoot,
+            listOf(
+                episodeRecord(
+                    missingRoot,
+                    mediaFileId = UUID.fromString("00000000-0000-0000-0000-00000000bb22"),
+                    localItemId = "missing-root-local-episode",
+                    ownerUserId = userId,
+                    relativePath = "Shows/Missing/Season 01/Missing - S01E01 - Missing.mkv",
+                )
+            ),
+        )
+
+        val summary =
+            LocalLibraryMediaRepository(
+                    rootStore = FakeRootStore(root, disabledRoot),
+                    indexRepository = index,
+                    userStateRepository = FakeLocalMediaUserStateRepository(emptyMap()),
+                )
+                .visibleCatalogSummary(
+                    LocalLibraryVisibilityContext(
+                        currentUserId = userId,
+                        kidModeEnabled = true,
+                        parentUnlocked = false,
+                    )
+                )
+
+        assertEquals(2, summary.fileCount)
+        assertEquals(20L, summary.totalSizeBytes)
+    }
+
+    @Test
     fun findVisibleItemByIdRestoresLocalRouteTargetsFromIndex() = runBlocking {
         val root = root()
         val movie = movieRecord(root)

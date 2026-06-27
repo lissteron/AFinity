@@ -47,17 +47,36 @@ data class AfinityEpisode(
     override val externalUrls: List<AfinityExternalUrl>?,
 ) : AfinityItem, AfinitySources
 
+internal data class AfinityEpisodeIdentity(val seriesId: UUID, val seasonId: UUID)
+
+internal fun BaseItemDto.resolveAfinityEpisodeIdentity(
+    fallbackSeriesId: UUID? = null,
+    fallbackSeasonId: UUID? = null,
+): AfinityEpisodeIdentity? {
+    val resolvedSeriesId = seriesId ?: fallbackSeriesId ?: return null
+    val resolvedSeasonId = seasonId ?: fallbackSeasonId ?: return null
+    return AfinityEpisodeIdentity(seriesId = resolvedSeriesId, seasonId = resolvedSeasonId)
+}
+
 suspend fun BaseItemDto.toAfinityEpisode(
     baseUrl: String,
     database: ServerDatabaseDao? = null,
+    fallbackSeriesId: UUID? = null,
+    fallbackSeasonId: UUID? = null,
 ): AfinityEpisode? {
+    val identity =
+        resolveAfinityEpisodeIdentity(
+            fallbackSeriesId = fallbackSeriesId,
+            fallbackSeasonId = fallbackSeasonId,
+        ) ?: return null
+
     val sources = mutableListOf<AfinitySource>()
     sources.addAll(mediaSources?.map { it.toAfinitySource(baseUrl, id) } ?: emptyList())
     if (database != null) {
         sources.addAll(database.getSources(id).map { it.toAfinitySource(database) })
     }
     val seriesLogo = parentLogoImageTag?.let { tag ->
-        "$baseUrl/Items/${parentLogoItemId ?: seriesId}/Images/Logo?tag=$tag".toUri()
+        "$baseUrl/Items/${parentLogoItemId ?: identity.seriesId}/Images/Logo?tag=$tag".toUri()
     }
     val seriesLogoBlurHash = imageBlurHashes?.get(ImageType.LOGO)?.get(parentLogoImageTag)
     return try {
@@ -79,10 +98,10 @@ suspend fun BaseItemDto.toAfinityEpisode(
             playbackPositionTicks = userData?.playbackPositionTicks ?: 0L,
             premiereDate = premiereDate,
             seriesName = seriesName.orEmpty(),
-            seriesId = seriesId!!,
+            seriesId = identity.seriesId,
             seriesLogo = seriesLogo,
             seriesLogoBlurHash = seriesLogoBlurHash,
-            seasonId = seasonId!!,
+            seasonId = identity.seasonId,
             communityRating = communityRating,
             people = people?.map { it.toAfinityPerson(baseUrl) } ?: emptyList(),
             missing = locationType == LocationType.VIRTUAL,

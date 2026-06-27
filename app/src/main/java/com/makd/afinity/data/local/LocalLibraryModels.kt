@@ -143,6 +143,11 @@ data class LocalLibraryScanSummary(
     val errors: List<String>,
 )
 
+data class LocalLibraryCatalogSummary(
+    val fileCount: Int,
+    val totalSizeBytes: Long,
+)
+
 data class LocalMediaImportJobRecord(
     val jobId: String,
     val rootRegistryId: UUID,

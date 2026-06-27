@@ -1,6 +1,7 @@
 package com.makd.afinity.ui.item.delegates
 
 import com.makd.afinity.data.models.download.DownloadInfo
+import com.makd.afinity.data.models.media.AfinityEpisode
 import com.makd.afinity.data.models.media.AfinityItem
 import com.makd.afinity.data.models.media.AfinitySourceType
 import com.makd.afinity.data.repository.KidModeRepository
@@ -28,7 +29,12 @@ constructor(
                 }
                 if (sources.size == 1) {
                     downloadRepository
-                        .startDownload(target.id, sources.first().id)
+                        .startDownload(
+                            itemId = target.id,
+                            sourceId = sources.first().id,
+                            seriesId = (target as? AfinityEpisode)?.seriesId,
+                            seasonId = (target as? AfinityEpisode)?.seasonId,
+                        )
                         .onSuccess { Timber.i("Download started successfully for: ${target.name}") }
                         .onFailure { error -> Timber.e(error, "Failed to start download") }
                 } else {
@@ -52,7 +58,12 @@ constructor(
             try {
                 hideQualityDialog()
                 downloadRepository
-                    .startDownload(target.id, sourceId)
+                    .startDownload(
+                        itemId = target.id,
+                        sourceId = sourceId,
+                        seriesId = (target as? AfinityEpisode)?.seriesId,
+                        seasonId = (target as? AfinityEpisode)?.seasonId,
+                    )
                     .onSuccess { Timber.i("Download started successfully for: ${target.name}") }
                     .onFailure { error -> Timber.e(error, "Failed to start download") }
             } catch (e: Exception) {

@@ -317,6 +317,7 @@ class DownloadQueueContractSourceTest {
         assertTrue(stateStore.contains("suspend fun requeueRecoverableInterruptedDownloads"))
         assertTrue(stateStore.contains("LEGACY_INTERRUPTED_PAUSED_REASON"))
         assertTrue(stateStore.contains("UIDT_STOPPED_PAUSED_REASON_PATTERN"))
+        assertTrue(stateStore.contains("UIDT_STOPPED_PAUSED_REASON_PATTERN = \"UIDT job stopped%\""))
         assertTrue(stateStore.contains("TRANSIENT_PAUSED_REASON_PATTERNS"))
         assertTrue(stateStore.contains("TRANSIENT_FAILED_REASON_PATTERNS"))
         assertTrue(stateStore.contains("DownloadQueueTransientFailureClassifier.sqlLikePatterns"))
@@ -369,6 +370,15 @@ class DownloadQueueContractSourceTest {
         assertTrue(!jobService.contains("startPauseAllActiveCleanup"))
         assertTrue(jobService.contains("stateStore.requeueAllActiveForTransientStop(reason = reason)"))
         assertTrue(jobService.contains("finishIfCurrent(runId, params, wantsReschedule = true)"))
+        val cancellationIndex = jobService.indexOf("} catch (e: CancellationException)")
+        val cancellationBranch =
+            jobService.substring(
+                cancellationIndex,
+                jobService.indexOf("} catch (e: Exception)", cancellationIndex),
+            )
+        assertTrue(cancellationBranch.contains("queueRunner.requestSystemRequeue(reason)"))
+        assertTrue(cancellationBranch.contains("queueRunner.stopActive(reason)"))
+        assertTrue(!cancellationBranch.contains("queueRunner.stopActive(\"UIDT job stopped\")"))
         assertTrue(runner.contains("DownloadQueueStopDisposition.REQUEUE"))
         assertTrue(runner.contains("fun requestSystemRequeue(reason: String)"))
         assertTrue(runner.contains("rescheduleCurrentJob = finalStopRequest?.rescheduleCurrentJob == true"))

@@ -165,6 +165,63 @@ class LocalLibraryArtworkBackfillServiceTest {
     }
 
     @Test
+    fun backfillDoesNotUsePortableEpisodeSeasonImagesAsItemArtworkSource() = runBlocking {
+        val portableRootDir = temporaryFolder.newFolder("portable-root-season-source")
+        val serverId = "server-1"
+        val itemId = UUID.fromString("00000000-0000-0000-0000-000000000112")
+        val seriesId = UUID.fromString("00000000-0000-0000-0000-000000000223")
+        val portableRoot =
+            root(
+                id = UUID.fromString("00000000-0000-0000-0000-00000000bd01"),
+                kind = LocalLibraryRootKind.DEVICE_SHARED,
+                uriOrPath = portableRootDir.absolutePath,
+            )
+        val mediaPath = "Shows/Kote/Season 00/Kote - S00E00 - Test.mp4"
+        writeBytes(File(portableRootDir, mediaPath), byteArrayOf(1))
+        writeBytes(
+            File(portableRootDir, "Shows/Kote/Season 00/images/primary.jpg"),
+            byteArrayOf(9, 9, 9),
+        )
+        val index =
+            InMemoryLocalLibraryIndexRepository().also {
+                it.replaceRootScan(
+                    portableRoot,
+                    listOf(
+                        localEpisode(
+                            root = portableRoot,
+                            itemId = itemId,
+                            serverId = serverId,
+                            seriesId = seriesId,
+                        )
+                    ),
+                )
+            }
+        val fileSystem = WritableMemoryFileSystem()
+        val service =
+            LocalLibraryArtworkBackfillService(
+                rootStore = StaticRootStore(listOf(portableRoot)),
+                indexRepository = index,
+                fileSystem = fileSystem,
+                sourceRootProvider = StaticArtworkSourceRootProvider(emptyList()),
+            )
+
+        val summary =
+            service.backfillDownloads(
+                listOf(
+                    download(
+                        itemId = itemId,
+                        serverId = serverId,
+                        seriesId = seriesId,
+                        filePath = File(portableRootDir, mediaPath).absolutePath,
+                    )
+                )
+            )
+
+        assertEquals(0, summary.writtenFiles)
+        assertEquals(null, fileSystem.bytes("Shows/Kote/Season 00/images/Kote - S00E00 - Test/primary.jpg"))
+    }
+
+    @Test
     fun backfillContinuesWhenFirstEpisodeItemDirectoryHasNoPrimaryImage() = runBlocking {
         val legacyRootDir = temporaryFolder.newFolder("legacy-root-second-image")
         val serverId = "server-1"
@@ -296,6 +353,7 @@ class LocalLibraryArtworkBackfillServiceTest {
         serverId: String,
         seriesId: UUID,
         folderPath: String = "$serverId/shows/$seriesId/seasons/0/$itemId",
+        filePath: String = "content://provider/tree/Movies/document/Shows%2FKote%2FSeason%2000%2FTest.mp4",
     ): DownloadDto =
         DownloadDto(
             id = UUID.fromString("00000000-0000-0000-0000-000000000404"),
@@ -308,7 +366,7 @@ class LocalLibraryArtworkBackfillServiceTest {
             progress = 1f,
             bytesDownloaded = 100,
             totalBytes = 100,
-            filePath = "content://provider/tree/Movies/document/Shows%2FKote%2FSeason%2000%2FTest.mp4",
+            filePath = filePath,
             error = null,
             createdAt = 1,
             updatedAt = 1,
@@ -383,6 +441,11 @@ class LocalLibraryArtworkBackfillServiceTest {
             root: LocalLibraryRootRecord,
             relativePath: String,
         ): String? = files[relativePath]?.toString(Charsets.UTF_8)
+
+        override fun readBytes(
+            root: LocalLibraryRootRecord,
+            relativePath: String,
+        ): ByteArray? = files[relativePath]
 
         override fun writeText(
             root: LocalLibraryRootRecord,
